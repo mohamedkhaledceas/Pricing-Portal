@@ -1,4 +1,19 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const db = require('./db');
+
+/* Access tokens are short-lived by design — the refresh cookie is what keeps a
+   session alive across a workday without the user re-entering credentials. */
+const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m';
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+const REFRESH_COOKIE_NAME = 'refreshToken';
+const REFRESH_COOKIE_BASE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  path: '/api/auth',
+};
 
 function signToken(user) {
   return jwt.sign(
@@ -9,7 +24,7 @@ function signToken(user) {
     },
     process.env.JWT_SECRET,
     {
-      expiresIn: process.env.JWT_EXPIRES_IN || '2h',
+      expiresIn: ACCESS_TOKEN_EXPIRES_IN,
     }
   );
 }
@@ -35,7 +50,72 @@ function authMiddleware(req, res, next) {
   }
 }
 
+function generateRawRefreshToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function hashRefreshToken(rawToken) {
+  return crypto.createHash('sha256').update(rawToken).digest('hex');
+}
+
+/* Issues a brand-new refresh token row for a user (login, signup, or the
+   rotation step of a successful refresh) and returns the raw (unhashed)
+   value — only the hash is ever persisted. */
+function issueRefreshToken(userId) {
+  const raw = generateRawRefreshToken();
+  const tokenHash = hashRefreshToken(raw);
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString();
+  db.prepare(
+    'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)'
+  ).run(userId, tokenHash, expiresAt);
+  return raw;
+}
+
+/* Returns the matching, still-valid (not revoked, not expired) refresh_tokens
+   row for a raw token, or null. A reused (already-rotated) or logged-out
+   token is indistinguishable from an unknown one here on purpose — the
+   caller always sees a plain "invalid" outcome. */
+function findValidRefreshToken(rawToken) {
+  if (!rawToken) return null;
+  const tokenHash = hashRefreshToken(rawToken);
+  const row = db.prepare('SELECT * FROM refresh_tokens WHERE token_hash = ?').get(tokenHash);
+  if (!row) return null;
+  if (row.revoked_at) return null;
+  if (new Date(row.expires_at).getTime() < Date.now()) return null;
+  return row;
+}
+
+function revokeRefreshTokenById(id) {
+  db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+}
+
+function revokeRefreshTokenByRaw(rawToken) {
+  if (!rawToken) return;
+  const tokenHash = hashRefreshToken(rawToken);
+  db.prepare(
+    'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL'
+  ).run(tokenHash);
+}
+
+function setRefreshCookie(res, rawToken) {
+  res.cookie(REFRESH_COOKIE_NAME, rawToken, {
+    ...REFRESH_COOKIE_BASE_OPTIONS,
+    maxAge: REFRESH_TOKEN_TTL_MS,
+  });
+}
+
+function clearRefreshCookie(res) {
+  res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_BASE_OPTIONS);
+}
+
 module.exports = {
   signToken,
   authMiddleware,
+  REFRESH_COOKIE_NAME,
+  issueRefreshToken,
+  findValidRefreshToken,
+  revokeRefreshTokenById,
+  revokeRefreshTokenByRaw,
+  setRefreshCookie,
+  clearRefreshCookie,
 };

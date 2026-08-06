@@ -1,8 +1,11 @@
+const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
 const dbDir = path.join(__dirname, '..', 'data');
 const dbPath = path.join(dbDir, 'app.db');
+
+fs.mkdirSync(dbDir, { recursive: true });
 
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
@@ -14,6 +17,19 @@ const schema = `
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'owner'))
   );
+
+  CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 
   CREATE TABLE IF NOT EXISTS company_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
