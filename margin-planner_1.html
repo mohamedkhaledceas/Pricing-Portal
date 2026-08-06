@@ -174,11 +174,11 @@ body[data-mode="admin"] .bd-only{display:none !important}
 <div id="loginScreen" style="position:fixed; inset:0; background:rgba(4,41,64,0.82); display:flex; align-items:center; justify-content:center; z-index:40;">
   <form id="loginForm" style="width:min(92vw, 420px); background:var(--surface-1); border:1px solid var(--border); border-radius:16px; padding:28px 24px; box-shadow:0 22px 50px rgba(0,0,0,0.22);">
     <h2 style="margin:0 0 8px; font-size:24px; letter-spacing:-0.02em;">Sign in</h2>
-    <p style="margin:0 0 18px; color:var(--muted);">Use your local pricing portal account to access the planner.</p>
+    <p style="margin:0 0 18px; color:var(--muted);">Use your pricing portal account to access the planner.</p>
     <div style="display:flex; flex-direction:column; gap:14px;">
       <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
-        Username
-        <input id="loginUsername" name="username" type="text" autocomplete="username" placeholder="username" required>
+        Email or username
+        <input id="loginUsername" name="username" type="text" autocomplete="username" placeholder="you@company.com" required>
       </label>
       <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
         Password
@@ -186,6 +186,29 @@ body[data-mode="admin"] .bd-only{display:none !important}
       </label>
       <button type="submit" class="primary" style="margin-top:6px;">Log in</button>
       <div id="loginError" role="alert" hidden style="color:var(--critical); font-size:12.5px; min-height:18px;"></div>
+      <button type="button" id="btnShowSignup" class="ghost" style="margin-top:2px; font-size:12.5px;">Don't have an account? Sign up</button>
+    </div>
+  </form>
+
+  <form id="signupForm" hidden style="width:min(92vw, 420px); background:var(--surface-1); border:1px solid var(--border); border-radius:16px; padding:28px 24px; box-shadow:0 22px 50px rgba(0,0,0,0.22);">
+    <h2 style="margin:0 0 8px; font-size:24px; letter-spacing:-0.02em;">Create your account</h2>
+    <p style="margin:0 0 18px; color:var(--muted);">Sign up with your work email to access the planner.</p>
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
+        Email
+        <input id="signupEmail" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
+      </label>
+      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
+        Password
+        <input id="signupPassword" name="password" type="password" autocomplete="new-password" placeholder="at least 8 characters" minlength="8" required>
+      </label>
+      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
+        Confirm password
+        <input id="signupPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" placeholder="re-enter password" minlength="8" required>
+      </label>
+      <button type="submit" class="primary" style="margin-top:6px;">Sign up</button>
+      <div id="signupError" role="alert" hidden style="color:var(--critical); font-size:12.5px; min-height:18px;"></div>
+      <button type="button" id="btnShowLogin" class="ghost" style="margin-top:2px; font-size:12.5px;">Already have an account? Log in</button>
     </div>
   </form>
 </div>
@@ -223,10 +246,10 @@ body[data-mode="admin"] .bd-only{display:none !important}
 </nav>
 
 <main>
-  <div class="banner no-print">
+  <!-- <div class="banner no-print">
     <span>⚠︎</span>
     <span><b>Nothing is saved automatically.</b> Click <b>Save to file</b> before you close this page, and <b>Load file</b> to pick up where you left off.</span>
-  </div>
+  </div> -->
 
   <!-- DASHBOARD -->
   <section class="tabpanel" id="tab-dashboard">
@@ -1723,16 +1746,24 @@ function bindTables(){
       renderProjectSelects(); renderProject(); renderScenarios(); renderQuoteInputs(); recompute();
     });
   });
-  $('#addProject').addEventListener('click', () => {
-    const p = {id:uid(), name:'New project', client:'', months:1, status:'Quoting', start:thisMonth(), cur:S().currency,
+  $('#addProject').addEventListener('click', async () => {
+    const draft = {id:uid(), name:'New project', client:'', months:1, status:'Quoting', start:thisMonth(), cur:S().currency,
       lines:[], direct:[], cont:S().contingency, target:S().targetMargin, price:null,
       scenarios:[{id:uid(), name:'As planned', hoursFactor:100, extra:0, price:null}],
       quote:{num:'', date:new Date().toISOString().slice(0,10), valid:30, detail:'lump', disc:0, vat:0,
              scope:'', terms:'', lines:[]}};
-    state.projects.push(p); state.ui.currentProject = p.id;
-    renderAllStructures(); $('#p_name').select();
+    try {
+      const response = await apiRequest('/api/projects', { method: 'POST', body: JSON.stringify(draft) });
+      const created = response && response.project ? response.project : draft;
+      state.projects.push(created);
+      state.ui.currentProject = created.id;
+      renderAllStructures(); $('#p_name').select();
+    } catch (err) {
+      console.warn('Create project failed:', err.message);
+      showSaveError('Could not create the project on the server: ' + (err.message || 'unknown error') + '. Please try again.');
+    }
   });
-  $('#dupProject').addEventListener('click', () => {
+  $('#dupProject').addEventListener('click', async () => {
     const proj = currentProject(); if(!proj) return;
     const copy = JSON.parse(JSON.stringify(proj));
     copy.id = uid(); copy.name = (proj.name||'Project') + ' (copy)';
@@ -1740,15 +1771,33 @@ function bindTables(){
     (copy.direct||[]).forEach(d => d.id = uid());
     (copy.scenarios||[]).forEach(s => s.id = uid());
     (copy.quote.lines||[]).forEach(l => l.id = uid());
-    state.projects.push(copy); state.ui.currentProject = copy.id;
-    renderAllStructures();
+    try {
+      const response = await apiRequest('/api/projects', { method: 'POST', body: JSON.stringify(copy) });
+      const created = response && response.project ? response.project : copy;
+      state.projects.push(created);
+      state.ui.currentProject = created.id;
+      renderAllStructures();
+    } catch (err) {
+      console.warn('Duplicate project failed:', err.message);
+      showSaveError('Could not save the duplicated project to the server: ' + (err.message || 'unknown error') + '. Please try again.');
+    }
   });
-  $('#delProject').addEventListener('click', () => {
+  $('#delProject').addEventListener('click', async () => {
     const proj = currentProject(); if(!proj) return;
     if(!confirm('Delete "' + (proj.name||'this project') + '"?')) return;
-    state.projects = state.projects.filter(p => p.id !== proj.id);
-    state.ui.currentProject = state.projects.length ? state.projects[0].id : null;
-    renderAllStructures();
+    try {
+      const response = await apiRequest(`/api/projects/${proj.id}`, { method: 'DELETE' });
+      if (Array.isArray(response.projects)) {
+        state.projects = response.projects;
+      } else {
+        state.projects = state.projects.filter(p => p.id !== proj.id);
+      }
+      state.ui.currentProject = state.projects.length ? state.projects[0].id : null;
+      renderAllStructures();
+    } catch (err) {
+      console.warn('Delete project failed:', err.message);
+      showSaveError('Could not delete the project on the server: ' + (err.message || 'unknown error') + '. Please try again.');
+    }
   });
 }
 function bindSettings(){
@@ -1819,7 +1868,7 @@ function loadSettingsInputs(){
     : 'No PIN yet — anyone can switch back to the owner view.';
   document.title = (S().company ? S().company + ' — ' : '') + 'Team Cost & Margin Planner';
 }
-const API_BASE = 'http://127.0.0.1:3001';
+const API_BASE = '';
 const AUTH_KEY = 'pricingPortalAuth';
 
 function getStoredAuth(){
@@ -1841,16 +1890,55 @@ function updateLoginUi(){
 
   loginScreen.hidden = isLoggedIn;
   loginScreen.style.display = isLoggedIn ? 'none' : 'flex';
+  if (!isLoggedIn) showLoginForm();
 
   appShell.hidden = !isLoggedIn;
   appShell.style.display = isLoggedIn ? 'block' : 'none';
 }
 
-async function apiRequest(path, options = {}){
+function showLoginForm(){
+  $('#signupForm').hidden = true;
+  $('#loginForm').hidden = false;
+}
+function showSignupForm(){
+  $('#loginForm').hidden = true;
+  $('#signupForm').hidden = false;
+}
+
+/* One silent refresh attempt per 401, de-duplicated so several requests
+   failing at once (e.g. a burst of auto-saves) only trigger a single
+   refresh call rather than a stampede. */
+let refreshInFlight = null;
+async function attemptSilentRefresh(){
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(API_BASE + '/api/auth/refresh', { method: 'POST', credentials: 'include' })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .catch(() => null)
+      .finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function apiRequest(path, options = {}, _isRetry = false){
   const auth = getStoredAuth();
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (auth && auth.token) headers.Authorization = 'Bearer ' + auth.token;
-  const response = await fetch(API_BASE + path, { ...options, headers });
+  const response = await fetch(API_BASE + path, { ...options, headers, credentials: 'include' });
+
+  if (response.status === 401 && !_isRetry && path !== '/api/auth/login' && path !== '/api/auth/register') {
+    const refreshed = await attemptSilentRefresh();
+    if (refreshed && refreshed.token) {
+      setStoredAuth(refreshed.token, refreshed.user);
+      return apiRequest(path, options, true);
+    }
+    setStoredAuth(null, null);
+    updateLoginUi();
+    throw new Error('Your session has expired. Please log in again.');
+  }
+
   const contentType = response.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) {
@@ -1907,16 +1995,30 @@ function showSaveError(message){
 }
 
 let autoSaveTimer = null;
+let pendingSaveTasks = [];
+/* Debounces bursts of edits, but must never let a LATER edit silently discard
+   an EARLIER one just because they landed within the same 700ms window (e.g.
+   "add direct cost" immediately followed by typing its amount) — a single
+   shared timer that replaced the previous task on every call used to do
+   exactly that, including dropping the POST that creates a row before the
+   PUT that edits it, which made the edit 404 against a row that was never
+   created. Every queued task now runs, in the order it was queued, once
+   things go quiet for 700ms. */
 function queueAutoSave(task){
   const auth = getStoredAuth();
   if (!auth || !auth.token || typeof task !== 'function') return;
+  pendingSaveTasks.push(task);
   clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(async () => {
-    try {
-      await task();
-    } catch (err) {
-      console.warn('Auto-save failed:', err.message);
-      showSaveError('Save failed: ' + (err.message || 'unknown error') + '. Reload the page to get back in sync.');
+    const tasks = pendingSaveTasks;
+    pendingSaveTasks = [];
+    for (const queuedTask of tasks) {
+      try {
+        await queuedTask();
+      } catch (err) {
+        console.warn('Auto-save failed:', err.message);
+        showSaveError('Save failed: ' + (err.message || 'unknown error') + '. Reload the page to get back in sync.');
+      }
     }
   }, 700);
 }
@@ -1968,31 +2070,46 @@ function bindFiles(){
 }
 
 async function loginToApi(username, password){
-  try {
-    const result = await apiRequest('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password })
-    });
-    setStoredAuth(result.token, result.user);
-    updateLoginUi();
-    const ok = await hydrateFromApi();
-    if (!ok) {
-      alert('Login succeeded but the server state could not be loaded.');
-    }
-    return true;
-  } catch (err) {
-    throw err;
+  const result = await apiRequest('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password })
+  });
+  setStoredAuth(result.token, result.user);
+  updateLoginUi();
+  const ok = await hydrateFromApi();
+  if (!ok) {
+    alert('Login succeeded but the server state could not be loaded.');
   }
+  return true;
 }
 
-function logoutFromApi(){
+async function signupToApi(email, password){
+  const result = await apiRequest('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password })
+  });
+  setStoredAuth(result.token, result.user);
+  updateLoginUi();
+  const ok = await hydrateFromApi();
+  if (!ok) {
+    alert('Account created but the server state could not be loaded.');
+  }
+  return true;
+}
+
+async function logoutFromApi(){
+  try {
+    await apiRequest('/api/auth/logout', { method: 'POST' });
+  } catch (err) {
+    console.warn('Server-side logout failed (clearing local session anyway):', err.message);
+  }
   setStoredAuth(null, null);
   updateLoginUi();
-  alert('Logged out from the local API session.');
 }
 
 $('#btnLogin').addEventListener('click', () => {
   $('#loginScreen').hidden = false;
+  showLoginForm();
   $('#loginUsername').focus();
 });
 $('#loginForm').addEventListener('submit', async (e) => {
@@ -2012,6 +2129,48 @@ $('#loginForm').addEventListener('submit', async (e) => {
     $('#loginForm').reset();
   } catch (err) {
     errBox.textContent = err.message || 'Login failed.';
+    errBox.hidden = false;
+  }
+});
+
+$('#btnShowSignup').addEventListener('click', () => {
+  $('#loginError').hidden = true;
+  showSignupForm();
+  $('#signupEmail').focus();
+});
+$('#btnShowLogin').addEventListener('click', () => {
+  $('#signupError').hidden = true;
+  showLoginForm();
+  $('#loginUsername').focus();
+});
+$('#signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('#signupEmail').value.trim();
+  const password = $('#signupPassword').value;
+  const passwordConfirm = $('#signupPasswordConfirm').value;
+  const errBox = $('#signupError');
+  errBox.hidden = true;
+  errBox.textContent = '';
+  if (!email || !password || !passwordConfirm) {
+    errBox.textContent = 'Please fill in every field.';
+    errBox.hidden = false;
+    return;
+  }
+  if (password.length < 8) {
+    errBox.textContent = 'Password must be at least 8 characters long.';
+    errBox.hidden = false;
+    return;
+  }
+  if (password !== passwordConfirm) {
+    errBox.textContent = 'Passwords do not match.';
+    errBox.hidden = false;
+    return;
+  }
+  try {
+    await signupToApi(email, password);
+    $('#signupForm').reset();
+  } catch (err) {
+    errBox.textContent = err.message || 'Sign up failed.';
     errBox.hidden = false;
   }
 });
