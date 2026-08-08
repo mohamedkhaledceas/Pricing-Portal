@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: pricing-portal
+    runtime: node
+    plan: starter
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_DIR
+        value: /var/data
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 2h
+      - key: SEED_OWNER_USERNAME
+        sync: false
+      - key: SEED_OWNER_PASSWORD
+        sync: false
+    disk:
+      name: pricing-portal-data
+      mountPath: /var/data
+      sizeGB: 1
