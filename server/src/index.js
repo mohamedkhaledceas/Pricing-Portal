@@ -16,9 +16,14 @@ const {
   setRefreshCookie,
   clearRefreshCookie,
 } = require('./auth');
+const logger = require('./common/logger');
+const audit = require('./common/audit');
+const correlationId = require('./common/correlationId');
+const errorHandler = require('./common/errorHandler');
+const { ValidationError } = require('./common/errors');
 
 if (!process.env.JWT_SECRET) {
-  console.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
+  logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
   process.exit(1);
 }
 
@@ -26,10 +31,20 @@ const app = express();
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || '0.0.0.0';
 
+/* Render (and most PaaS hosts) sit the app behind a reverse proxy — without
+   this, req.ip resolves to the proxy's address for every request, which
+   silently breaks both express-rate-limit's per-client accounting and the
+   IP recorded on every audit log entry below. */
+app.set('trust proxy', 1);
+
 /* Frontend and API are served from this same Express app on the same origin —
    there is no legitimate cross-origin caller, so no CORS middleware is needed
    at all (this also fixes the previous origin:true+credentials:true config,
    which reflected any origin back as allowed). */
+/* Must run before express.json() — a malformed request body makes body-parser
+   skip straight to the error handler, bypassing any middleware mounted after
+   it, which would otherwise leave that error's log entry without one. */
+app.use(correlationId);
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
@@ -40,8 +55,6 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
 });
-
-class ValidationError extends Error {}
 
 /* Replaces the old `Number(value || 0)` pattern, which silently turned any
    non-numeric input (typos, garbage strings) into 0 with no feedback. A
@@ -481,6 +494,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
 
   const refreshToken = issueRefreshToken(user.id);
   setRefreshCookie(res, refreshToken);
+  audit.record({ userId: user.id, username: user.username, action: 'user.signup', entityType: 'user', entityId: String(user.id), ip: req.ip });
   return res.status(201).json({
     token: signToken(user),
     user: serializeUser(user),
@@ -498,18 +512,22 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
     return res.status(400).json({ error: 'Password is required.' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username.trim().toLowerCase());
+  const normalizedUsername = username.trim().toLowerCase();
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(normalizedUsername);
   if (!user) {
+    audit.record({ username: normalizedUsername, action: 'user.login_failed', entityType: 'user', ip: req.ip });
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
 
   const valid = bcrypt.compareSync(password, user.password_hash);
   if (!valid) {
+    audit.record({ userId: user.id, username: user.username, action: 'user.login_failed', entityType: 'user', entityId: String(user.id), ip: req.ip });
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
 
   const refreshToken = issueRefreshToken(user.id);
   setRefreshCookie(res, refreshToken);
+  audit.record({ userId: user.id, username: user.username, action: 'user.login', entityType: 'user', entityId: String(user.id), ip: req.ip });
   return res.json({
     token: signToken(user),
     user: serializeUser(user),
@@ -548,8 +566,12 @@ app.post('/api/auth/refresh', authLimiter, (req, res) => {
 
 app.post('/api/auth/logout', (req, res) => {
   const rawToken = req.cookies ? req.cookies[REFRESH_COOKIE_NAME] : null;
+  const tokenRow = findValidRefreshToken(rawToken);
   revokeRefreshTokenByRaw(rawToken);
   clearRefreshCookie(res);
+  if (tokenRow) {
+    audit.record({ userId: tokenRow.user_id, action: 'user.logout', entityType: 'user', entityId: String(tokenRow.user_id), ip: req.ip });
+  }
   return res.json({ ok: true });
 });
 
@@ -579,6 +601,7 @@ app.put('/api/settings', authMiddleware, (req, res) => {
   const current = readCompanySettings();
   const next = { ...current, ...settings };
   upsertSettings({ settings: next });
+  audit.recordFromRequest(req, 'company_settings.update', 'company_settings', '1', { before: current, after: settings });
   res.json({ settings: readCompanySettings() });
 });
 
@@ -589,7 +612,7 @@ app.get('/api/team', authMiddleware, (req, res) => {
 app.post('/api/team', authMiddleware, (req, res) => {
   const data = req.body || {};
   const next = readState();
-  next.team = [...next.team, {
+  const newMember = {
     id: data.id || `team-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: data.name || '',
     role: data.role || '',
@@ -599,8 +622,10 @@ app.post('/api/team', authMiddleware, (req, res) => {
     util: numOrDefault(data.util, 70, 'util'),
     override: numOrDefault(data.override, null, 'override'),
     cur: data.cur || 'EGP',
-  }];
+  };
+  next.team = [...next.team, newMember];
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'team_member.create', 'team_member', newMember.id, { after: newMember });
   res.status(201).json({ team: readState().team });
 });
 
@@ -610,19 +635,23 @@ app.put('/api/team/:id', authMiddleware, (req, res) => {
   if (index === -1) {
     return res.status(404).json({ error: 'Team member not found.' });
   }
-  next.team[index] = { ...next.team[index], ...req.body };
+  const before = next.team[index];
+  next.team[index] = { ...before, ...req.body };
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'team_member.update', 'team_member', req.params.id, { before, after: next.team[index] });
   return res.json({ team: readState().team });
 });
 
 app.delete('/api/team/:id', authMiddleware, (req, res) => {
   const next = readState();
+  const removed = next.team.find((member) => member.id === req.params.id);
   next.team = next.team.filter((member) => member.id !== req.params.id);
   next.projects = (next.projects || []).map((project) => ({
     ...project,
     lines: (project.lines || []).filter((line) => line.personId !== req.params.id),
   }));
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'team_member.delete', 'team_member', req.params.id, { before: removed || null });
   return res.json({ team: readState().team });
 });
 
@@ -633,15 +662,17 @@ app.get('/api/expenses', authMiddleware, (req, res) => {
 app.post('/api/expenses', authMiddleware, (req, res) => {
   const data = req.body || {};
   const next = readState();
-  next.expenses = [...next.expenses, {
+  const newExpense = {
     id: data.id || `expense-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: data.name || '',
     cat: data.cat || '',
     amount: numOrDefault(data.amount, 0, 'amount'),
     freq: data.freq || 'month',
     cur: data.cur || 'EGP',
-  }];
+  };
+  next.expenses = [...next.expenses, newExpense];
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'expense.create', 'expense', newExpense.id, { after: newExpense });
   return res.status(201).json({ expenses: readState().expenses });
 });
 
@@ -651,15 +682,19 @@ app.put('/api/expenses/:id', authMiddleware, (req, res) => {
   if (index === -1) {
     return res.status(404).json({ error: 'Expense not found.' });
   }
-  next.expenses[index] = { ...next.expenses[index], ...req.body };
+  const before = next.expenses[index];
+  next.expenses[index] = { ...before, ...req.body };
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'expense.update', 'expense', req.params.id, { before, after: next.expenses[index] });
   return res.json({ expenses: readState().expenses });
 });
 
 app.delete('/api/expenses/:id', authMiddleware, (req, res) => {
   const next = readState();
+  const removed = next.expenses.find((item) => item.id === req.params.id);
   next.expenses = next.expenses.filter((item) => item.id !== req.params.id);
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'expense.delete', 'expense', req.params.id, { before: removed || null });
   return res.json({ expenses: readState().expenses });
 });
 
@@ -689,6 +724,7 @@ app.post('/api/projects', authMiddleware, (req, res) => {
   next.projects = [...next.projects, newProject];
   next.ui.currentProject = newProject.id;
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'project.create', 'project', newProject.id, { after: newProject });
   return res.status(201).json({ project: readState().projects.find((item) => item.id === newProject.id) });
 });
 
@@ -698,18 +734,22 @@ app.put('/api/projects/:id', authMiddleware, (req, res) => {
   if (index === -1) {
     return res.status(404).json({ error: 'Project not found.' });
   }
-  next.projects[index] = { ...next.projects[index], ...req.body };
+  const before = next.projects[index];
+  next.projects[index] = { ...before, ...req.body };
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'project.update', 'project', req.params.id, { before, after: next.projects[index] });
   return res.json({ project: readState().projects.find((project) => project.id === req.params.id) });
 });
 
 app.delete('/api/projects/:id', authMiddleware, (req, res) => {
   const next = readState();
+  const removed = next.projects.find((project) => project.id === req.params.id);
   next.projects = next.projects.filter((project) => project.id !== req.params.id);
   if (next.ui.currentProject === req.params.id) {
     next.ui.currentProject = next.projects[0]?.id || null;
   }
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'project.delete', 'project', req.params.id, { before: removed || null });
   return res.json({ projects: readState().projects });
 });
 
@@ -727,6 +767,7 @@ app.post('/api/projects/:projectId/lines', authMiddleware, (req, res) => {
   };
   project.lines = [...(project.lines || []), line];
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'project_line.create', 'project_line', line.id, { projectId, after: line });
   return res.status(201).json({ line: readState().projects.find((item) => item.id === projectId)?.lines.find((entry) => entry.id === line.id) });
 });
 
@@ -737,8 +778,10 @@ app.put('/api/projects/:projectId/lines/:id', authMiddleware, (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found.' });
   const index = (project.lines || []).findIndex((line) => line.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Project line not found.' });
-  project.lines[index] = { ...project.lines[index], ...req.body };
+  const before = project.lines[index];
+  project.lines[index] = { ...before, ...req.body };
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'project_line.update', 'project_line', req.params.id, { projectId, before, after: project.lines[index] });
   return res.json({ line: readState().projects.find((item) => item.id === projectId)?.lines.find((entry) => entry.id === req.params.id) });
 });
 
@@ -747,8 +790,10 @@ app.delete('/api/projects/:projectId/lines/:id', authMiddleware, (req, res) => {
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
   if (!project) return res.status(404).json({ error: 'Project not found.' });
+  const removed = (project.lines || []).find((line) => line.id === req.params.id);
   project.lines = (project.lines || []).filter((line) => line.id !== req.params.id);
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'project_line.delete', 'project_line', req.params.id, { projectId, before: removed || null });
   return res.json({ lines: readState().projects.find((item) => item.id === projectId)?.lines || [] });
 });
 
@@ -767,6 +812,7 @@ app.post('/api/projects/:projectId/direct-costs', authMiddleware, (req, res) => 
   };
   project.direct = [...(project.direct || []), direct];
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'direct_cost.create', 'direct_cost', direct.id, { projectId, after: direct });
   return res.status(201).json({ direct: readState().projects.find((item) => item.id === projectId)?.direct.find((entry) => entry.id === direct.id) });
 });
 
@@ -777,8 +823,10 @@ app.put('/api/projects/:projectId/direct-costs/:id', authMiddleware, (req, res) 
   if (!project) return res.status(404).json({ error: 'Project not found.' });
   const index = (project.direct || []).findIndex((item) => item.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Direct cost not found.' });
-  project.direct[index] = { ...project.direct[index], ...req.body };
+  const before = project.direct[index];
+  project.direct[index] = { ...before, ...req.body };
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'direct_cost.update', 'direct_cost', req.params.id, { projectId, before, after: project.direct[index] });
   return res.json({ direct: readState().projects.find((item) => item.id === projectId)?.direct.find((entry) => entry.id === req.params.id) });
 });
 
@@ -787,8 +835,10 @@ app.delete('/api/projects/:projectId/direct-costs/:id', authMiddleware, (req, re
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
   if (!project) return res.status(404).json({ error: 'Project not found.' });
+  const removed = (project.direct || []).find((item) => item.id === req.params.id);
   project.direct = (project.direct || []).filter((item) => item.id !== req.params.id);
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'direct_cost.delete', 'direct_cost', req.params.id, { projectId, before: removed || null });
   return res.json({ direct: readState().projects.find((item) => item.id === projectId)?.direct || [] });
 });
 
@@ -808,6 +858,7 @@ app.post('/api/projects/:projectId/scenarios', authMiddleware, (req, res) => {
   };
   project.scenarios = [...(project.scenarios || []), scenario];
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'scenario.create', 'scenario', scenario.id, { projectId, after: scenario });
   return res.status(201).json({ scenario: readState().projects.find((item) => item.id === projectId)?.scenarios.find((entry) => entry.id === scenario.id) });
 });
 
@@ -818,8 +869,10 @@ app.put('/api/projects/:projectId/scenarios/:id', authMiddleware, (req, res) => 
   if (!project) return res.status(404).json({ error: 'Project not found.' });
   const index = (project.scenarios || []).findIndex((scenario) => scenario.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Scenario not found.' });
-  project.scenarios[index] = { ...project.scenarios[index], ...req.body };
+  const before = project.scenarios[index];
+  project.scenarios[index] = { ...before, ...req.body };
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'scenario.update', 'scenario', req.params.id, { projectId, before, after: project.scenarios[index] });
   return res.json({ scenario: readState().projects.find((item) => item.id === projectId)?.scenarios.find((entry) => entry.id === req.params.id) });
 });
 
@@ -828,8 +881,10 @@ app.delete('/api/projects/:projectId/scenarios/:id', authMiddleware, (req, res) 
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
   if (!project) return res.status(404).json({ error: 'Project not found.' });
+  const removed = (project.scenarios || []).find((scenario) => scenario.id === req.params.id);
   project.scenarios = (project.scenarios || []).filter((scenario) => scenario.id !== req.params.id);
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'scenario.delete', 'scenario', req.params.id, { projectId, before: removed || null });
   return res.json({ scenarios: readState().projects.find((item) => item.id === projectId)?.scenarios || [] });
 });
 
@@ -859,6 +914,7 @@ app.post('/api/projects/:projectId/quote-lines', authMiddleware, (req, res) => {
     project.quote.lines[existingIndex] = { ...project.quote.lines[existingIndex], ...line };
   }
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'quote_line.create', 'quote_line', line.id, { projectId, after: line });
   return res.status(201).json({ line: readState().projects.find((item) => item.id === projectId)?.quote?.lines.find((entry) => entry.id === line.id) });
 });
 
@@ -870,8 +926,10 @@ app.put('/api/projects/:projectId/quote-lines/:id', authMiddleware, (req, res) =
   project.quote = project.quote || { num: '', date: '', valid: 30, detail: 'lump', disc: 0, vat: 0, scope: '', terms: '', lines: [] };
   const index = (project.quote.lines || []).findIndex((line) => line.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Quote line not found.' });
-  project.quote.lines[index] = { ...project.quote.lines[index], ...req.body };
+  const before = project.quote.lines[index];
+  project.quote.lines[index] = { ...before, ...req.body };
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'quote_line.update', 'quote_line', req.params.id, { projectId, before, after: project.quote.lines[index] });
   return res.json({ line: readState().projects.find((item) => item.id === projectId)?.quote?.lines.find((entry) => entry.id === req.params.id) });
 });
 
@@ -881,8 +939,10 @@ app.delete('/api/projects/:projectId/quote-lines/:id', authMiddleware, (req, res
   const project = next.projects.find((item) => item.id === projectId);
   if (!project) return res.status(404).json({ error: 'Project not found.' });
   project.quote = project.quote || { num: '', date: '', valid: 30, detail: 'lump', disc: 0, vat: 0, scope: '', terms: '', lines: [] };
+  const removed = (project.quote.lines || []).find((line) => line.id === req.params.id);
   project.quote.lines = (project.quote.lines || []).filter((line) => line.id !== req.params.id);
   replaceWholeState(next);
+  audit.recordFromRequest(req, 'quote_line.delete', 'quote_line', req.params.id, { projectId, before: removed || null });
   return res.json({ lines: readState().projects.find((item) => item.id === projectId)?.quote?.lines || [] });
 });
 
@@ -896,22 +956,8 @@ app.put('/api/state', authMiddleware, (req, res) => {
   });
 });
 
-app.use((err, req, res, next) => {
-  if (err instanceof ValidationError) {
-    return res.status(400).json({ error: err.message });
-  }
-  /* express.json() throws a SyntaxError with `.status === 400` on malformed
-     request bodies — previously this fell through to the generic 500 below,
-     which is both misleading (it's a client error, not a server fault) and
-     not what "invalid request" should look like to a caller. */
-  const status = err.status || err.statusCode;
-  if (status && status >= 400 && status < 500) {
-    return res.status(status).json({ error: 'The request could not be understood.' });
-  }
-  console.error(err);
-  return res.status(500).json({ error: 'Internal server error.' });
-});
+app.use(errorHandler);
 
 app.listen(PORT, HOST, () => {
-  console.log(`Server listening on http://${HOST}:${PORT}`);
+  logger.info(`Server listening on http://${HOST}:${PORT}`);
 });
