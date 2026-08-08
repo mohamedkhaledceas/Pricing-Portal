@@ -1467,6 +1467,45 @@ function bindTabs(){
 }
 function findRow(el){ const tr = el.closest('tr'); return tr ? tr.dataset.id : null; }
 
+/* Editable fields commit to the server on blur (click-away or Tab) or Enter —
+   like a spreadsheet cell — instead of on every keystroke. Local `state`
+   still updates live on every `input` event so computed totals stay
+   reactive; only the network write (and the audit-log row it produces
+   server-side) is deferred until the edit is actually finished. Escape
+   reverts the field to the value it had when it gained focus, by resetting
+   .value and re-dispatching `input` so the existing per-field coercion
+   logic (already registered on the same container/element) puts `state`
+   back in sync too — without duplicating that coercion logic here.
+   `el` (not `container`) is the target: pass either a single field or a
+   delegated container; focusin/focusout/keydown all fire on the actual
+   target regardless of which one is listening. */
+function bindCommitOnBlur(el, isEditable, commit){
+  el.addEventListener('focusin', e => {
+    if(!isEditable(e.target)) return;
+    e.target.dataset.commitBaseline = e.target.value;
+  });
+  el.addEventListener('focusout', e => {
+    if(!isEditable(e.target) || e.target.dataset.commitBaseline === undefined) return;
+    const baseline = e.target.dataset.commitBaseline;
+    delete e.target.dataset.commitBaseline;
+    if(e.target.value !== baseline) commit(e.target);
+  });
+  el.addEventListener('keydown', e => {
+    if(!isEditable(e.target)) return;
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      e.target.blur();
+    } else if(e.key === 'Escape'){
+      e.preventDefault();
+      if(e.target.dataset.commitBaseline !== undefined){
+        e.target.value = e.target.dataset.commitBaseline;
+        e.target.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      e.target.blur();
+    }
+  });
+}
+
 function bindTables(){
   /* team */
   $('#teamBody').addEventListener('input', e => {
@@ -1476,10 +1515,14 @@ function bindTables(){
          : (f==='override' ? (e.target.value===''?null:num(e.target.value)) : num(e.target.value));
     p[f] = nextValue;
     recompute();
+  });
+  bindCommitOnBlur($('#teamBody'), el => el.matches('input,select') && !!el.dataset.f, el => {
+    const id = findRow(el), f = el.dataset.f; if(!id || !f) return;
+    const p = personById(id); if(!p) return;
     queueAutoSave(async () => {
       const response = await apiRequest(`/api/team/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ [f]: nextValue })
+        body: JSON.stringify({ [f]: p[f] })
       });
       if (Array.isArray(response.team)) applyServerTeam(response.team);
       renderTeam(); recompute();
@@ -1525,13 +1568,17 @@ function bindTables(){
     const nextValue = (f==='amount') ? num(e.target.value) : e.target.value;
     x[f] = nextValue;
     recompute();
-    queueAutoSave(() => apiRequest(`/api/expenses/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ [f]: nextValue })
-    }));
   });
   $('#expBody').addEventListener('change', e => {
     if(e.target.dataset.f === 'freq') recompute();
+  });
+  bindCommitOnBlur($('#expBody'), el => el.matches('input,select') && !!el.dataset.f, el => {
+    const id = findRow(el), f = el.dataset.f; if(!id || !f) return;
+    const x = state.expenses.find(v => v.id === id); if(!x) return;
+    queueAutoSave(() => apiRequest(`/api/expenses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ [f]: x[f] })
+    }));
   });
   $('#expBody').addEventListener('click', e => {
     if(e.target.dataset.del !== 'expense') return;
@@ -1554,7 +1601,8 @@ function bindTables(){
   const pf = {'#p_name':'name','#p_client':'client','#p_months':'months','#p_status':'status',
               '#p_cont':'cont','#p_target':'target','#p_price':'price','#p_start':'start','#p_cur':'cur'};
   Object.entries(pf).forEach(([sel,key]) => {
-    $(sel).addEventListener('input', e => {
+    const el = $(sel);
+    el.addEventListener('input', e => {
       const proj = currentProject(); if(!proj) return;
       const nextValue = (key==='name'||key==='client'||key==='status'||key==='start'||key==='cur') ? e.target.value
         : (key==='price' ? (e.target.value === '' ? null : num(e.target.value)) : num(e.target.value));
@@ -1563,9 +1611,12 @@ function bindTables(){
       else proj[key] = nextValue;
       if(key==='name'||key==='client') renderProjectSelects();
       recompute();
+    });
+    bindCommitOnBlur(el, () => true, () => {
+      const proj = currentProject(); if(!proj) return;
       queueAutoSave(() => apiRequest(`/api/projects/${proj.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ [key]: nextValue })
+        body: JSON.stringify({ [key]: proj[key] })
       }));
     });
   });
@@ -1575,9 +1626,12 @@ function bindTables(){
     proj.price = nextValue;
     const pi = $('#p_price'); if(pi) pi.value = e.target.value;
     recompute();
+  });
+  bindCommitOnBlur($('#b_price'), () => true, () => {
+    const proj = currentProject(); if(!proj) return;
     queueAutoSave(() => apiRequest(`/api/projects/${proj.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ price: nextValue })
+      body: JSON.stringify({ price: proj.price })
     }));
   });
   $('#useSugg').addEventListener('click', () => {
@@ -1594,12 +1648,17 @@ function bindTables(){
     const nextValue = f==='hours' ? num(e.target.value) : e.target.value;
     l[f] = nextValue;
     recompute();
-    queueAutoSave(() => apiRequest(`/api/projects/${proj.id}/lines/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ [f]: nextValue })
-    }));
   });
   $('#lineBody').addEventListener('change', e => { if(e.target.dataset.f==='personId') recompute(); });
+  bindCommitOnBlur($('#lineBody'), el => el.matches('input,select') && !!el.dataset.f, el => {
+    const proj = currentProject(); if(!proj) return;
+    const id = findRow(el), f = el.dataset.f; if(!id||!f) return;
+    const l = proj.lines.find(v => v.id === id); if(!l) return;
+    queueAutoSave(() => apiRequest(`/api/projects/${proj.id}/lines/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ [f]: l[f] })
+    }));
+  });
   $('#lineBody').addEventListener('click', e => {
     if(e.target.dataset.del !== 'line') return;
     const proj = currentProject();
@@ -1629,9 +1688,14 @@ function bindTables(){
     const nextValue = f==='amount' ? num(e.target.value) : e.target.value;
     d[f] = nextValue;
     recompute();
+  });
+  bindCommitOnBlur($('#dcBody'), el => el.matches('input,select') && !!el.dataset.f, el => {
+    const proj = currentProject(); if(!proj) return;
+    const id = findRow(el), f = el.dataset.f; if(!id||!f) return;
+    const d = proj.direct.find(v => v.id === id); if(!d) return;
     queueAutoSave(() => apiRequest(`/api/projects/${proj.id}/direct-costs/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ [f]: nextValue })
+      body: JSON.stringify({ [f]: d[f] })
     }));
   });
   $('#dcBody').addEventListener('click', e => {
@@ -1662,9 +1726,14 @@ function bindTables(){
     const nextValue = f==='name' ? e.target.value : (f==='price' ? (e.target.value===''?null:num(e.target.value)) : num(e.target.value));
     s[f] = nextValue;
     recompute();
+  });
+  bindCommitOnBlur($('#scenBody'), el => el.matches('input,select') && !!el.dataset.f, el => {
+    const proj = currentProject(); if(!proj) return;
+    const id = findRow(el), f = el.dataset.f; if(!id||!f) return;
+    const s = proj.scenarios.find(v => v.id === id); if(!s) return;
     queueAutoSave(() => apiRequest(`/api/projects/${proj.id}/scenarios/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ [f]: nextValue })
+      body: JSON.stringify({ [f]: s[f] })
     }));
   });
   $('#scenBody').addEventListener('click', e => {
@@ -1690,15 +1759,19 @@ function bindTables(){
   /* quote */
   const qf = {'#q_num':'num','#q_date':'date','#q_valid':'valid','#q_detail':'detail','#q_disc':'disc','#q_vat':'vat','#q_scope':'scope','#q_terms':'terms'};
   Object.entries(qf).forEach(([sel,key]) => {
-    $(sel).addEventListener('input', e => {
+    const el = $(sel);
+    el.addEventListener('input', e => {
       const proj = currentProject(); if(!proj) return;
       const nextValue = (key==='valid'||key==='disc'||key==='vat') ? num(e.target.value) : e.target.value;
       proj.quote[key] = nextValue;
       if(key==='detail') $('#q_customWrap').hidden = e.target.value !== 'phase';
       recompute();
+    });
+    bindCommitOnBlur(el, () => true, () => {
+      const proj = currentProject(); if(!proj) return;
       queueAutoSave(() => apiRequest(`/api/projects/${proj.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ quote: { ...proj.quote, [key]: nextValue } })
+        body: JSON.stringify({ quote: { ...proj.quote, [key]: proj.quote[key] } })
       }));
     });
   });
@@ -1709,9 +1782,14 @@ function bindTables(){
     const nextValue = f==='amount' ? num(e.target.value) : e.target.value;
     l[f] = nextValue;
     recompute();
+  });
+  bindCommitOnBlur($('#qlBody'), el => el.matches('input,select') && !!el.dataset.f, el => {
+    const proj = currentProject(); if(!proj) return;
+    const id = findRow(el), f = el.dataset.f; if(!id||!f) return;
+    const l = proj.quote.lines.find(v => v.id === id); if(!l) return;
     queueAutoSave(() => apiRequest(`/api/projects/${proj.id}/quote-lines/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ [f]: nextValue })
+      body: JSON.stringify({ [f]: l[f] })
     }));
   });
   $('#qlBody').addEventListener('click', e => {

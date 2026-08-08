@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const dbDir = path.join(__dirname, '..', 'data');
+/* DB_DIR lets a persistent disk be mounted anywhere the hosting platform
+   chooses (e.g. Render/Railway/Fly volumes) and pointed at explicitly,
+   instead of assuming the database lives inside the deployed source tree —
+   which most platforms wipe and recreate on every deploy. */
+const dbDir = process.env.DB_DIR || path.join(__dirname, '..', 'data');
 const dbPath = path.join(dbDir, 'app.db');
 
 fs.mkdirSync(dbDir, { recursive: true });
@@ -133,6 +137,22 @@ const schema = `
     sort_order INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
+    details TEXT,
+    ip_address TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
 `;
 
 db.exec(schema);
