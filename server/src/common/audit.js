@@ -25,7 +25,7 @@ function record({ userId = null, username = null, action, entityType = null, ent
 function recordFromRequest(req, action, entityType, entityId, details) {
   record({
     userId: req.user ? req.user.id : null,
-    username: req.user ? req.user.username : null,
+    username: req.user ? req.user.email : null,
     action,
     entityType,
     entityId,
