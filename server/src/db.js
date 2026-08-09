@@ -17,9 +17,14 @@ db.pragma('journal_mode = WAL');
 const schema = `
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    first_name TEXT NOT NULL DEFAULT '',
+    last_name TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'owner'))
+    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'manager', 'operations', 'finance', 'admin')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -156,5 +161,58 @@ const schema = `
 `;
 
 db.exec(schema);
+
+/* One-time rebuild for databases created before the email/roles rework — the
+   CREATE TABLE IF NOT EXISTS above is a no-op against an existing old-shape
+   `users` table (username column, role CHECK limited to 'user'/'owner'), so
+   the rebuild has to happen by hand. Runs on every boot but only acts once:
+   skipped as soon as the `email` column exists. SQLite can't ALTER a CHECK
+   constraint in place, so this rebuilds the table rather than altering it. */
+const usersColumns = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+if (!usersColumns.includes('email')) {
+  /* better-sqlite3 enables FK enforcement by default (unlike a bare sqlite3
+     CLI connection to the same file) — dropping `users` while refresh_tokens/
+     audit_log still reference it fails unless enforcement is off for this
+     step. PRAGMA foreign_keys can't be toggled inside a transaction, so it's
+     set outside the db.transaction() call below, not within it. */
+  db.pragma('foreign_keys = OFF');
+  const migrateUsers = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE users_migrated (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE,
+        first_name TEXT NOT NULL DEFAULT '',
+        last_name TEXT NOT NULL DEFAULT '',
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'manager', 'operations', 'finance', 'admin')),
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    const insert = db.prepare(`
+      INSERT INTO users_migrated (id, email, first_name, last_name, password_hash, role, is_active, created_at, updated_at)
+      VALUES (@id, @email, @first_name, @last_name, @password_hash, @role, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `);
+    db.prepare('SELECT * FROM users').all().forEach((row) => {
+      /* 'owner' was always exactly one account (the operator's own) — becomes
+         'admin' under the new enum, and is the only row we can confidently
+         backfill a real name for. */
+      const wasOwner = row.role === 'owner';
+      insert.run({
+        id: row.id,
+        email: row.username,
+        first_name: wasOwner ? 'Mohamed' : '',
+        last_name: wasOwner ? 'Khalid' : '',
+        password_hash: row.password_hash,
+        role: wasOwner ? 'admin' : row.role,
+      });
+    });
+    db.exec('DROP TABLE users');
+    db.exec('ALTER TABLE users_migrated RENAME TO users');
+  });
+  migrateUsers();
+  db.pragma('foreign_keys = ON');
+}
 
 module.exports = db;
