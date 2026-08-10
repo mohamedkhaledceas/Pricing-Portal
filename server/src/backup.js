@@ -24,6 +24,13 @@ const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 db.backup(destPath)
   .then(() => {
     db.close();
+    /* The snapshot inherits WAL mode from the source, which would otherwise
+       leave stray -shm/-wal sidecar files next to every archived backup.
+       Switch the standalone copy to DELETE mode so it's a single
+       self-contained file once at rest. */
+    const snapshot = new Database(destPath);
+    snapshot.pragma('journal_mode = DELETE');
+    snapshot.close();
   })
   .catch((err) => {
     db.close();
