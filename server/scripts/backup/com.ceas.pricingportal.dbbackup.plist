@@ -14,8 +14,11 @@
     launchctl unload ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist
     rm ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist
 
-  Runs only while logged in — if the Mac is asleep/off at 2am, that day's
-  run is simply skipped (check backup.log for gaps).
+  This laptop sleeps overnight, so a fixed StartCalendarInterval time would
+  get skipped most nights. Instead, StartInterval polls every 2 hours
+  (cheap — run-backup.sh exits immediately if run inside the last 20h) and
+  RunAtLoad fires a check on every login, so a backup happens once a day
+  whenever the Mac is actually awake, rather than at a specific clock time.
 -->
 <plist version="1.0">
 <dict>
@@ -26,15 +29,10 @@
         <string>/bin/bash</string>
         <string>/Users/mohamedkhaled/Documents/ceas/ceasRepos/PricingPortal/server/scripts/backup/run-backup.sh</string>
     </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>2</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <key>StartInterval</key>
+    <integer>7200</integer>
     <key>RunAtLoad</key>
-    <false/>
+    <true/>
     <key>StandardOutPath</key>
     <string>/Users/mohamedkhaled/ceas-backups/pricing-portal/launchd.out.log</string>
     <key>StandardErrorPath</key>
