@@ -927,6 +927,33 @@ app.delete('/api/projects/:id', authMiddleware, (req, res) => {
   return res.json({ projects: readState().projects });
 });
 
+/* Every sub-entity's audit rows (project_line/direct_cost/scenario/quote_line)
+   carry the parent projectId inside `details`, since their own entityId is
+   the line item's id, not the project's — json_extract pulls it back out to
+   scope the history to one project without a schema change. */
+app.get('/api/projects/:id/history', authMiddleware, (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, username, action, entity_type, entity_id, details, created_at
+    FROM audit_log
+    WHERE (entity_type = 'project' AND entity_id = ?)
+       OR (entity_type IN ('project_line', 'direct_cost', 'scenario', 'quote_line')
+           AND json_extract(details, '$.projectId') = ?)
+    ORDER BY created_at DESC, id DESC
+    LIMIT 200
+  `).all(req.params.id, req.params.id);
+
+  const history = rows.map((row) => ({
+    id: row.id,
+    username: row.username,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    details: row.details ? JSON.parse(row.details) : null,
+    createdAt: row.created_at,
+  }));
+  return res.json({ history });
+});
+
 app.post('/api/projects/:projectId/lines', authMiddleware, (req, res) => {
   const projectId = req.params.projectId;
   const payload = req.body || {};
