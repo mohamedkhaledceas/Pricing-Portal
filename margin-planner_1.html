@@ -173,6 +173,11 @@ body[data-mode="admin"] .bd-only{display:none !important}
   background:var(--surface-1); border:1px solid var(--critical); color:var(--critical);
   border-radius:10px; padding:10px 14px; font-size:13px; box-shadow:0 10px 30px rgba(0,0,0,0.22);
 }
+#saveOkToast{
+  position:fixed; bottom:18px; right:18px; z-index:50; max-width:360px;
+  background:var(--surface-1); border:1px solid var(--good); color:var(--good-text);
+  border-radius:10px; padding:10px 14px; font-size:13px; box-shadow:0 10px 30px rgba(0,0,0,0.22);
+}
 #historyBackdrop{
   position:fixed; inset:0; background:rgba(4,41,64,0.45); z-index:44;
 }
@@ -728,6 +733,7 @@ body[data-mode="admin"] .bd-only{display:none !important}
 </main>
 
 <div id="saveErrorToast" role="alert" hidden></div>
+<div id="saveOkToast" role="status" hidden></div>
 
 <div id="historyBackdrop" hidden></div>
 <div id="historyPanel" hidden role="dialog" aria-label="Project history">
@@ -2224,6 +2230,16 @@ function showSaveError(message){
   saveErrorTimer = setTimeout(() => { el.hidden = true; }, 6000);
 }
 
+let saveOkTimer = null;
+function showSaveOk(){
+  const el = $('#saveOkToast');
+  if (!el) return;
+  el.textContent = 'All changes saved.';
+  el.hidden = false;
+  clearTimeout(saveOkTimer);
+  saveOkTimer = setTimeout(() => { el.hidden = true; }, 2500);
+}
+
 /* ---------- project history panel ---------- */
 /* Formats audit_log rows (already scoped to one project server-side, see
    GET /api/projects/:id/history) into plain-language sentences. Money
@@ -2394,14 +2410,17 @@ function queueAutoSave(task){
   autoSaveTimer = setTimeout(async () => {
     const tasks = pendingSaveTasks;
     pendingSaveTasks = [];
+    let allOk = true;
     for (const queuedTask of tasks) {
       try {
         await queuedTask();
       } catch (err) {
+        allOk = false;
         console.warn('Auto-save failed:', err.message);
         showSaveError('Save failed: ' + (err.message || 'unknown error') + '. Reload the page to get back in sync.');
       }
     }
+    if (allOk && tasks.length) showSaveOk();
   }, 700);
 }
 
