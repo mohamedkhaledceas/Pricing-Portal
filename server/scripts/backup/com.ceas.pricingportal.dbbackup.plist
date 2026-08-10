@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the installed launchd job. This file is documentation/backup
+  only — launchd requires the actual copy to live at
+  ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist. To (re)install:
+
+    cp server/scripts/backup/com.ceas.pricingportal.dbbackup.plist \
+       ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist
+
+  To uninstall:
+
+    launchctl unload ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist
+    rm ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist
+
+  Runs only while logged in — if the Mac is asleep/off at 2am, that day's
+  run is simply skipped (check backup.log for gaps).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ceas.pricingportal.dbbackup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/mohamedkhaled/Documents/ceas/ceasRepos/PricingPortal/server/scripts/backup/run-backup.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/mohamedkhaled/ceas-backups/pricing-portal/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mohamedkhaled/ceas-backups/pricing-portal/launchd.err.log</string>
+</dict>
+</plist>
