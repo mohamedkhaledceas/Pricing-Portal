@@ -3,11 +3,10 @@
 <!--
   Template for the installed launchd job. This file is documentation/backup
   only — launchd requires the actual copy to live at
-  ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist. To (re)install:
-
-    cp server/scripts/backup/com.ceas.pricingportal.dbbackup.plist \
-       ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist
+  ~/Library/LaunchAgents/com.ceas.pricingportal.dbbackup.plist. Run
+  server/scripts/backup/install.sh to (re)install after any change to this
+  file or to run-backup.sh — don't cp/launchctl this by hand, since install.sh
+  also syncs run-backup.sh out to its execution location (see below).
 
   To uninstall:
 
@@ -19,6 +18,15 @@
   (cheap — run-backup.sh exits immediately if run inside the last 20h) and
   RunAtLoad fires a check on every login, so a backup happens once a day
   whenever the Mac is actually awake, rather than at a specific clock time.
+
+  ProgramArguments points at ~/ceas-backups/pricing-portal/bin/run-backup.sh,
+  NOT the copy in this repo under ~/Documents/.../server/scripts/backup/.
+  Desktop/Documents/Downloads/iCloud Drive are TCC-protected folders on
+  macOS — a bare /bin/bash spawned by launchd (unlike a Terminal-attached
+  shell, which already has folder access granted) gets "Operation not
+  permitted" trying to even open a script under ~/Documents. install.sh
+  copies the reviewed repo version out to the unprotected path before
+  loading the job, so the committed script here stays the source of truth.
 -->
 <plist version="1.0">
 <dict>
@@ -27,7 +35,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/mohamedkhaled/Documents/ceas/ceasRepos/PricingPortal/server/scripts/backup/run-backup.sh</string>
+        <string>/Users/mohamedkhaled/ceas-backups/pricing-portal/bin/run-backup.sh</string>
     </array>
     <key>StartInterval</key>
     <integer>7200</integer>
