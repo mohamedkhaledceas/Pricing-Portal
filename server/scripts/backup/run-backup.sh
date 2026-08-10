@@ -18,6 +18,10 @@ SSH_HOST="srv-d9s69vfavr4c73ai7vi0@ssh.oregon.render.com"
 REMOTE_APP_DIR="/opt/render/project/src/server"   # confirmed via manual SSH check
 LOCAL_BACKUP_DIR="$HOME/ceas-backups/pricing-portal"
 RETENTION_DAYS=14
+MIN_HOURS_BETWEEN_RUNS=20   # this laptop sleeps overnight, so launchd polls
+                            # periodically (StartInterval) instead of firing
+                            # at a fixed time; this is what turns "polled
+                            # every couple hours" into "once a day"
 LOCK_DIR="/tmp/pp-backup.lock"
 
 # --- Setup ---------------------------------------------------------------
@@ -42,6 +46,16 @@ trap cleanup EXIT
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   log "SKIP: previous backup run still in progress (lock held at $LOCK_DIR)"
   exit 0
+fi
+
+LATEST_BACKUP="$(ls -t "$LOCAL_BACKUP_DIR"/backup-*.db 2>/dev/null | head -1 || true)"
+if [ -n "$LATEST_BACKUP" ]; then
+  LATEST_MTIME=$(stat -f%m "$LATEST_BACKUP" 2>/dev/null || stat -c%Y "$LATEST_BACKUP")
+  AGE_HOURS=$(( ($(date +%s) - LATEST_MTIME) / 3600 ))
+  if [ "$AGE_HOURS" -lt "$MIN_HOURS_BETWEEN_RUNS" ]; then
+    log "SKIP: last successful backup was ${AGE_HOURS}h ago (<${MIN_HOURS_BETWEEN_RUNS}h), nothing to do yet"
+    exit 0
+  fi
 fi
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
