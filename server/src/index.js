@@ -22,6 +22,7 @@ const correlationId = require('./common/correlationId');
 const errorHandler = require('./common/errorHandler');
 const { ValidationError } = require('./common/errors');
 const { ASSIGNABLE_ROLES, canManageUsers, canAssignRole, canModifyStatus } = require('./common/permissions');
+const { getWorkspaceSurvey } = require('./clickup');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -481,6 +482,18 @@ function buildStateResponse() {
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'pricing-portal-server' });
+});
+
+/* Exploratory: structural map of the connected ClickUp workspace (spaces,
+   folders, lists) so we can pick a concrete data source before building
+   anything that reads real ClickUp data into the portal. */
+app.get('/api/clickup/survey', authMiddleware, async (req, res, next) => {
+  try {
+    const teams = await getWorkspaceSurvey();
+    res.json({ teams });
+  } catch (error) {
+    next(error);
+  }
 });
 
 /* Every signup creates a plain 'user' account — elevated roles are only ever
