@@ -20,6 +20,10 @@ services:
         sync: false
       - key: SEED_OWNER_PASSWORD
         sync: false
+      - key: CLICKUP_API_KEY
+        sync: false
+      - key: CLICKUP_WEBHOOK_SECRET
+        sync: false
     disk:
       name: pricing-portal-data
       mountPath: /var/data
