@@ -2142,7 +2142,7 @@ function updateLoginUi(){
   if (isLoggedIn && auth.user) {
     $('#accountMenuEmail').textContent = auth.user.email || '';
     $('#btnUsersView').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
-    $('#btnCommercialLead').hidden = auth.user.role !== 'operations';
+    $('#btnCommercialLead').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
   } else {
     $('#btnCommercialLead').hidden = true;
   }
