@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const logger = require('./common/logger');
-const { emitClickupEvent } = require('./realtime');
+const clickupSync = require('./clickupSync');
 
 /* No authMiddleware here — the caller is ClickUp, not a logged-in portal
    user. Authenticity is instead verified via the HMAC-SHA256 signature
@@ -53,16 +53,14 @@ function clickupWebhookRouter() {
       historyItems: (payload.history_items || []).length,
     });
 
-    /* Ack fast, before broadcasting — ClickUp expects a prompt 200 and will
+    /* Ack fast, before syncing — ClickUp expects a prompt 200 and will
        retry/back off on slow or failing responses; nothing downstream of
-       this should be able to delay or fail that ack. */
+       this should be able to delay or fail that ack. clickupSync does its
+       own error handling internally (a failed sync is logged, not thrown),
+       so it's deliberately not awaited here — the HTTP response doesn't
+       wait on DB writes or the Socket.IO broadcast. */
     res.status(200).end();
-
-    /* Phase 2: broadcast the raw verified payload as-is. Turning it into DB
-       writes (stage tracking/history, daily counts) is Phase 3's
-       clickupSync.js — not wired in yet, so the browser is the only
-       consumer of this event for now. */
-    emitClickupEvent(payload);
+    clickupSync.handleEvent(payload);
   });
 
   return router;
