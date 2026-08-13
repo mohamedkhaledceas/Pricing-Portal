@@ -1,5 +1,6 @@
 require('dotenv').config();
 const path = require('path');
+const http = require('http');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
@@ -24,6 +25,7 @@ const { ValidationError } = require('./common/errors');
 const { ASSIGNABLE_ROLES, canManageUsers, canAssignRole, canModifyStatus } = require('./common/permissions');
 const { getWorkspaceSurvey } = require('./clickup');
 const { clickupWebhookRouter } = require('./clickupWebhook');
+const { initRealtime } = require('./realtime');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -1180,6 +1182,13 @@ app.put('/api/state', authMiddleware, (req, res) => {
 
 app.use(errorHandler);
 
-app.listen(PORT, HOST, () => {
+/* http.createServer(app) instead of app.listen(...) directly — Socket.IO
+   needs to attach to the same underlying HTTP server Express is using, not
+   a second one, so this app and its realtime layer share one port and one
+   Render service. */
+const httpServer = http.createServer(app);
+initRealtime(httpServer);
+
+httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);
 });

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const logger = require('./common/logger');
+const { emitClickupEvent } = require('./realtime');
 
 /* No authMiddleware here — the caller is ClickUp, not a logged-in portal
    user. Authenticity is instead verified via the HMAC-SHA256 signature
@@ -45,11 +46,6 @@ function clickupWebhookRouter() {
       return res.status(400).end();
     }
 
-    /* Phase 1: verify + log only. Once the DB tables and clickupSync.js
-       exist, this becomes: clickupSync.handleEvent(payload) then emit over
-       Socket.IO — kept as a bare log for now so the receiver/signature path
-       can be proven correct on its own before anything downstream depends
-       on it. */
     logger.info('ClickUp webhook verified', {
       correlationId: req.correlationId,
       event: payload.event,
@@ -57,9 +53,16 @@ function clickupWebhookRouter() {
       historyItems: (payload.history_items || []).length,
     });
 
-    /* Ack fast — ClickUp expects a prompt 200 and will retry/back off on
-       slow or failing responses. */
+    /* Ack fast, before broadcasting — ClickUp expects a prompt 200 and will
+       retry/back off on slow or failing responses; nothing downstream of
+       this should be able to delay or fail that ack. */
     res.status(200).end();
+
+    /* Phase 2: broadcast the raw verified payload as-is. Turning it into DB
+       writes (stage tracking/history, daily counts) is Phase 3's
+       clickupSync.js — not wired in yet, so the browser is the only
+       consumer of this event for now. */
+    emitClickupEvent(payload);
   });
 
   return router;
