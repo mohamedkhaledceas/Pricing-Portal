@@ -23,6 +23,7 @@ const errorHandler = require('./common/errorHandler');
 const { ValidationError } = require('./common/errors');
 const { ASSIGNABLE_ROLES, canManageUsers, canAssignRole, canModifyStatus } = require('./common/permissions');
 const { getWorkspaceSurvey } = require('./clickup');
+const { clickupWebhookRouter } = require('./clickupWebhook');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -47,6 +48,13 @@ app.set('trust proxy', 1);
    skip straight to the error handler, bypassing any middleware mounted after
    it, which would otherwise leave that error's log entry without one. */
 app.use(correlationId);
+
+/* Mounted before the global express.json() below on purpose — it carries
+   its own express.raw() parser so the exact bytes ClickUp sent are still
+   available for HMAC signature verification. By the time a request reaches
+   express.json(), the raw body is gone. */
+app.use('/api/clickup/webhook', clickupWebhookRouter());
+
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
