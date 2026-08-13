@@ -55,19 +55,20 @@ function isPopulated(value) {
   return value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
 }
 
-async function extractPopulatedFields(task) {
-  const defs = await getFieldDefs(task.list.id);
+/* Takes a raw custom_fields array (same shape whether it came from
+   GET /task/{id} or GET /list/{id}/task) plus the list it belongs to. */
+async function extractPopulatedFields(customFields, listId) {
+  const defs = await getFieldDefs(listId);
   const result = {};
-  for (const field of task.custom_fields || []) {
+  for (const field of customFields || []) {
     if (!isPopulated(field.value)) continue;
     result[field.name] = resolveFieldValue(field, defs);
   }
   return result;
 }
 
-function upsertLiveCache(task, fields) {
+function upsertLiveCache({ taskId, listId, name, status, fields, subtasks }) {
   const now = new Date().toISOString();
-  const subtasks = (task.subtasks || []).map((s) => ({ id: s.id, name: s.name, status: s.status?.status || '' }));
   db.prepare(`
     INSERT INTO commercial_lead_live_cache (deal_id, list_id, name, status, fields_json, subtasks_json, created_at, updated_at)
     VALUES (@deal_id, @list_id, @name, @status, @fields_json, @subtasks_json, @now, @now)
@@ -79,12 +80,12 @@ function upsertLiveCache(task, fields) {
       subtasks_json = excluded.subtasks_json,
       updated_at = excluded.updated_at
   `).run({
-    deal_id: task.id,
-    list_id: task.list.id,
-    name: task.name,
-    status: task.status.status,
+    deal_id: taskId,
+    list_id: listId,
+    name,
+    status,
     fields_json: JSON.stringify(fields),
-    subtasks_json: JSON.stringify(subtasks),
+    subtasks_json: JSON.stringify(subtasks || []),
     now,
   });
 }
@@ -100,17 +101,13 @@ function removeFromLiveCache(taskId) {
    own previously-recorded status/timestamp as "from", not the webhook
    payload's own before/after — if a prior event was ever missed, this is
    the honest measure of what our system observed, which is the best any
-   webhook-based approach can promise without perfect delivery. */
+   webhook-based approach can promise without perfect delivery. Self-guards
+   against no-op calls (status matches what's already tracked), so callers
+   can call this unconditionally rather than special-casing which event
+   types might have changed the status. */
 function recordStageTransition(taskId, listId, newStatus, previousTracking) {
-  if (previousTracking && previousTracking.current_status === newStatus) {
-    // Re-fetched current state matches what we already had — e.g. a
-    // taskStatusUpdated event followed by a re-fetch that lands after the
-    // status changed again, or (as hit in testing) a webhook payload whose
-    // claimed transition didn't match ClickUp's actual current state.
-    // Nothing really transitioned; recording one would create a bogus
-    // near-zero-duration stage_history row.
-    return;
-  }
+  if (previousTracking && previousTracking.current_status === newStatus) return;
+
   const now = new Date().toISOString();
   if (previousTracking) {
     const enteredAtMs = new Date(previousTracking.entered_status_at).getTime();
@@ -132,9 +129,10 @@ function recordStageTransition(taskId, listId, newStatus, previousTracking) {
 
 /* Recomputed (not incrementally patched) from the live cache's current
    contents every time something relevant changes — a full GROUP BY over
-   local DB rows, no ClickUp calls, so doing this on every event is cheap.
-   Upserted into today's row, so re-running later the same day corrects
-   today's numbers rather than duplicating them. */
+   local DB rows, no ClickUp calls, so doing this on every event (or every
+   reconciliation pass) is cheap. Full delete+reinsert of today's rows for
+   this list, not a selective upsert — a dimension/value pair that drops to
+   zero has to disappear, not linger at its last count. */
 function recomputeDailyCounts(listId) {
   const today = new Date().toISOString().slice(0, 10);
   const rows = db.prepare('SELECT status, fields_json, created_at FROM commercial_lead_live_cache WHERE list_id = ?').all(listId);
@@ -159,11 +157,6 @@ function recomputeDailyCounts(listId) {
   }
   counts.new_leads = { all: newLeadsToday };
 
-  /* Full replace of today's rows for this list, not a selective upsert —
-     a dimension/value combo that had a count yesterday but has zero deals
-     today (e.g. every deal has since left "qualified") must disappear, not
-     linger at its last-known count. Upserting only the combos present in
-     this run can't express "this went to zero." */
   const del = db.prepare('DELETE FROM commercial_lead_daily_counts WHERE date = ? AND list_id = ?');
   const insert = db.prepare(`
     INSERT INTO commercial_lead_daily_counts (date, list_id, dimension, value, count)
@@ -178,6 +171,20 @@ function recomputeDailyCounts(listId) {
     }
   });
   tx();
+}
+
+/* Shared by both the webhook path and reconciliation — writes the cache
+   row and (for 2026 Projects) reconciles stage tracking/history. Doesn't
+   touch daily_counts; callers recompute that once after all their writes,
+   not per-task, since a reconciliation pass touches hundreds of tasks. */
+async function syncTaskRecord({ taskId, listId, name, status, customFields, subtasks }) {
+  const fields = await extractPopulatedFields(customFields, listId);
+  upsertLiveCache({ taskId, listId, name, status, fields, subtasks });
+
+  if (listId === INSIGHTS_LIST_ID) {
+    const previousTracking = db.prepare('SELECT * FROM commercial_lead_stage_tracking WHERE deal_id = ?').get(taskId);
+    recordStageTransition(taskId, listId, status, previousTracking);
+  }
 }
 
 async function handleEvent(payload) {
@@ -201,18 +208,16 @@ async function handleEvent(payload) {
     return;
   }
 
-  const fields = await extractPopulatedFields(task);
-  upsertLiveCache(task, fields);
+  await syncTaskRecord({
+    taskId: task.id,
+    listId,
+    name: task.name,
+    status: task.status.status,
+    customFields: task.custom_fields,
+    subtasks: (task.subtasks || []).map((s) => ({ id: s.id, name: s.name, status: s.status?.status || '' })),
+  });
 
-  if (listId === INSIGHTS_LIST_ID) {
-    const previousTracking = db.prepare('SELECT * FROM commercial_lead_stage_tracking WHERE deal_id = ?').get(taskId);
-    if (event === 'taskStatusUpdated') {
-      recordStageTransition(taskId, listId, task.status.status, previousTracking);
-    } else if (!previousTracking) {
-      recordStageTransition(taskId, listId, task.status.status, null);
-    }
-    recomputeDailyCounts(listId);
-  }
+  if (listId === INSIGHTS_LIST_ID) recomputeDailyCounts(listId);
 
   const cached = db.prepare('SELECT * FROM commercial_lead_live_cache WHERE deal_id = ?').get(taskId);
   emitClickupEvent({
@@ -234,4 +239,75 @@ async function safeHandleEvent(payload) {
   }
 }
 
-module.exports = { handleEvent: safeHandleEvent, TRACKED_LISTS, INSIGHTS_LIST_ID, recomputeDailyCounts };
+/* Paginates through every task in a list (ClickUp caps each page at 100).
+   subtasks=true returns children as flat sibling entries (with a `parent`
+   pointer) rather than nested — cheaper than fetching each task
+   individually, and the only reason a full reconciliation pass costs
+   roughly a dozen API calls total instead of hundreds. */
+async function fetchAllListTasks(listId) {
+  const tasks = [];
+  let page = 0;
+  for (;;) {
+    const res = await clickupGet(`/list/${listId}/task?include_closed=true&subtasks=true&page=${page}`);
+    const pageTasks = res.tasks || [];
+    tasks.push(...pageTasks);
+    if (pageTasks.length < 100) break;
+    page += 1;
+  }
+  return tasks;
+}
+
+async function reconcileList(listId) {
+  const allTasks = await fetchAllListTasks(listId);
+  const parents = allTasks.filter((t) => !t.parent);
+  const childrenByParent = {};
+  for (const t of allTasks) {
+    if (!t.parent) continue;
+    childrenByParent[t.parent] = childrenByParent[t.parent] || [];
+    childrenByParent[t.parent].push({ id: t.id, name: t.name, status: t.status?.status || '' });
+  }
+
+  const seenIds = new Set();
+  for (const task of parents) {
+    seenIds.add(task.id);
+    await syncTaskRecord({
+      taskId: task.id,
+      listId,
+      name: task.name,
+      status: task.status.status,
+      customFields: task.custom_fields,
+      subtasks: childrenByParent[task.id] || [],
+    });
+  }
+
+  // Anything still cached for this list that ClickUp no longer has is stale — a missed taskDeleted.
+  const cachedIds = db.prepare('SELECT deal_id FROM commercial_lead_live_cache WHERE list_id = ?').all(listId).map((r) => r.deal_id);
+  for (const dealId of cachedIds) {
+    if (!seenIds.has(dealId)) {
+      removeFromLiveCache(dealId);
+      logger.info('Reconciliation removed a cached deal no longer present in ClickUp', { dealId, listId });
+    }
+  }
+
+  if (listId === INSIGHTS_LIST_ID) recomputeDailyCounts(listId);
+}
+
+/* One list's failure (a transient ClickUp error, a rate limit) shouldn't
+   stop the other two from reconciling. */
+async function runReconciliation() {
+  for (const listId of TRACKED_LISTS) {
+    try {
+      await reconcileList(listId);
+    } catch (error) {
+      logger.error('Reconciliation failed for a list', { listId, message: error.message, stack: error.stack });
+    }
+  }
+}
+
+module.exports = {
+  handleEvent: safeHandleEvent,
+  runReconciliation,
+  TRACKED_LISTS,
+  INSIGHTS_LIST_ID,
+  recomputeDailyCounts,
+};

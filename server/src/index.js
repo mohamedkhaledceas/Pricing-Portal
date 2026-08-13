@@ -26,6 +26,7 @@ const { ASSIGNABLE_ROLES, canManageUsers, canAssignRole, canModifyStatus } = req
 const { getWorkspaceSurvey } = require('./clickup');
 const { clickupWebhookRouter } = require('./clickupWebhook');
 const { initRealtime } = require('./realtime');
+const { startReconciliationSchedule } = require('./clickupReconcile');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -1191,4 +1192,5 @@ initRealtime(httpServer);
 
 httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);
+  startReconciliationSchedule();
 });
