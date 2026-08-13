@@ -158,6 +158,67 @@ const schema = `
 
   CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
   CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+
+  /* Mirror of each tracked ClickUp task's current state (2026 Projects,
+     Active Clients — AM, Client Offboarding list) — kept fresh by webhook
+     events (clickupSync.js) and corrected periodically by the
+     reconciliation job. This is what page loads read from, so the portal
+     never waits on a live ClickUp call. Not history — overwritten in place,
+     row disappears if the task is deleted in ClickUp. */
+  CREATE TABLE IF NOT EXISTS commercial_lead_live_cache (
+    deal_id TEXT PRIMARY KEY,
+    list_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '',
+    fields_json TEXT NOT NULL DEFAULT '{}',
+    subtasks_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cl_live_cache_list_id ON commercial_lead_live_cache(list_id);
+
+  /* Working state, 2026 Projects only — one row per currently-open deal,
+     tracking which status it's in and since when. Used only to compute a
+     duration the moment a deal leaves a stage; not itself a report. */
+  CREATE TABLE IF NOT EXISTS commercial_lead_stage_tracking (
+    deal_id TEXT PRIMARY KEY,
+    list_id TEXT NOT NULL,
+    current_status TEXT NOT NULL,
+    entered_status_at TEXT NOT NULL,
+    FOREIGN KEY(deal_id) REFERENCES commercial_lead_live_cache(deal_id) ON DELETE CASCADE
+  );
+
+  /* Permanent, append-only — one row per completed stage. Survives even if
+     the deal itself is later deleted from ClickUp/live_cache. */
+  CREATE TABLE IF NOT EXISTS commercial_lead_stage_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    deal_id TEXT NOT NULL,
+    list_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    entered_at TEXT NOT NULL,
+    exited_at TEXT NOT NULL,
+    days_in_stage REAL NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cl_stage_history_deal_id ON commercial_lead_stage_history(deal_id);
+  CREATE INDEX IF NOT EXISTS idx_cl_stage_history_status ON commercial_lead_stage_history(status);
+
+  /* Permanent daily counts, 2026 Projects only — recomputed (upserted, not
+     appended) throughout the day as events arrive, so "today" stays live
+     rather than only updating once a day. dimension/value pairs cover:
+     status, source, business_line, country, new_leads. */
+  CREATE TABLE IF NOT EXISTS commercial_lead_daily_counts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    list_id TEXT NOT NULL,
+    dimension TEXT NOT NULL,
+    value TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(date, list_id, dimension, value)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cl_daily_counts_date ON commercial_lead_daily_counts(date);
 `;
 
 db.exec(schema);
