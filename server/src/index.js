@@ -27,6 +27,7 @@ const { getWorkspaceSurvey } = require('./clickup');
 const { clickupWebhookRouter } = require('./clickupWebhook');
 const { initRealtime } = require('./realtime');
 const { startReconciliationSchedule } = require('./clickupReconcile');
+const { getDeals, getDailyStats, getStageDurations } = require('./commercialLead');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -88,6 +89,17 @@ const clientHtmlPath = path.join(__dirname, '..', '..', 'margin-planner_1.html')
 app.get('/', (req, res) => {
   res.sendFile(clientHtmlPath);
 });
+
+const commercialLeadHtmlPath = path.join(__dirname, '..', '..', 'commercial-lead.html');
+app.get('/commercial-lead', (req, res) => {
+  res.sendFile(commercialLeadHtmlPath);
+});
+
+/* Shared static assets (currently just the two logo variants) — extracted
+   from margin-planner_1.html's previously-inline base64 constants so both
+   frontends reference the same file instead of each embedding their own
+   ~30KB copy. */
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 function serializeUser(row) {
   return row ? {
@@ -505,6 +517,23 @@ app.get('/api/clickup/survey', authMiddleware, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+/* Reads only from our own DB (commercial_lead_live_cache /
+   _daily_counts / _stage_history) — never a live ClickUp call. That data
+   is kept fresh by clickupSync.js (webhooks) and clickupReconcile.js
+   (periodic safety net), independent of any request hitting these routes. */
+app.get('/api/commercial-lead/deals', authMiddleware, (req, res) => {
+  res.json({ deals: getDeals() });
+});
+
+app.get('/api/commercial-lead/stats', authMiddleware, (req, res) => {
+  const days = numOrDefault(req.query.days, 30, 'days');
+  res.json({ stats: getDailyStats(days) });
+});
+
+app.get('/api/commercial-lead/stage-durations', authMiddleware, (req, res) => {
+  res.json({ stageDurations: getStageDurations() });
 });
 
 /* Every signup creates a plain 'user' account — elevated roles are only ever

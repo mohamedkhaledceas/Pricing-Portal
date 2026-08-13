@@ -33,20 +33,44 @@ async function getFieldDefs(listId) {
   return map;
 }
 
+/* ClickUp date fields (both the task-level date_created/date_updated and
+   date-type custom fields) are Unix-ms timestamp strings — meaningless as
+   raw text in the UI. */
+function toIso(unixMsString) {
+  const ms = Number(unixMsString);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function formatDateDMY(unixMsString) {
+  const ms = Number(unixMsString);
+  if (!Number.isFinite(ms)) return unixMsString;
+  const d = new Date(ms);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
 /* drop_down fields return a raw index into type_config.options; labels
    (multi-select) fields return an array of option UUIDs; users fields
-   return full user objects. Everything else (text/date/number/url/etc.)
-   is already a plain, meaningful value straight from the API. */
+   return full user objects; date fields are Unix-ms strings. Everything
+   else (text/number/url/etc.) is already a plain, meaningful value
+   straight from the API. */
 function resolveFieldValue(field, defs) {
   const def = defs[field.name];
   if (field.type === 'drop_down' && typeof field.value === 'number' && def?.options) {
     return def.options[field.value]?.name ?? field.value;
   }
   if (field.type === 'labels' && Array.isArray(field.value) && def?.options) {
-    return field.value.map((id) => def.options.find((o) => o.id === id)?.name ?? id);
+    // Inconsistent with drop_down above: labels options key their text as
+    // "label", not "name" — verified against a real field (confirmed via
+    // GET /list/{id}/field), not assumed from the drop_down shape.
+    return field.value.map((id) => def.options.find((o) => o.id === id)?.label ?? id);
   }
   if (field.type === 'users' && Array.isArray(field.value)) {
     return field.value.map((u) => u.username || u.email || u.id);
+  }
+  if (field.type === 'date') {
+    return formatDateDMY(field.value);
   }
   return field.value;
 }
@@ -56,28 +80,35 @@ function isPopulated(value) {
 }
 
 /* Takes a raw custom_fields array (same shape whether it came from
-   GET /task/{id} or GET /list/{id}/task) plus the list it belongs to. */
+   GET /task/{id} or GET /list/{id}/task) plus the list it belongs to.
+   Each field carries its ClickUp type alongside the resolved value, not
+   just the bare value — the frontend needs the type to know a "url" field
+   should render as a clickable link, not just text. */
 async function extractPopulatedFields(customFields, listId) {
   const defs = await getFieldDefs(listId);
   const result = {};
   for (const field of customFields || []) {
     if (!isPopulated(field.value)) continue;
-    result[field.name] = resolveFieldValue(field, defs);
+    result[field.name] = { value: resolveFieldValue(field, defs), type: field.type };
   }
   return result;
 }
 
-function upsertLiveCache({ taskId, listId, name, status, fields, subtasks }) {
+function upsertLiveCache({ taskId, listId, name, status, fields, subtasks, clickupCreatedAt, clickupUpdatedAt }) {
   const now = new Date().toISOString();
   db.prepare(`
-    INSERT INTO commercial_lead_live_cache (deal_id, list_id, name, status, fields_json, subtasks_json, created_at, updated_at)
-    VALUES (@deal_id, @list_id, @name, @status, @fields_json, @subtasks_json, @now, @now)
+    INSERT INTO commercial_lead_live_cache
+      (deal_id, list_id, name, status, fields_json, subtasks_json, clickup_created_at, clickup_updated_at, created_at, updated_at)
+    VALUES
+      (@deal_id, @list_id, @name, @status, @fields_json, @subtasks_json, @clickup_created_at, @clickup_updated_at, @now, @now)
     ON CONFLICT(deal_id) DO UPDATE SET
       list_id = excluded.list_id,
       name = excluded.name,
       status = excluded.status,
       fields_json = excluded.fields_json,
       subtasks_json = excluded.subtasks_json,
+      clickup_created_at = excluded.clickup_created_at,
+      clickup_updated_at = excluded.clickup_updated_at,
       updated_at = excluded.updated_at
   `).run({
     deal_id: taskId,
@@ -86,6 +117,8 @@ function upsertLiveCache({ taskId, listId, name, status, fields, subtasks }) {
     status,
     fields_json: JSON.stringify(fields),
     subtasks_json: JSON.stringify(subtasks || []),
+    clickup_created_at: clickupCreatedAt || null,
+    clickup_updated_at: clickupUpdatedAt || null,
     now,
   });
 }
@@ -135,7 +168,7 @@ function recordStageTransition(taskId, listId, newStatus, previousTracking) {
    zero has to disappear, not linger at its last count. */
 function recomputeDailyCounts(listId) {
   const today = new Date().toISOString().slice(0, 10);
-  const rows = db.prepare('SELECT status, fields_json, created_at FROM commercial_lead_live_cache WHERE list_id = ?').all(listId);
+  const rows = db.prepare('SELECT status, fields_json, clickup_created_at FROM commercial_lead_live_cache WHERE list_id = ?').all(listId);
 
   const counts = {};
   const bump = (dimension, value) => {
@@ -150,10 +183,14 @@ function recomputeDailyCounts(listId) {
     bump('status', row.status);
     /* Exact field names as defined in ClickUp, trailing spaces included —
        verified against the live field list, not guessed. */
-    bump('source', fields['Source ']);
-    bump('business_line', fields['Company']);
-    bump('country', fields['Country ']);
-    if (row.created_at && row.created_at.slice(0, 10) === today) newLeadsToday += 1;
+    bump('source', fields['Source ']?.value);
+    bump('business_line', fields['Company']?.value);
+    bump('country', fields['Country ']?.value);
+    /* clickup_created_at (ClickUp's real date_created), not our own
+       created_at (when we first cached the row) — using our own sync
+       bookkeeping here was the bug that made a one-time backfill look like
+       196 new leads in a single day. */
+    if (row.clickup_created_at && row.clickup_created_at.slice(0, 10) === today) newLeadsToday += 1;
   }
   counts.new_leads = { all: newLeadsToday };
 
@@ -177,9 +214,9 @@ function recomputeDailyCounts(listId) {
    row and (for 2026 Projects) reconciles stage tracking/history. Doesn't
    touch daily_counts; callers recompute that once after all their writes,
    not per-task, since a reconciliation pass touches hundreds of tasks. */
-async function syncTaskRecord({ taskId, listId, name, status, customFields, subtasks }) {
+async function syncTaskRecord({ taskId, listId, name, status, customFields, subtasks, clickupCreatedAt, clickupUpdatedAt }) {
   const fields = await extractPopulatedFields(customFields, listId);
-  upsertLiveCache({ taskId, listId, name, status, fields, subtasks });
+  upsertLiveCache({ taskId, listId, name, status, fields, subtasks, clickupCreatedAt, clickupUpdatedAt });
 
   if (listId === INSIGHTS_LIST_ID) {
     const previousTracking = db.prepare('SELECT * FROM commercial_lead_stage_tracking WHERE deal_id = ?').get(taskId);
@@ -215,6 +252,8 @@ async function handleEvent(payload) {
     status: task.status.status,
     customFields: task.custom_fields,
     subtasks: (task.subtasks || []).map((s) => ({ id: s.id, name: s.name, status: s.status?.status || '' })),
+    clickupCreatedAt: toIso(task.date_created),
+    clickupUpdatedAt: toIso(task.date_updated),
   });
 
   if (listId === INSIGHTS_LIST_ID) recomputeDailyCounts(listId);
@@ -277,6 +316,8 @@ async function reconcileList(listId) {
       status: task.status.status,
       customFields: task.custom_fields,
       subtasks: childrenByParent[task.id] || [],
+      clickupCreatedAt: toIso(task.date_created),
+      clickupUpdatedAt: toIso(task.date_updated),
     });
   }
 

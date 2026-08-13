@@ -172,6 +172,15 @@ const schema = `
     status TEXT NOT NULL DEFAULT '',
     fields_json TEXT NOT NULL DEFAULT '{}',
     subtasks_json TEXT NOT NULL DEFAULT '[]',
+    /* ClickUp's own date_created/date_updated — when the deal actually was
+       created/last edited in ClickUp. Deliberately separate from
+       created_at/updated_at below (which are our own sync bookkeeping —
+       when *we* first cached or last touched this row). Conflating the two
+       was a real bug: a bulk backfill sets our own created_at to "now" for
+       every row it touches, which made a one-time reconciliation run look
+       like 196 brand-new leads in a single day. */
+    clickup_created_at TEXT,
+    clickup_updated_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
@@ -274,6 +283,20 @@ if (!usersColumns.includes('email')) {
   });
   migrateUsers();
   db.pragma('foreign_keys = ON');
+}
+
+/* One-time column additions for databases created before ClickUp's own
+   date_created/date_updated started being tracked separately from our own
+   sync bookkeeping timestamps — CREATE TABLE IF NOT EXISTS above is a
+   no-op against the already-existing commercial_lead_live_cache table, so
+   these need adding by hand. Plain ADD COLUMN is enough here (no CHECK
+   constraint involved, unlike the users rebuild above). */
+const liveCacheColumns = db.prepare("PRAGMA table_info(commercial_lead_live_cache)").all().map((c) => c.name);
+if (!liveCacheColumns.includes('clickup_created_at')) {
+  db.exec('ALTER TABLE commercial_lead_live_cache ADD COLUMN clickup_created_at TEXT');
+}
+if (!liveCacheColumns.includes('clickup_updated_at')) {
+  db.exec('ALTER TABLE commercial_lead_live_cache ADD COLUMN clickup_updated_at TEXT');
 }
 
 module.exports = db;
