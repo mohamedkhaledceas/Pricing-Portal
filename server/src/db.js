@@ -172,6 +172,13 @@ const schema = `
     status TEXT NOT NULL DEFAULT '',
     fields_json TEXT NOT NULL DEFAULT '{}',
     subtasks_json TEXT NOT NULL DEFAULT '[]',
+    /* ClickUp's native "Related"/Task Relationships feature — array of other
+       task IDs this one is linked to. Bidirectional in ClickUp itself (a
+       link made from either side shows on both), so this is never written
+       by us, only mirrored from what ClickUp already has. Used to join a
+       pipeline deal to its downstream Active Clients / Offboarding task for
+       the cross-list funnel. */
+    linked_tasks_json TEXT NOT NULL DEFAULT '[]',
     /* ClickUp's own date_created/date_updated — when the deal actually was
        created/last edited in ClickUp. Deliberately separate from
        created_at/updated_at below (which are our own sync bookkeeping —
@@ -228,6 +235,21 @@ const schema = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_cl_daily_counts_date ON commercial_lead_daily_counts(date);
+
+  /* One row per (list, status) as currently defined in ClickUp, exact hex
+     color included — lets the UI badge each status the same color it has
+     in ClickUp without hardcoding a guessed palette. Kept fresh by the same
+     reconciliation cadence as the rest of the commercial-lead data (not a
+     per-process memory cache — status definitions rarely change, and a
+     durable table survives a restart instead of refetching on every boot). */
+  CREATE TABLE IF NOT EXISTS commercial_lead_status_colors (
+    list_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    color TEXT NOT NULL,
+    orderindex INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (list_id, status)
+  );
 `;
 
 db.exec(schema);
@@ -297,6 +319,9 @@ if (!liveCacheColumns.includes('clickup_created_at')) {
 }
 if (!liveCacheColumns.includes('clickup_updated_at')) {
   db.exec('ALTER TABLE commercial_lead_live_cache ADD COLUMN clickup_updated_at TEXT');
+}
+if (!liveCacheColumns.includes('linked_tasks_json')) {
+  db.exec("ALTER TABLE commercial_lead_live_cache ADD COLUMN linked_tasks_json TEXT NOT NULL DEFAULT '[]'");
 }
 
 module.exports = db;

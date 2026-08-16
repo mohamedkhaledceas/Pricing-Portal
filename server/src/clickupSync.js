@@ -50,6 +50,19 @@ function formatDateDMY(unixMsString) {
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
+/* ClickUp stores the SAME link record ({task_id, link_id} — whichever side
+   the link was originally created from) verbatim on both linked tasks'
+   linked_tasks arrays, rather than normalizing task_id to mean "self" —
+   confirmed by inspecting real linked pairs via the API. So naively taking
+   link_id gives the wrong ID (the task's own ID) whenever this task happens
+   to be the one the entry's task_id already points at; whichever of the two
+   ISN'T this task's own ID is the actual other side. */
+function extractLinkedTaskIds(task) {
+  return (task.linked_tasks || [])
+    .map((l) => (l.task_id === task.id ? l.link_id : l.task_id))
+    .filter((id) => id && id !== task.id);
+}
+
 /* drop_down fields return a raw index into type_config.options; labels
    (multi-select) fields return an array of option UUIDs; users fields
    return full user objects; date fields are Unix-ms strings. Everything
@@ -94,19 +107,20 @@ async function extractPopulatedFields(customFields, listId) {
   return result;
 }
 
-function upsertLiveCache({ taskId, listId, name, status, fields, subtasks, clickupCreatedAt, clickupUpdatedAt }) {
+function upsertLiveCache({ taskId, listId, name, status, fields, subtasks, linkedTasks, clickupCreatedAt, clickupUpdatedAt }) {
   const now = new Date().toISOString();
   db.prepare(`
     INSERT INTO commercial_lead_live_cache
-      (deal_id, list_id, name, status, fields_json, subtasks_json, clickup_created_at, clickup_updated_at, created_at, updated_at)
+      (deal_id, list_id, name, status, fields_json, subtasks_json, linked_tasks_json, clickup_created_at, clickup_updated_at, created_at, updated_at)
     VALUES
-      (@deal_id, @list_id, @name, @status, @fields_json, @subtasks_json, @clickup_created_at, @clickup_updated_at, @now, @now)
+      (@deal_id, @list_id, @name, @status, @fields_json, @subtasks_json, @linked_tasks_json, @clickup_created_at, @clickup_updated_at, @now, @now)
     ON CONFLICT(deal_id) DO UPDATE SET
       list_id = excluded.list_id,
       name = excluded.name,
       status = excluded.status,
       fields_json = excluded.fields_json,
       subtasks_json = excluded.subtasks_json,
+      linked_tasks_json = excluded.linked_tasks_json,
       clickup_created_at = excluded.clickup_created_at,
       clickup_updated_at = excluded.clickup_updated_at,
       updated_at = excluded.updated_at
@@ -117,6 +131,7 @@ function upsertLiveCache({ taskId, listId, name, status, fields, subtasks, click
     status,
     fields_json: JSON.stringify(fields),
     subtasks_json: JSON.stringify(subtasks || []),
+    linked_tasks_json: JSON.stringify(linkedTasks || []),
     clickup_created_at: clickupCreatedAt || null,
     clickup_updated_at: clickupUpdatedAt || null,
     now,
@@ -214,9 +229,9 @@ function recomputeDailyCounts(listId) {
    row and (for 2026 Projects) reconciles stage tracking/history. Doesn't
    touch daily_counts; callers recompute that once after all their writes,
    not per-task, since a reconciliation pass touches hundreds of tasks. */
-async function syncTaskRecord({ taskId, listId, name, status, customFields, subtasks, clickupCreatedAt, clickupUpdatedAt }) {
+async function syncTaskRecord({ taskId, listId, name, status, customFields, subtasks, linkedTasks, clickupCreatedAt, clickupUpdatedAt }) {
   const fields = await extractPopulatedFields(customFields, listId);
-  upsertLiveCache({ taskId, listId, name, status, fields, subtasks, clickupCreatedAt, clickupUpdatedAt });
+  upsertLiveCache({ taskId, listId, name, status, fields, subtasks, linkedTasks, clickupCreatedAt, clickupUpdatedAt });
 
   if (listId === INSIGHTS_LIST_ID) {
     const previousTracking = db.prepare('SELECT * FROM commercial_lead_stage_tracking WHERE deal_id = ?').get(taskId);
@@ -252,6 +267,7 @@ async function handleEvent(payload) {
     status: task.status.status,
     customFields: task.custom_fields,
     subtasks: (task.subtasks || []).map((s) => ({ id: s.id, name: s.name, status: s.status?.status || '' })),
+    linkedTasks: extractLinkedTaskIds(task),
     clickupCreatedAt: toIso(task.date_created),
     clickupUpdatedAt: toIso(task.date_updated),
   });
@@ -296,7 +312,41 @@ async function fetchAllListTasks(listId) {
   return tasks;
 }
 
+/* Upserts every status currently defined on the list (name + its exact hex
+   color from ClickUp) into commercial_lead_status_colors, and removes any
+   row for a status ClickUp no longer has — same "seenIds" staleness pattern
+   reconcileList already uses for tasks below. */
+async function syncListStatuses(listId) {
+  const list = await clickupGet(`/list/${listId}`);
+  const statuses = list.statuses || [];
+
+  const upsert = db.prepare(`
+    INSERT INTO commercial_lead_status_colors (list_id, status, color, orderindex, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(list_id, status) DO UPDATE SET
+      color = excluded.color,
+      orderindex = excluded.orderindex,
+      updated_at = excluded.updated_at
+  `);
+  const del = db.prepare('DELETE FROM commercial_lead_status_colors WHERE list_id = ? AND status = ?');
+
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    const seen = new Set();
+    for (const s of statuses) {
+      seen.add(s.status);
+      upsert.run(listId, s.status, s.color, s.orderindex ?? 0, now);
+    }
+    const existing = db.prepare('SELECT status FROM commercial_lead_status_colors WHERE list_id = ?').all(listId);
+    for (const row of existing) {
+      if (!seen.has(row.status)) del.run(listId, row.status);
+    }
+  });
+  tx();
+}
+
 async function reconcileList(listId) {
+  await syncListStatuses(listId);
   const allTasks = await fetchAllListTasks(listId);
   const parents = allTasks.filter((t) => !t.parent);
   const childrenByParent = {};
@@ -316,6 +366,7 @@ async function reconcileList(listId) {
       status: task.status.status,
       customFields: task.custom_fields,
       subtasks: childrenByParent[task.id] || [],
+      linkedTasks: extractLinkedTaskIds(task),
       clickupCreatedAt: toIso(task.date_created),
       clickupUpdatedAt: toIso(task.date_updated),
     });
