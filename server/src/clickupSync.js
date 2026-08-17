@@ -2,6 +2,7 @@ const db = require('./db');
 const { clickupGet } = require('./clickup');
 const { emitClickupEvent } = require('./realtime');
 const logger = require('./common/logger');
+const { mapStatusToBucket } = require('./commercialLeadBuckets');
 
 /* Only these 3 lists (all inside the "2026 - Ceas Comm" folder the webhook
    is scoped to) are synced at all. Of those, only 2026 Projects gets
@@ -144,6 +145,30 @@ function removeFromLiveCache(taskId) {
   return row ? row.list_id : null;
 }
 
+/* Append-only — one row per time a deal crosses INTO a funnel bucket (see
+   commercialLeadBuckets.js), keyed off the SAME "now" our sync observed the
+   change, not any ClickUp-provided field. task.date_updated was considered
+   and rejected: it fires on any edit to the task (a comment, an unrelated
+   custom field change), not specifically on a status change, so it would
+   be a worse proxy for "when did this transition happen" than our own
+   observed time — matching the existing rationale below for why
+   stage_history/stage_tracking already use "now" rather than trusting a
+   ClickUp-supplied timestamp. Silently does nothing if newBucket is null
+   (the new status doesn't map to any bucket, e.g. 'complete' — see
+   docs/adr/0010-commercial-lead-quarterly-kpis.md) or unchanged from the
+   previous bucket (a lateral move within the same bucket, e.g.
+   qualified -> in queue, writes nothing). */
+function recordBucketEvent(taskId, listId, previousStatus, newStatus, enteredAt) {
+  const previousBucket = previousStatus ? mapStatusToBucket(previousStatus) : null;
+  const newBucket = mapStatusToBucket(newStatus);
+  if (!newBucket || newBucket === previousBucket) return;
+
+  db.prepare(`
+    INSERT INTO commercial_lead_bucket_events (deal_id, list_id, bucket, entered_at, is_backfilled)
+    VALUES (?, ?, ?, ?, 0)
+  `).run(taskId, listId, newBucket, enteredAt);
+}
+
 /* Records the stage the deal is LEAVING (if we were already tracking it)
    into permanent history, then points tracking at the new stage. Uses our
    own previously-recorded status/timestamp as "from", not the webhook
@@ -173,6 +198,8 @@ function recordStageTransition(taskId, listId, newStatus, previousTracking) {
       current_status = excluded.current_status,
       entered_status_at = excluded.entered_status_at
   `).run(taskId, listId, newStatus, now);
+
+  recordBucketEvent(taskId, listId, previousTracking ? previousTracking.current_status : null, newStatus, now);
 }
 
 /* Recomputed (not incrementally patched) from the live cache's current

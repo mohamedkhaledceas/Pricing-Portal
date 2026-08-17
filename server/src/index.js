@@ -27,7 +27,8 @@ const { getWorkspaceSurvey } = require('./clickup');
 const { clickupWebhookRouter } = require('./clickupWebhook');
 const { initRealtime } = require('./realtime');
 const { startReconciliationSchedule } = require('./clickupReconcile');
-const { getDeals, getDailyStats, getStageDurations, getStatusColors, getFunnel } = require('./commercialLead');
+const { scheduleQuarterFreeze } = require('./commercialLeadFreeze');
+const { getDeals, getDailyStats, getStageDurations, getStatusColors, getFunnel, getQuarterlyKpis } = require('./commercialLead');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -542,6 +543,15 @@ app.get('/api/commercial-lead/status-colors', authMiddleware, (req, res) => {
 
 app.get('/api/commercial-lead/funnel', authMiddleware, (req, res) => {
   res.json({ funnel: getFunnel() });
+});
+
+/* Cohort-performance quarterly KPIs (docs/adr/0010-commercial-lead-quarterly-kpis.md)
+   — always live, computed fresh from commercial_lead_bucket_events, never
+   from the frozen commercial_lead_quarter_snapshots table Step 5 adds. An
+   unrecognized/omitted ?quarter falls back to the current quarter inside
+   getQuarterlyKpis rather than erroring. */
+app.get('/api/commercial-lead/quarterly-kpis', authMiddleware, (req, res) => {
+  res.json(getQuarterlyKpis(req.query.quarter));
 });
 
 /* Every signup creates a plain 'user' account — elevated roles are only ever
@@ -1230,4 +1240,5 @@ initRealtime(httpServer);
 httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);
   startReconciliationSchedule();
+  scheduleQuarterFreeze();
 });
