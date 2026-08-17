@@ -2285,6 +2285,32 @@ async function apiRequest(path, options = {}, _isRetry = false){
   return data;
 }
 
+/* Boot renders instantly from the cached user in localStorage (see
+   updateLoginUi/getStoredAuth) so the UI never has to wait on a network
+   round trip to paint. But that cache goes stale the moment an admin
+   changes this user's role server-side — the access token can live up to
+   2h in production, so nothing forces a resync until it expires. This
+   reconciles the cache against /api/me (which always reads the role fresh
+   from the DB) so a role change is reflected on the next plain refresh
+   instead of only after the token expires or a full re-login. */
+async function refreshStoredUser(){
+  const auth = getStoredAuth();
+  if (!auth || !auth.token) return;
+  try {
+    const result = await apiRequest('/api/me');
+    const current = getStoredAuth();
+    if (!current || !current.token) return;
+    if (JSON.stringify(current.user) !== JSON.stringify(result.user)) {
+      setStoredAuth(current.token, result.user);
+      updateLoginUi();
+    }
+  } catch (err) {
+    // Best-effort: keep showing the cached role rather than disrupting boot
+    // over a transient failure (offline, expired session already handled
+    // by apiRequest's own 401 flow above).
+  }
+}
+
 async function hydrateFromApi(){
   try {
     const apiState = await apiRequest('/api/state');
@@ -3002,6 +3028,7 @@ state.projects.forEach(pr => {
 bindTabs(); bindTables(); bindSettings(); bindFiles(); bindModes(); bindTheme(); bindAccountMenu(); bindAccountSettingsView(); bindUsersView();
 $('#fitStart').value = thisMonth();
 updateLoginUi();
+refreshStoredUser();
 loadSettingsInputs(); applyMode(); renderAllStructures();
 
 /* Lets other pages sharing this backend (e.g. commercial-lead.html) deep-link
