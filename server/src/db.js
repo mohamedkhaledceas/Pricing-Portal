@@ -14,6 +14,14 @@ fs.mkdirSync(dbDir, { recursive: true });
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 
+/* Cairo-local calendar-quarter SQL fragment builder — extracted to its own
+   module (commercialLeadQuarter.js) rather than defined here, so the same
+   formula is available to commercialLeadQuarterMetrics.js and the one-time
+   backfill script without a second implementation. Used by both
+   commercial_lead_bucket_events.event_quarter and
+   commercial_lead_live_cache.origin_quarter below. */
+const { cairoQuarterExpr } = require('./commercialLeadQuarter');
+
 const schema = `
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,6 +258,55 @@ const schema = `
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (list_id, status)
   );
+
+  /* Permanent, append-only — one row per time a deal crosses INTO a bucket
+     (leads/qualified/onboarding/in_progress/won/lost, see
+     commercialLeadBuckets.js), not one row per raw ClickUp status change —
+     a lateral move within the same bucket (e.g. qualified -> in queue)
+     writes nothing. This ledger is the single source of truth both the
+     live "cohort performance" reads (docs/commercial-lead-quarterly-kpis-plan.md
+     §6) and the frozen quarter-end snapshot (§8) are computed from — see
+     docs/adr/0010-commercial-lead-quarterly-kpis.md. */
+  CREATE TABLE IF NOT EXISTS commercial_lead_bucket_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    deal_id TEXT NOT NULL,
+    list_id TEXT NOT NULL,
+    bucket TEXT NOT NULL CHECK (bucket IN ('leads','qualified','onboarding','in_progress','won','lost')),
+    entered_at TEXT NOT NULL,
+    event_quarter TEXT GENERATED ALWAYS AS (${cairoQuarterExpr('entered_at')}) STORED,
+    is_backfilled INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cl_bucket_events_deal ON commercial_lead_bucket_events(deal_id);
+  CREATE INDEX IF NOT EXISTS idx_cl_bucket_events_lookup ON commercial_lead_bucket_events(list_id, bucket, event_quarter);
+
+  /* One immutable row per (list, quarter), written once by the quarter-close
+     freeze job and never updated after — "what we reported at the time".
+     Deliberately holds ONLY that frozen snapshot, never a live/current
+     figure for any metric: the live "as of now" view for any quarter (open
+     or closed) always queries commercial_lead_bucket_events directly
+     instead. See docs/adr/0010-commercial-lead-quarterly-kpis.md for why
+     the two are kept separate rather than one table trying to be both. */
+  CREATE TABLE IF NOT EXISTS commercial_lead_quarter_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id TEXT NOT NULL,
+    quarter TEXT NOT NULL,
+    cohort_size INTEGER NOT NULL,
+    qualified_count INTEGER NOT NULL,
+    onboarding_count INTEGER NOT NULL,
+    in_progress_count INTEGER NOT NULL,
+    won_count INTEGER NOT NULL,
+    lost_count INTEGER NOT NULL,
+    conversion_1_rate REAL,
+    conversion_2_rate REAL,
+    repeat_clients_completed_count INTEGER NOT NULL,
+    repeat_clients_returned_count INTEGER NOT NULL,
+    repeat_client_rate REAL,
+    is_estimated INTEGER NOT NULL DEFAULT 0,
+    frozen_at TEXT NOT NULL,
+    UNIQUE(list_id, quarter)
+  );
 `;
 
 db.exec(schema);
@@ -313,7 +370,15 @@ if (!usersColumns.includes('email')) {
    no-op against the already-existing commercial_lead_live_cache table, so
    these need adding by hand. Plain ADD COLUMN is enough here (no CHECK
    constraint involved, unlike the users rebuild above). */
-const liveCacheColumns = db.prepare("PRAGMA table_info(commercial_lead_live_cache)").all().map((c) => c.name);
+/* table_xinfo, not table_info: PRAGMA table_info silently omits generated
+   columns entirely (verified directly — origin_quarter, added below, does
+   not appear in its output at all, which would have made the idempotency
+   guard for that column always re-run the ALTER TABLE and crash with
+   "duplicate column name" on every restart after the first). table_xinfo
+   includes them (hidden: 2 for VIRTUAL) and behaves identically to
+   table_info for ordinary columns, so this is a safe swap for the existing
+   checks below too. */
+const liveCacheColumns = db.prepare("PRAGMA table_xinfo(commercial_lead_live_cache)").all().map((c) => c.name);
 if (!liveCacheColumns.includes('clickup_created_at')) {
   db.exec('ALTER TABLE commercial_lead_live_cache ADD COLUMN clickup_created_at TEXT');
 }
@@ -322,6 +387,19 @@ if (!liveCacheColumns.includes('clickup_updated_at')) {
 }
 if (!liveCacheColumns.includes('linked_tasks_json')) {
   db.exec("ALTER TABLE commercial_lead_live_cache ADD COLUMN linked_tasks_json TEXT NOT NULL DEFAULT '[]'");
+}
+
+/* origin_quarter is VIRTUAL, not STORED, and that's required rather than a
+   style choice: SQLite refuses ALTER TABLE ADD COLUMN ... STORED once a
+   table already has rows (verified directly against better-sqlite3 — it
+   errors "cannot add a STORED column"; the same statement succeeds on an
+   empty table, since STORED needs a value computed and written for every
+   existing row, which ADD COLUMN doesn't do). VIRTUAL has no such
+   restriction and was verified to work identically, including indexed —
+   see docs/commercial-lead-quarterly-kpis-plan.md §2. */
+if (!liveCacheColumns.includes('origin_quarter')) {
+  db.exec(`ALTER TABLE commercial_lead_live_cache ADD COLUMN origin_quarter TEXT GENERATED ALWAYS AS (${cairoQuarterExpr('clickup_created_at')}) VIRTUAL`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cl_live_cache_origin_quarter ON commercial_lead_live_cache(origin_quarter)');
 }
 
 module.exports = db;

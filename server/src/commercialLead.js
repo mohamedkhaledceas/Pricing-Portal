@@ -1,5 +1,12 @@
 const db = require('./db');
 const { INSIGHTS_LIST_ID } = require('./clickupSync');
+const {
+  computeQuarterMetrics,
+  getCurrentQuarter,
+  getQuartersWithData,
+  hasBackfilledData,
+  getQuarterSnapshot,
+} = require('./commercialLeadQuarterMetrics');
 
 /* Friendly keys for the frontend — real ClickUp list IDs stay an
    implementation detail on this side. */
@@ -154,4 +161,30 @@ function getStageDurations() {
   }));
 }
 
-module.exports = { LISTS, getDeals, getDailyStats, getStageDurations, getStatusColors, getFunnel };
+/* Live, cohort-performance quarterly KPI row (docs/adr/0010-commercial-lead-quarterly-kpis.md).
+   Always computed fresh from commercial_lead_bucket_events — this function
+   never reads commercial_lead_quarter_snapshots (the frozen table Step 5
+   adds), by design: a quarter viewed here always reflects everything known
+   as of right now, even if it's a quarter that already closed. Falls back
+   to the current quarter if the requested one has no cohort data at all
+   (an invalid/mistyped quarter, or one with zero deals), rather than
+   returning an empty/misleading result. */
+function getQuarterlyKpis(requestedQuarter) {
+  const currentQuarter = getCurrentQuarter();
+  const availableQuarters = getQuartersWithData(LISTS.pipeline);
+  const quarter = requestedQuarter && availableQuarters.includes(requestedQuarter) ? requestedQuarter : currentQuarter;
+
+  const metrics = computeQuarterMetrics({ listId: LISTS.pipeline, quarter, asOf: null });
+  const snapshot = getQuarterSnapshot(LISTS.pipeline, quarter);
+
+  return {
+    quarter,
+    isCurrent: quarter === currentQuarter,
+    isEstimated: hasBackfilledData({ listId: LISTS.pipeline, quarter }),
+    availableQuarters,
+    metrics,
+    snapshot,
+  };
+}
+
+module.exports = { LISTS, getDeals, getDailyStats, getStageDurations, getStatusColors, getFunnel, getQuarterlyKpis };

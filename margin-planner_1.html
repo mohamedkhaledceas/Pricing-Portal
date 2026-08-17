@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -66,14 +66,46 @@ header.top .sub{color:var(--muted); font-size:12px}
 button, .btn{
   font:inherit; font-size:13px; padding:7px 12px; border-radius:8px;
   border:1px solid var(--border); background:var(--panel); color:var(--ink);
-  cursor:pointer;
+  cursor:pointer; transition:filter .15s ease, background-color .15s ease, transform .08s ease;
 }
-button:hover,.btn:hover{background:var(--plane)}
+button:hover,.btn:hover{filter:brightness(0.93)}
+button:active,.btn:active{filter:brightness(0.86); transform:scale(0.97)}
 button.primary{background:var(--accent); border-color:transparent; color:var(--on-accent); font-weight:600}
-button.primary:hover{filter:brightness(1.07)}
 button.ghost{background:transparent}
+button.ghost:hover{filter:none; background-color:rgba(0,0,0,0.08)}
+button.ghost:active{filter:none; background-color:rgba(0,0,0,0.14); transform:scale(0.97)}
 button.danger{color:var(--critical)}
 button.tiny{padding:3px 8px; font-size:12px; line-height:1.4}
+button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
+@media (prefers-reduced-motion: reduce){
+  button,.btn{transition:background-color .15s ease}
+  button:active,.btn:active,button.ghost:active{transform:none}
+}
+
+.spinner{
+  display:inline-block; width:13px; height:13px; margin-right:7px; vertical-align:-2px;
+  border:2px solid currentColor; border-right-color:transparent; border-radius:50%;
+  animation:spin .6s linear infinite; opacity:0.85;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+#loginScreen{ transition:opacity .25s ease; }
+#loginScreen.is-leaving{ opacity:0; pointer-events:none; }
+#appShell.is-entering{ animation:appReveal .35s ease; }
+@keyframes appReveal{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
+@media (prefers-reduced-motion: reduce){
+  #loginScreen{ transition:none; }
+  #appShell.is-entering{ animation:none; }
+}
+
+.skeleton{ position:relative; overflow:hidden; background:var(--plane); border-radius:6px; display:block; }
+.skeleton::after{
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  animation:skeleton-shimmer 1.3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce){ .skeleton::after{ animation:none; } }
+@keyframes skeleton-shimmer{ from{ transform:translateX(-100%); } to{ transform:translateX(100%); } }
 nav.tabs{
   display:flex; gap:2px; padding:0 12px; background:var(--surface-1);
   border-bottom:1px solid var(--border); overflow-x:auto; position:sticky; top:57px; z-index:19;
@@ -289,8 +321,8 @@ body[data-mode="admin"] .bd-only{display:none !important}
       style="position:absolute; right:0; top:calc(100% + 8px); min-width:230px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 14px 34px rgba(0,0,0,0.22); padding:6px; z-index:30;">
       <div id="accountMenuEmail" style="padding:8px 10px; font-size:12.5px; color:var(--ink-2); border-bottom:1px solid var(--border); margin-bottom:4px; word-break:break-all;"></div>
       <button type="button" id="btnAccountSettings" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Account Settings</button>
-      <button type="button" id="btnThemeToggle" role="menuitemcheckbox" class="ghost" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
-        <span>Dark mode</span><span id="themeToggleState" class="muted"></span>
+      <button type="button" id="btnThemeToggle" role="menuitem" class="ghost" title="Click to cycle: Light / Dark / System" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
+        <span>Theme</span><span id="themeToggleState" class="muted"></span>
       </button>
       <button type="button" id="btnUsersView" role="menuitem" class="ghost" hidden style="width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Users</button>
       <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
@@ -2128,7 +2160,14 @@ function closeAccountMenu(){
   $('#btnAccountMenu').setAttribute('aria-expanded', 'false');
 }
 
-function updateLoginUi(){
+/* animate:true plays a fade-out-login/fade-in-app transition instead of an
+   instant swap — used only for the interactive login/signup submit flow,
+   where hydrateFromApi() has already resolved so there's real data behind
+   the reveal. Every other caller (page boot, session expiry, logout) keeps
+   the instant swap: those aren't user-triggered "arrivals" worth animating,
+   and boot in particular relies on showing state immediately. */
+function updateLoginUi(opts){
+  const animate = !!(opts && opts.animate);
   const auth = getStoredAuth();
   const isLoggedIn = !!(auth && auth.token);
   const loginScreen = $('#loginScreen');
@@ -2147,15 +2186,50 @@ function updateLoginUi(){
     $('#btnCommercialLead').hidden = true;
   }
 
-  loginScreen.hidden = isLoggedIn;
-  loginScreen.style.display = isLoggedIn ? 'none' : 'flex';
-  if (!isLoggedIn) showLoginForm();
-
-  if (isLoggedIn) {
-    showView('planner');
-  } else {
+  if (!isLoggedIn) {
+    loginScreen.hidden = false;
+    loginScreen.style.display = 'flex';
+    loginScreen.classList.remove('is-leaving');
+    showLoginForm();
     appShell.hidden = true;
     appShell.style.display = 'none';
+    appShell.classList.remove('is-entering');
+    return;
+  }
+
+  if (animate && !loginScreen.hidden) {
+    loginScreen.classList.add('is-leaving');
+    loginScreen.addEventListener('transitionend', () => {
+      loginScreen.hidden = true;
+      loginScreen.style.display = 'none';
+      showView('planner');
+      appShell.classList.add('is-entering');
+      appShell.addEventListener('animationend', () => appShell.classList.remove('is-entering'), { once: true });
+    }, { once: true });
+  } else {
+    loginScreen.hidden = true;
+    loginScreen.style.display = 'none';
+    showView('planner');
+  }
+}
+
+/* Swaps a submit button's label for a spinner while an async action is in
+   flight — avoids innerHTML so the (currently static) loading text never
+   goes through unescaped HTML parsing. */
+function setButtonLoading(btn, loading, loadingText){
+  if (!btn) return;
+  if (loading) {
+    if (btn.dataset.originalText === undefined) btn.dataset.originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '';
+    const spin = document.createElement('span');
+    spin.className = 'spinner';
+    spin.setAttribute('aria-hidden', 'true');
+    btn.appendChild(spin);
+    btn.appendChild(document.createTextNode(loadingText || btn.dataset.originalText));
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.originalText !== undefined) btn.textContent = btn.dataset.originalText;
   }
 }
 
@@ -2503,8 +2577,8 @@ async function loginToApi(email, password){
     body: JSON.stringify({ email, password })
   });
   setStoredAuth(result.token, result.user);
-  updateLoginUi();
   const ok = await hydrateFromApi();
+  updateLoginUi({ animate: true });
   if (!ok) {
     alert('Login succeeded but the server state could not be loaded.');
   }
@@ -2517,8 +2591,8 @@ async function signupToApi(email, password, firstName, lastName){
     body: JSON.stringify({ email, password, firstName, lastName })
   });
   setStoredAuth(result.token, result.user);
-  updateLoginUi();
   const ok = await hydrateFromApi();
+  updateLoginUi({ animate: true });
   if (!ok) {
     alert('Account created but the server state could not be loaded.');
   }
@@ -2552,12 +2626,16 @@ $('#loginForm').addEventListener('submit', async (e) => {
     errBox.hidden = false;
     return;
   }
+  const submitBtn = $('#loginForm').querySelector('button[type=submit]');
+  setButtonLoading(submitBtn, true, 'Logging in…');
   try {
     await loginToApi(email, password);
     $('#loginForm').reset();
   } catch (err) {
     errBox.textContent = err.message || 'Login failed.';
     errBox.hidden = false;
+  } finally {
+    setButtonLoading(submitBtn, false);
   }
 });
 
@@ -2596,12 +2674,16 @@ $('#signupForm').addEventListener('submit', async (e) => {
     errBox.hidden = false;
     return;
   }
+  const submitBtn = $('#signupForm').querySelector('button[type=submit]');
+  setButtonLoading(submitBtn, true, 'Creating account…');
   try {
     await signupToApi(email, password, firstName, lastName);
     $('#signupForm').reset();
   } catch (err) {
     errBox.textContent = err.message || 'Sign up failed.';
     errBox.hidden = false;
+  } finally {
+    setButtonLoading(submitBtn, false);
   }
 });
 $('#btnLogout').addEventListener('click', logoutFromApi);
@@ -2646,15 +2728,25 @@ function bindModes(){
   });
 }
 const THEME_KEY = 'pricingPortalTheme';
+function themePref(){
+  try{ return localStorage.getItem(THEME_KEY) || 'system'; }catch(err){ return 'system'; }
+}
 function updateThemeToggleLabel(){
   const el = $('#themeToggleState');
-  if(el) el.textContent = isDarkTheme() ? 'On' : 'Off';
+  if(el){
+    const pref = themePref();
+    el.textContent = pref === 'dark' ? 'Dark' : pref === 'light' ? 'Light' : 'System';
+  }
 }
-function toggleTheme(){
-  const cur = document.documentElement.getAttribute('data-theme');
-  const next = cur === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  try{ localStorage.setItem(THEME_KEY, next); }catch(err){}
+function cycleTheme(){
+  const cur = themePref();
+  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
+  if(next === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', next);
+  try{
+    if(next === 'system') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, next);
+  }catch(err){}
   paintLogos();
   updateThemeToggleLabel();
 }
@@ -2665,7 +2757,7 @@ function bindTheme(){
     mq.addEventListener ? mq.addEventListener('change', h) : mq.addListener(h);
   }
   updateThemeToggleLabel();
-  $('#btnThemeToggle').addEventListener('click', toggleTheme);
+  $('#btnThemeToggle').addEventListener('click', cycleTheme);
   document.addEventListener('input', () => {
     dirty = true;
   }, true);
@@ -2825,10 +2917,13 @@ function renderUsersTable(users){
 async function loadUsersTable(){
   const errBox = $('#usersError');
   errBox.hidden = true;
+  const cell = () => `<td><div class="skeleton" style="width:80%; height:13px;"></div></td>`;
+  $('#usersTableBody').innerHTML = Array.from({ length: 5 }, () => `<tr>${cell().repeat(8)}</tr>`).join('');
   try{
     const result = await apiRequest('/api/users');
     renderUsersTable(result.users || []);
   }catch(err){
+    $('#usersTableBody').innerHTML = '';
     errBox.textContent = err.message || 'Could not load accounts.';
     errBox.hidden = false;
   }

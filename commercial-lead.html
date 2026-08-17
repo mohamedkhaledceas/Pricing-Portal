@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -65,12 +65,28 @@ header.top .sub{color:var(--muted); font-size:12px}
 button,.btn{
   font:inherit; font-size:13px; padding:7px 12px; border-radius:8px;
   border:1px solid var(--border); background:var(--panel); color:var(--ink);
-  cursor:pointer;
+  cursor:pointer; transition:filter .15s ease, background-color .15s ease, transform .08s ease;
 }
-button:hover,.btn:hover{background:var(--plane)}
+button:hover,.btn:hover{filter:brightness(0.93)}
+button:active,.btn:active{filter:brightness(0.86); transform:scale(0.97)}
 button.ghost{background:transparent}
+button.ghost:hover{filter:none; background-color:rgba(0,0,0,0.08)}
+button.ghost:active{filter:none; background-color:rgba(0,0,0,0.14); transform:scale(0.97)}
 button.danger{background:var(--critical); border-color:transparent; color:#fff; font-weight:600}
-button.danger:hover{filter:brightness(1.08)}
+button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
+@media (prefers-reduced-motion: reduce){
+  button,.btn{transition:background-color .15s ease}
+  button:active,.btn:active,button.ghost:active{transform:none}
+}
+
+.skeleton{ position:relative; overflow:hidden; background:var(--plane); border-radius:6px; display:block; }
+.skeleton::after{
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  animation:skeleton-shimmer 1.3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce){ .skeleton::after{ animation:none; } }
+@keyframes skeleton-shimmer{ from{ transform:translateX(-100%); } to{ transform:translateX(100%); } }
 
 #loginGate{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; text-align:center; padding:24px}
 
@@ -89,6 +105,17 @@ button.danger:hover{filter:brightness(1.08)}
 
 .stat-tile .value{font-size:40px; font-weight:650; line-height:1.1}
 .stat-tile .label{font-size:13px; color:var(--ink-2); margin-top:4px}
+
+.qk-header{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:2px}
+.qk-header h2{margin:0}
+.qk-nav{display:flex; align-items:center; gap:6px}
+.qk-nav button{padding:5px 11px; font-size:14px; line-height:1}
+.qk-badge{display:inline-block; font-size:11px; padding:2px 8px; border-radius:100px; background:var(--warn); color:#191919; white-space:nowrap; font-weight:600}
+.qk-badge[hidden]{display:none}
+.kpi-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:16px; margin-top:12px}
+.kpi-tile .value{font-size:24px; font-weight:650; line-height:1.15; font-variant-numeric:tabular-nums}
+.kpi-tile .label{font-size:11.5px; color:var(--ink-2); margin-top:4px; line-height:1.3}
+.kpi-tile .compare{font-size:10.5px; color:var(--muted); margin-top:3px; font-variant-numeric:tabular-nums}
 
 .bar-chart{display:flex; align-items:flex-start; gap:10px; padding:4px 2px 2px; overflow-x:auto}
 .bar-col{display:flex; flex-direction:column; align-items:center; flex:1 1 56px; min-width:52px}
@@ -115,9 +142,9 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
 .status-pill{display:inline-block; font-size:11px; padding:2px 8px; border-radius:100px; background:var(--grid); color:var(--ink-2); white-space:nowrap}
 .deal-details{display:none; font-size:12px; color:var(--ink-2); padding:4px 8px 14px}
 .deal-details.open{display:block}
-.deal-details dl{display:grid; grid-template-columns:max-content 1fr; gap:5px 12px; margin:0}
+.deal-details dl{display:grid; grid-template-columns:130px minmax(0,1fr); gap:5px 12px; margin:0}
 .deal-details dt{color:var(--muted)}
-.deal-details dd{margin:0}
+.deal-details dd{margin:0; overflow-wrap:anywhere; min-width:0}
 .subtask-chip{display:inline-block; font-size:11px; padding:1px 7px; border-radius:100px; border:1px solid var(--border); margin:2px 4px 2px 0}
 
 .table-toolbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px}
@@ -167,8 +194,8 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
         style="position:absolute; right:0; top:calc(100% + 8px); min-width:200px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 14px 34px rgba(0,0,0,0.22); padding:6px; z-index:30;">
         <div id="accountMenuEmail" style="padding:8px 10px; font-size:12.5px; color:var(--ink-2); border-bottom:1px solid var(--border); margin-bottom:4px; word-break:break-all;"></div>
         <button type="button" id="btnAccountSettings" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Account Settings</button>
-        <button type="button" id="btnThemeToggle" role="menuitemcheckbox" class="ghost" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
-          <span>Dark mode</span><span id="themeToggleState" class="muted"></span>
+        <button type="button" id="btnThemeToggle" role="menuitem" class="ghost" title="Click to cycle: Light / Dark / System" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
+          <span>Theme</span><span id="themeToggleState" class="muted"></span>
         </button>
         <button type="button" id="btnUsersView" role="menuitem" class="ghost" hidden style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Users</button>
         <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
@@ -178,12 +205,22 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
   </header>
 
   <main>
-    <div class="card stat-tile">
-      <div class="value" id="statNewLeads">—</div>
-      <div class="label">New leads today, 2026 Projects</div>
+    <div class="card">
+      <div class="qk-header">
+        <h2>Commercial Lead — <span id="qkQuarterLabel">—</span></h2>
+        <span class="qk-badge" id="qkEstimatedBadge" hidden title="This quarter includes deals backfilled from before live tracking began — timing is approximate, which stages were reached is not.">Includes estimated data</span>
+        <span class="qk-badge" id="qkFrozenBadge" hidden style="background:var(--grid); color:var(--ink-2);">Frozen at close — some tiles show today's figure too</span>
+        <div class="spacer"></div>
+        <div class="qk-nav">
+          <button type="button" id="qkPrev" class="ghost" aria-label="Previous quarter" title="Previous quarter">‹</button>
+          <button type="button" id="qkNext" class="ghost" aria-label="Next quarter" title="Next quarter">›</button>
+        </div>
+      </div>
+      <p class="hint">Live data: figures reflect the current status of clients per quarter and may differ from the official quarter-end snapshot once the period is closed.</p>
+      <div class="kpi-grid" id="qkGrid"></div>
     </div>
 
-    <div class="grid-2">
+    <div class="grid-2"> 
       <div class="card">
         <h2>Pipeline by status</h2>
         <p class="hint">2026 Projects — current count per stage</p>
@@ -211,14 +248,14 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
       <div id="funnelChart"></div>
     </div>
 
-    <div class="card">
+    <!-- <div class="card">
       <h2>Time in stage</h2>
       <p class="hint">2026 Projects — exact durations from real stage changes since this system started tracking. Sparse until more real transitions happen.</p>
       <table class="data-table" id="stageDurationTable">
         <thead><tr><th>Status</th><th>Transitions</th><th>Avg days</th><th>Min</th><th>Max</th></tr></thead>
         <tbody></tbody>
       </table>
-    </div>
+    </div> -->
 
     <div class="card">
       <h2>2026 Projects — live deals</h2>
@@ -281,14 +318,22 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
   function paintLogo(){
     $('#brandLogo').src = isDarkTheme() ? '/logo-dark.png' : '/logo-light.png';
   }
-  function updateThemeToggleLabel(){
-    $('#themeToggleState').textContent = isDarkTheme() ? 'On' : 'Off';
+  function themePref(){
+    try{ return localStorage.getItem('pricingPortalTheme') || 'system'; }catch(err){ return 'system'; }
   }
-  function toggleTheme(){
-    const cur = document.documentElement.getAttribute('data-theme');
-    const next = cur === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    try{ localStorage.setItem('pricingPortalTheme', next); }catch(err){}
+  function updateThemeToggleLabel(){
+    const pref = themePref();
+    $('#themeToggleState').textContent = pref === 'dark' ? 'Dark' : pref === 'light' ? 'Light' : 'System';
+  }
+  function cycleTheme(){
+    const cur = themePref();
+    const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
+    if(next === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', next);
+    try{
+      if(next === 'system') localStorage.removeItem('pricingPortalTheme');
+      else localStorage.setItem('pricingPortalTheme', next);
+    }catch(err){}
     paintLogo();
     updateThemeToggleLabel();
   }
@@ -378,9 +423,68 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     renderBarChart('chartSource', latestDate('source').sort((a, b) => b.count - a.count));
     renderBarChart('chartBusinessLine', latestDate('business_line').sort((a, b) => b.count - a.count));
     renderBarChart('chartCountry', latestDate('country').sort((a, b) => b.count - a.count));
+  }
 
-    const newLeads = latestDate('new_leads')[0];
-    $('#statNewLeads').textContent = newLeads ? newLeads.count : '0';
+  let quarterlyState = null;
+
+  function formatPercent(rate) {
+    return rate === null || rate === undefined ? 'n/a' : (rate * 100).toFixed(1) + '%';
+  }
+
+  const QK_TILES = [
+    { key: 'cohortSize', label: 'Leads' },
+    { key: 'qualifiedCount', label: 'Qualified' },
+    { key: 'onboardingCount', label: 'Onboarding' },
+    { key: 'inProgressCount', label: 'In Progress' },
+    { key: 'conversion1Rate', label: 'Leads → In Progress', percent: true },
+    { key: 'conversion2Rate', label: 'Contract Completed', percent: true },
+    { key: 'wonCount', label: 'Won' },
+    { key: 'lostCount', label: 'Lost' },
+    // { key: 'repeatClientRate', label: 'Repeat Client Rate', percent: true },
+  ];
+
+  function renderQuarterlyKpis(data) {
+    quarterlyState = data;
+    $('#qkQuarterLabel').textContent = data.quarter + (data.isCurrent ? ' (current)' : '');
+    $('#qkEstimatedBadge').hidden = !data.isEstimated;
+    $('#qkFrozenBadge').hidden = !data.snapshot;
+
+    const m = data.metrics;
+    const snap = data.snapshot;
+    $('#qkGrid').innerHTML = QK_TILES.map((t) => {
+      const raw = m[t.key];
+      const value = t.percent ? formatPercent(raw) : (raw ?? 0);
+      // Only shown when a frozen quarter-close snapshot exists AND differs
+      // from the live figure — right after freezing they're identical (the
+      // cohort hasn't moved yet), and re-showing an identical number as a
+      // second line would just be clutter, not information.
+      let compareHtml = '';
+      if (snap) {
+        const snapRaw = snap[t.key];
+        if (snapRaw !== raw) {
+          const snapValue = t.percent ? formatPercent(snapRaw) : (snapRaw ?? 0);
+          compareHtml = `<div class="compare">at close: ${escapeHtml(String(snapValue))}</div>`;
+        }
+      }
+      return `
+        <div class="kpi-tile">
+          <div class="value">${value}</div>
+          <div class="label">${escapeHtml(t.label)}</div>
+          ${compareHtml}
+        </div>
+      `;
+    }).join('');
+
+    const idx = data.availableQuarters.indexOf(data.quarter);
+    $('#qkPrev').disabled = idx <= 0;
+    $('#qkNext').disabled = idx === -1 || idx >= data.availableQuarters.length - 1;
+  }
+
+  async function selectQuarter(quarter) {
+    try {
+      const data = await apiFetch('/api/commercial-lead/quarterly-kpis?quarter=' + encodeURIComponent(quarter));
+      renderQuarterlyKpis(data);
+    } catch (err) {}
   }
 
   function renderFunnel(funnel) {
@@ -408,6 +512,7 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
 
   function renderStageDurations(rows) {
     const tbody = document.querySelector('#stageDurationTable tbody');
+    if (!tbody) return; // card is commented out pending its move into the live-deals table
     if (!rows || rows.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty-note">No completed stage transitions recorded yet.</td></tr>';
       return;
@@ -565,13 +670,42 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     `).join('');
   }
 
+  /* Placeholder shapes for every div that's about to be filled by loadAll()'s
+     first fetch — shown the instant the dashboard becomes visible so arriving
+     here never shows a blank page while data is in flight. Every render*()
+     function below replaces these containers' innerHTML wholesale, so the
+     skeletons just get overwritten once real content lands; nothing needs to
+     explicitly clear them. */
+  function skeletonBlock(width, height) {
+    return `<div class="skeleton" style="width:${width}; height:${height};"></div>`;
+  }
+  function skeletonTableRows(colWidths) {
+    const cells = colWidths.map((w) => `<td>${skeletonBlock(w, '13px')}</td>`).join('');
+    return Array.from({ length: 5 }, () => `<tr>${cells}</tr>`).join('');
+  }
+  function renderDashboardSkeletons() {
+    $('#qkGrid').innerHTML = Array.from({ length: 8 }, () => `
+      <div class="kpi-tile">
+        ${skeletonBlock('44px', '24px')}
+        <div style="margin-top:8px;">${skeletonBlock('70%', '12px')}</div>
+      </div>
+    `).join('');
+    ['chartStatus', 'chartSource', 'chartBusinessLine', 'chartCountry'].forEach((id) => {
+      $('#' + id).innerHTML = Array.from({ length: 4 }, () => `<div style="margin:6px 0;">${skeletonBlock('100%', '16px')}</div>`).join('');
+    });
+    $('#funnelChart').innerHTML = Array.from({ length: 5 }, () => `<div style="margin:8px 0;">${skeletonBlock('80%', '18px')}</div>`).join('');
+    document.querySelector('#pipelineTable tbody').innerHTML = skeletonTableRows(['85%', '60%', '70%', '50%', '60%']);
+    document.querySelector('#activeClientsTable tbody').innerHTML = skeletonTableRows(['85%', '60%']);
+  }
+
   async function loadAll() {
-    const [dealsRes, statsRes, durationsRes, statusColorsRes, funnelRes] = await Promise.all([
+    const [dealsRes, statsRes, durationsRes, statusColorsRes, funnelRes, quarterlyRes] = await Promise.all([
       apiFetch('/api/commercial-lead/deals'),
       apiFetch('/api/commercial-lead/stats?days=30'),
       apiFetch('/api/commercial-lead/stage-durations'),
       apiFetch('/api/commercial-lead/status-colors'),
       apiFetch('/api/commercial-lead/funnel'),
+      apiFetch('/api/commercial-lead/quarterly-kpis'),
     ]);
     dealsCache = dealsRes.deals;
     statusColors = statusColorsRes.statusColors;
@@ -580,6 +714,7 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     renderStats(statsRes.stats);
     renderStageDurations(durationsRes.stageDurations);
     renderFunnel(funnelRes.funnel);
+    renderQuarterlyKpis(quarterlyRes);
   }
 
   let statsRefreshTimer = null;
@@ -637,7 +772,7 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
       $('#btnAccountMenu').setAttribute('aria-expanded', String(!menu.hidden));
     });
     document.addEventListener('click', () => { $('#accountMenu').hidden = true; });
-    $('#btnThemeToggle').addEventListener('click', toggleTheme);
+    $('#btnThemeToggle').addEventListener('click', (e) => { e.stopPropagation(); cycleTheme(); });
     $('#btnAccountSettings').addEventListener('click', () => { window.location.href = '/?open=accountSettings'; });
     $('#btnUsersView').addEventListener('click', () => { window.location.href = '/?open=users'; });
     $('#btnLogout').addEventListener('click', async () => {
@@ -661,6 +796,19 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     });
     $('#sortPipeline').addEventListener('change', (e) => { sortMode = e.target.value; pipelinePage = 1; renderPipelineTable(); });
     $('#sortPipeline').addEventListener('click', (e) => e.stopPropagation());
+
+    $('#qkPrev').addEventListener('click', () => {
+      if (!quarterlyState) return;
+      const idx = quarterlyState.availableQuarters.indexOf(quarterlyState.quarter);
+      if (idx > 0) selectQuarter(quarterlyState.availableQuarters[idx - 1]);
+    });
+    $('#qkNext').addEventListener('click', () => {
+      if (!quarterlyState) return;
+      const idx = quarterlyState.availableQuarters.indexOf(quarterlyState.quarter);
+      if (idx !== -1 && idx < quarterlyState.availableQuarters.length - 1) {
+        selectQuarter(quarterlyState.availableQuarters[idx + 1]);
+      }
+    });
   }
 
   (async function init() {
@@ -681,6 +829,7 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     $('#accountMenuEmail').textContent = currentUser ? currentUser.email || '' : '';
     $('#loginGate').style.display = 'none';
     $('#app').style.display = 'block';
+    renderDashboardSkeletons();
     await loadAll();
     connectSocket();
   })();
