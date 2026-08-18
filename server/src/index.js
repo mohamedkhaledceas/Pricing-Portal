@@ -12,6 +12,7 @@ const {
   REFRESH_COOKIE_NAME,
   issueRefreshToken,
   findValidRefreshToken,
+  findRecentlyRevokedRefreshToken,
   revokeRefreshTokenById,
   revokeRefreshTokenByRaw,
   setRefreshCookie,
@@ -635,24 +636,36 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
 app.post('/api/auth/refresh', authLimiter, (req, res) => {
   const rawToken = req.cookies ? req.cookies[REFRESH_COOKIE_NAME] : null;
   const tokenRow = findValidRefreshToken(rawToken);
-  if (!tokenRow) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
+  let userId;
+
+  if (tokenRow) {
+    /* Simple rotation: the old refresh token is invalidated and a new one
+       issued on every use. A reused (already-rotated) or previously
+       logged-out token fails the findValidRefreshToken() lookup above — it
+       does not trigger a mass revocation of the user's other sessions,
+       which would be more than this internal application needs. */
+    userId = tokenRow.user_id;
+    revokeRefreshTokenById(tokenRow.id, 'rotated');
+  } else {
+    /* Not currently valid — but if it was revoked moments ago, this is very
+       likely a losing request in a rotation race (see REFRESH_REUSE_GRACE_MS
+       in auth.js), not a stale/replayed token. Let it through with a fresh
+       pair instead of forcing a spurious logout; anything revoked further
+       back than the grace window still hits the 401 below exactly as before. */
+    const recentlyRevoked = findRecentlyRevokedRefreshToken(rawToken);
+    if (!recentlyRevoked) {
+      clearRefreshCookie(res);
+      return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
+    }
+    userId = recentlyRevoked.user_id;
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(tokenRow.user_id);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) {
-    revokeRefreshTokenById(tokenRow.id);
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
   }
 
-  /* Simple rotation: the old refresh token is invalidated and a new one issued
-     on every use. A reused (already-rotated) or previously logged-out token
-     fails the findValidRefreshToken() lookup above — it does not trigger a
-     mass revocation of the user's other sessions, which would be more than
-     this internal application needs. */
-  revokeRefreshTokenById(tokenRow.id);
   const newRefreshToken = issueRefreshToken(user.id);
   setRefreshCookie(res, newRefreshToken);
 
@@ -665,7 +678,7 @@ app.post('/api/auth/refresh', authLimiter, (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   const rawToken = req.cookies ? req.cookies[REFRESH_COOKIE_NAME] : null;
   const tokenRow = findValidRefreshToken(rawToken);
-  revokeRefreshTokenByRaw(rawToken);
+  revokeRefreshTokenByRaw(rawToken, 'logout');
   clearRefreshCookie(res);
   if (tokenRow) {
     audit.record({ userId: tokenRow.user_id, action: 'user.logout', entityType: 'user', entityId: String(tokenRow.user_id), ip: req.ip });
@@ -719,7 +732,9 @@ app.patch('/api/me/password', authMiddleware, (req, res) => {
     /* Revokes this session's refresh cookie too — the still-valid access token
        keeps the current tab working until it expires, but refreshing or
        logging in again anywhere requires the new password from that point on. */
-    db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL').run(user.id);
+    db.prepare(
+      "UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP, revoked_reason = 'password_change' WHERE user_id = ? AND revoked_at IS NULL"
+    ).run(user.id);
   });
   changePassword();
 
@@ -804,7 +819,9 @@ app.post('/api/users/:id/deactivate', authMiddleware, (req, res) => {
 
   const deactivate = db.transaction(() => {
     db.prepare('UPDATE users SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(targetId);
-    db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL').run(targetId);
+    db.prepare(
+      "UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP, revoked_reason = 'account_deactivated' WHERE user_id = ? AND revoked_at IS NULL"
+    ).run(targetId);
   });
   deactivate();
 
