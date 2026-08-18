@@ -3,27 +3,13 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
-const bcrypt = require('bcryptjs');
 const db = require('./db');
-const {
-  signToken,
-  authMiddleware,
-  REFRESH_COOKIE_NAME,
-  issueRefreshToken,
-  findValidRefreshToken,
-  findRecentlyRevokedRefreshToken,
-  revokeRefreshTokenById,
-  revokeRefreshTokenByRaw,
-  setRefreshCookie,
-  clearRefreshCookie,
-} = require('./auth');
+const { router: authRouter, authenticate: authMiddleware } = require('./modules/auth');
 const logger = require('./common/logger');
 const audit = require('./common/audit');
 const correlationId = require('./common/correlationId');
 const errorHandler = require('./common/errorHandler');
 const { ValidationError } = require('./common/errors');
-const { ASSIGNABLE_ROLES, canManageUsers, canAssignRole, canModifyStatus } = require('./common/permissions');
 const { getWorkspaceSurvey } = require('./clickup');
 const { clickupWebhookRouter } = require('./clickupWebhook');
 const { initRealtime } = require('./realtime');
@@ -64,14 +50,6 @@ app.use('/api/clickup/webhook', clickupWebhookRouter());
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
-});
-
 /* Replaces the old `Number(value || 0)` pattern, which silently turned any
    non-numeric input (typos, garbage strings) into 0 with no feedback. A
    provided value that isn't a valid number is now a 400, not silent data loss. */
@@ -83,9 +61,6 @@ function numOrDefault(value, fallback, fieldName) {
   }
   return n;
 }
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD_LENGTH = 8;
 
 const clientHtmlPath = path.join(__dirname, '..', '..', 'margin-planner_1.html');
 app.get('/', (req, res) => {
@@ -103,28 +78,11 @@ app.get('/commercial-lead', (req, res) => {
    ~30KB copy. */
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-function serializeUser(row) {
-  return row ? {
-    id: row.id,
-    email: row.email,
-    firstName: row.first_name,
-    lastName: row.last_name,
-    role: row.role,
-  } : null;
-}
-
-function serializeAccount(row) {
-  return row ? {
-    id: row.id,
-    email: row.email,
-    firstName: row.first_name,
-    lastName: row.last_name,
-    role: row.role,
-    isActive: row.is_active !== 0,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  } : null;
-}
+/* /api/auth/*, /api/me*, /api/users* — relocated into modules/auth/ with
+   full controller/service/repository/model layering (see that module's
+   container.js). Same paths, same behavior, unchanged from the caller's
+   perspective. */
+app.use('/api', authRouter);
 
 function serializeSettings(row) {
   const rates = row && row.rates_json ? JSON.parse(row.rates_json || '{}') : { EGP: 1 };
@@ -549,305 +507,6 @@ app.get('/api/commercial-lead/status-colors', authMiddleware, (req, res) => {
    getQuarterlyKpis rather than erroring. */
 app.get('/api/commercial-lead/quarterly-kpis', authMiddleware, (req, res) => {
   res.json(getQuarterlyKpis(req.query.quarter));
-});
-
-/* Every signup creates a plain 'user' account — elevated roles are only ever
-   granted afterward, via PATCH /api/users/:id/role by an admin/manager/operations
-   account (or, for bootstrapping a brand-new deploy, `node src/create-user.js`
-   through Render's Shell before any admin account exists yet). */
-app.post('/api/auth/register', authLimiter, (req, res) => {
-  const { email, password, firstName, lastName } = req.body || {};
-  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
-  const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
-
-  if (!normalizedEmail || !EMAIL_RE.test(normalizedEmail)) {
-    return res.status(400).json({ error: 'Please enter a valid email address.' });
-  }
-  if (!trimmedFirstName || !trimmedLastName) {
-    return res.status(400).json({ error: 'First and last name are required.' });
-  }
-  if (!password || typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
-    return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.` });
-  }
-
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
-  if (existing) {
-    return res.status(409).json({ error: 'An account with this email already exists.' });
-  }
-
-  const passwordHash = bcrypt.hashSync(password, 12);
-  const info = db
-    .prepare('INSERT INTO users (email, first_name, last_name, password_hash, role) VALUES (?, ?, ?, ?, ?)')
-    .run(normalizedEmail, trimmedFirstName, trimmedLastName, passwordHash, 'user');
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
-
-  const refreshToken = issueRefreshToken(user.id);
-  setRefreshCookie(res, refreshToken);
-  audit.record({ userId: user.id, username: user.email, action: 'user.signup', entityType: 'user', entityId: String(user.id), ip: req.ip });
-  return res.status(201).json({
-    token: signToken(user),
-    user: serializeUser(user),
-  });
-});
-
-app.post('/api/auth/login', authLimiter, (req, res) => {
-  const { email, password } = req.body || {};
-
-  if (!email || typeof email !== 'string' || !email.trim()) {
-    return res.status(400).json({ error: 'Email is required.' });
-  }
-
-  if (!password || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Password is required.' });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
-  if (!user) {
-    audit.record({ username: normalizedEmail, action: 'user.login_failed', entityType: 'user', ip: req.ip });
-    return res.status(401).json({ error: 'Invalid email or password.' });
-  }
-
-  const valid = bcrypt.compareSync(password, user.password_hash);
-  if (!valid) {
-    audit.record({ userId: user.id, username: user.email, action: 'user.login_failed', entityType: 'user', entityId: String(user.id), ip: req.ip });
-    return res.status(401).json({ error: 'Invalid email or password.' });
-  }
-
-  if (!user.is_active) {
-    audit.record({ userId: user.id, username: user.email, action: 'user.login_blocked_inactive', entityType: 'user', entityId: String(user.id), ip: req.ip });
-    return res.status(403).json({ error: 'This account has been deactivated.' });
-  }
-
-  const refreshToken = issueRefreshToken(user.id);
-  setRefreshCookie(res, refreshToken);
-  audit.record({ userId: user.id, username: user.email, action: 'user.login', entityType: 'user', entityId: String(user.id), ip: req.ip });
-  return res.json({
-    token: signToken(user),
-    user: serializeUser(user),
-  });
-});
-
-app.post('/api/auth/refresh', authLimiter, (req, res) => {
-  const rawToken = req.cookies ? req.cookies[REFRESH_COOKIE_NAME] : null;
-  const tokenRow = findValidRefreshToken(rawToken);
-  let userId;
-
-  if (tokenRow) {
-    /* Simple rotation: the old refresh token is invalidated and a new one
-       issued on every use. A reused (already-rotated) or previously
-       logged-out token fails the findValidRefreshToken() lookup above — it
-       does not trigger a mass revocation of the user's other sessions,
-       which would be more than this internal application needs. */
-    userId = tokenRow.user_id;
-    revokeRefreshTokenById(tokenRow.id, 'rotated');
-  } else {
-    /* Not currently valid — but if it was revoked moments ago, this is very
-       likely a losing request in a rotation race (see REFRESH_REUSE_GRACE_MS
-       in auth.js), not a stale/replayed token. Let it through with a fresh
-       pair instead of forcing a spurious logout; anything revoked further
-       back than the grace window still hits the 401 below exactly as before. */
-    const recentlyRevoked = findRecentlyRevokedRefreshToken(rawToken);
-    if (!recentlyRevoked) {
-      clearRefreshCookie(res);
-      return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
-    }
-    userId = recentlyRevoked.user_id;
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-  if (!user) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
-  }
-
-  const newRefreshToken = issueRefreshToken(user.id);
-  setRefreshCookie(res, newRefreshToken);
-
-  return res.json({
-    token: signToken(user),
-    user: serializeUser(user),
-  });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  const rawToken = req.cookies ? req.cookies[REFRESH_COOKIE_NAME] : null;
-  const tokenRow = findValidRefreshToken(rawToken);
-  revokeRefreshTokenByRaw(rawToken, 'logout');
-  clearRefreshCookie(res);
-  if (tokenRow) {
-    audit.record({ userId: tokenRow.user_id, action: 'user.logout', entityType: 'user', entityId: String(tokenRow.user_id), ip: req.ip });
-  }
-  return res.json({ ok: true });
-});
-
-app.get('/api/me', authMiddleware, (req, res) => {
-  const user = db.prepare('SELECT id, email, first_name, last_name, role FROM users WHERE id = ?').get(req.user.id);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found.' });
-  }
-
-  return res.json({ user: serializeUser(user) });
-});
-
-app.patch('/api/me/profile', authMiddleware, (req, res) => {
-  const { firstName, lastName } = req.body || {};
-  const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
-  const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
-
-  if (!trimmedFirstName || !trimmedLastName) {
-    return res.status(400).json({ error: 'First and last name are required.' });
-  }
-
-  db.prepare('UPDATE users SET first_name = ?, last_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(trimmedFirstName, trimmedLastName, req.user.id);
-  audit.recordFromRequest(req, 'user.profile_update', 'user', String(req.user.id), { after: { firstName: trimmedFirstName, lastName: trimmedLastName } });
-
-  const user = db.prepare('SELECT id, email, first_name, last_name, role FROM users WHERE id = ?').get(req.user.id);
-  return res.json({ user: serializeUser(user) });
-});
-
-app.patch('/api/me/password', authMiddleware, (req, res) => {
-  const { currentPassword, newPassword } = req.body || {};
-  if (!currentPassword || typeof currentPassword !== 'string') {
-    return res.status(400).json({ error: 'Current password is required.' });
-  }
-  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
-    return res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD_LENGTH} characters long.` });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
-    return res.status(401).json({ error: 'Current password is incorrect.' });
-  }
-
-  const passwordHash = bcrypt.hashSync(newPassword, 12);
-  const changePassword = db.transaction(() => {
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(passwordHash, user.id);
-    /* Revokes this session's refresh cookie too — the still-valid access token
-       keeps the current tab working until it expires, but refreshing or
-       logging in again anywhere requires the new password from that point on. */
-    db.prepare(
-      "UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP, revoked_reason = 'password_change' WHERE user_id = ? AND revoked_at IS NULL"
-    ).run(user.id);
-  });
-  changePassword();
-
-  audit.recordFromRequest(req, 'user.password_change', 'user', String(user.id), {});
-  return res.json({ ok: true });
-});
-
-app.get('/api/users', authMiddleware, (req, res) => {
-  if (!canManageUsers(req.user.role)) {
-    return res.status(403).json({ error: 'You do not have permission to view accounts.' });
-  }
-  const rows = db.prepare('SELECT * FROM users ORDER BY created_at ASC, id ASC').all();
-  return res.json({ users: rows.map(serializeAccount) });
-});
-
-app.patch('/api/users/:id/role', authMiddleware, (req, res) => {
-  const targetId = Number(req.params.id);
-  const { role } = req.body || {};
-
-  if (!canManageUsers(req.user.role)) {
-    return res.status(403).json({ error: 'You do not have permission to manage accounts.' });
-  }
-  if (!ASSIGNABLE_ROLES.includes(role)) {
-    return res.status(400).json({ error: `Role must be one of: ${ASSIGNABLE_ROLES.join(', ')}.` });
-  }
-  if (targetId === req.user.id) {
-    return res.status(400).json({ error: 'You cannot change your own role.' });
-  }
-
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
-  if (!target) {
-    return res.status(404).json({ error: 'Account not found.' });
-  }
-  if (!canAssignRole(req.user.role, target.role, role)) {
-    return res.status(403).json({ error: 'You do not have permission to assign that role.' });
-  }
-  /* Given the self-change block above and canAssignRole (only an admin can touch
-     an admin account) above that, reaching this point with only one active admin
-     already implies the actor IS that admin acting on someone else — impossible.
-     Kept anyway as a defense-in-depth invariant check, in case either of those
-     two guards is ever weakened by a future change without this one being revisited. */
-  if (target.role === 'admin' && role !== 'admin') {
-    const activeAdmins = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND is_active = 1").get().n;
-    if (activeAdmins <= 1) {
-      return res.status(400).json({ error: 'At least one active admin account must remain.' });
-    }
-  }
-
-  db.prepare('UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(role, targetId);
-  audit.recordFromRequest(req, 'user.role_change', 'user', String(targetId), { before: { role: target.role }, after: { role } });
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
-  return res.json({ user: serializeAccount(updated) });
-});
-
-app.post('/api/users/:id/deactivate', authMiddleware, (req, res) => {
-  const targetId = Number(req.params.id);
-
-  if (!canManageUsers(req.user.role)) {
-    return res.status(403).json({ error: 'You do not have permission to manage accounts.' });
-  }
-  if (targetId === req.user.id) {
-    return res.status(400).json({ error: 'You cannot deactivate your own account.' });
-  }
-
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
-  if (!target) {
-    return res.status(404).json({ error: 'Account not found.' });
-  }
-  if (!canModifyStatus(req.user.role, target.role)) {
-    return res.status(403).json({ error: 'You do not have permission to deactivate that account.' });
-  }
-  if (!target.is_active) {
-    return res.status(400).json({ error: 'That account is already deactivated.' });
-  }
-  if (target.role === 'admin') {
-    // Same defense-in-depth invariant as the role-change endpoint above.
-    const activeAdmins = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND is_active = 1").get().n;
-    if (activeAdmins <= 1) {
-      return res.status(400).json({ error: 'At least one active admin account must remain.' });
-    }
-  }
-
-  const deactivate = db.transaction(() => {
-    db.prepare('UPDATE users SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(targetId);
-    db.prepare(
-      "UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP, revoked_reason = 'account_deactivated' WHERE user_id = ? AND revoked_at IS NULL"
-    ).run(targetId);
-  });
-  deactivate();
-
-  audit.recordFromRequest(req, 'user.deactivate', 'user', String(targetId), { before: { isActive: true }, after: { isActive: false } });
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
-  return res.json({ user: serializeAccount(updated) });
-});
-
-app.post('/api/users/:id/reactivate', authMiddleware, (req, res) => {
-  const targetId = Number(req.params.id);
-
-  if (!canManageUsers(req.user.role)) {
-    return res.status(403).json({ error: 'You do not have permission to manage accounts.' });
-  }
-
-  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
-  if (!target) {
-    return res.status(404).json({ error: 'Account not found.' });
-  }
-  if (!canModifyStatus(req.user.role, target.role)) {
-    return res.status(403).json({ error: 'You do not have permission to reactivate that account.' });
-  }
-  if (target.is_active) {
-    return res.status(400).json({ error: 'That account is already active.' });
-  }
-
-  db.prepare('UPDATE users SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(targetId);
-  audit.recordFromRequest(req, 'user.reactivate', 'user', String(targetId), { before: { isActive: false }, after: { isActive: true } });
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
-  return res.json({ user: serializeAccount(updated) });
 });
 
 app.get('/api/settings', authMiddleware, (req, res) => {

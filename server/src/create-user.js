@@ -1,8 +1,9 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const db = require('./db');
+const { ALL_ROLES, ROLES } = require('./common/constants/roles');
 
-const VALID_ROLES = ['user', 'manager', 'operations', 'finance', 'admin'];
+const VALID_ROLES = ALL_ROLES;
 
 const [, , emailArg, passwordArg, roleArg] = process.argv;
 
@@ -24,7 +25,7 @@ if (password.length < 6) {
   process.exit(1);
 }
 
-let role = 'user';
+let role = ROLES.EMPLOYEE;
 if (roleArg !== undefined) {
   if (!VALID_ROLES.includes(roleArg)) {
     console.error(`Invalid role "${roleArg}". Must be one of: ${VALID_ROLES.join(', ')}.`);

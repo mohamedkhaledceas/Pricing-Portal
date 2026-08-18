@@ -1,12 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
+const config = require('./config');
+const { runMigrations } = require('./db/migrationRunner');
 
 /* DB_DIR lets a persistent disk be mounted anywhere the hosting platform
    chooses (e.g. Render/Railway/Fly volumes) and pointed at explicitly,
    instead of assuming the database lives inside the deployed source tree —
    which most platforms wipe and recreate on every deploy. */
-const dbDir = process.env.DB_DIR || path.join(__dirname, '..', 'data');
+const dbDir = config.dbDir || path.join(__dirname, '..', 'data');
 const dbPath = path.join(dbDir, 'app.db');
 
 fs.mkdirSync(dbDir, { recursive: true });
@@ -29,7 +31,7 @@ const schema = `
     first_name TEXT NOT NULL DEFAULT '',
     last_name TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'manager', 'operations', 'finance', 'admin')),
+    role TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('employee', 'manager', 'operations', 'finance', 'admin')),
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -414,5 +416,11 @@ const refreshTokenColumns = db.prepare("PRAGMA table_xinfo(refresh_tokens)").all
 if (!refreshTokenColumns.includes('revoked_reason')) {
   db.exec('ALTER TABLE refresh_tokens ADD COLUMN revoked_reason TEXT');
 }
+
+/* Ordered, tracked migrations (db/migrations/) — runs after all of the
+   schema/rebuild setup above, which stays as-is rather than being ported
+   into this mechanism retroactively. New schema changes from here on
+   (starting with 001_role_user_to_employee) go through this instead. */
+runMigrations(db);
 
 module.exports = db;

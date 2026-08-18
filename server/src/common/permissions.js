@@ -1,5 +1,7 @@
-const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
-const ASSIGNABLE_ROLES = ['user', 'manager', 'operations', 'finance', 'admin'];
+const { ROLES, ALL_ROLES } = require('./constants/roles');
+
+const USER_MANAGER_ROLES = [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATIONS];
+const ASSIGNABLE_ROLES = ALL_ROLES;
 
 function canManageUsers(actorRole) {
   return USER_MANAGER_ROLES.includes(actorRole);
