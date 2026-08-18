@@ -1,40 +1,36 @@
 // One-time (per environment) historical backfill for the quarterly KPI
 // feature — see docs/commercial-lead-quarterly-kpis-plan.md §4.
 // Seeds commercial_lead_bucket_events for every deal that predates live
-// tracking (clickupSync.js, shipped Step 2), then computes and freezes a
+// tracking (clickupSyncService), then computes and freezes a
 // commercial_lead_quarter_snapshots row for every calendar quarter that had
 // already closed before this system existed. Safe to re-run: both halves
 // skip anything already present rather than duplicating it.
 //
-// Usage: node src/commercialLeadBackfill.js
+// Usage: node src/modules/management/commercial-leads/jobs/backfill.js
+// Extracted unchanged from the old commercialLeadBackfill.js.
 
-const db = require('./db');
-const { mapStatusToBucket, bucketsToBackfill } = require('./commercialLeadBuckets');
-const { quarterCloseTimestampUtc } = require('./commercialLeadQuarter');
-const { computeQuarterMetrics, getCurrentQuarter, getQuartersWithData } = require('./commercialLeadQuarterMetrics');
+const { LISTS } = require('../constants');
+const { mapStatusToBucket, bucketsToBackfill } = require('../services/bucketService');
+const { quarterCloseTimestampUtc } = require('../../../../utils/cairoQuarter');
+const quarterMetricsService = require('../services/quarterMetricsService');
+const dealRepository = require('../repositories/dealRepository');
+const bucketEventRepository = require('../repositories/bucketEventRepository');
+const quarterSnapshotRepository = require('../repositories/quarterSnapshotRepository');
+const { transaction } = require('../repositories/unitOfWork');
 
-const LIST_ID = '901518274897'; // 2026 Projects — see docs/adr/0010-commercial-lead-quarterly-kpis.md
+const LIST_ID = LISTS.pipeline; // 2026 Projects — see docs/adr/0010-commercial-lead-quarterly-kpis.md
 
 function backfillLedger() {
   // Deal-level idempotency: skip any deal that already has ANY ledger row
   // (real or backfilled) — not just an is_backfilled one. A deal could
   // already have real, live-captured events by the time this script runs
-  // or re-runs (a brand-new deal created after Step 2 shipped, or an
+  // or re-runs (a brand-new deal created after live sync shipped, or an
   // existing one whose status has genuinely changed since); backfilling a
   // creation-time approximation on top of already-accurate real data would
   // duplicate/confuse its history rather than fill a real gap.
-  const alreadyTracked = new Set(
-    db.prepare('SELECT DISTINCT deal_id FROM commercial_lead_bucket_events').all().map((r) => r.deal_id)
-  );
+  const alreadyTracked = new Set(bucketEventRepository.listTrackedDealIds());
 
-  const deals = db
-    .prepare('SELECT deal_id, status, clickup_created_at FROM commercial_lead_live_cache WHERE list_id = ?')
-    .all(LIST_ID);
-
-  const insert = db.prepare(`
-    INSERT INTO commercial_lead_bucket_events (deal_id, list_id, bucket, entered_at, is_backfilled)
-    VALUES (?, ?, ?, ?, 1)
-  `);
+  const deals = dealRepository.findAllByListId(LIST_ID);
 
   let dealsInserted = 0;
   let rowsInserted = 0;
@@ -42,7 +38,7 @@ function backfillLedger() {
   let skippedUnmapped = 0;
   let skippedNoDate = 0;
 
-  const tx = db.transaction(() => {
+  transaction(() => {
     for (const deal of deals) {
       if (alreadyTracked.has(deal.deal_id)) {
         skippedAlreadyTracked += 1;
@@ -59,40 +55,23 @@ function backfillLedger() {
         continue;
       }
       for (const b of buckets) {
-        insert.run(deal.deal_id, LIST_ID, b, deal.clickup_created_at);
+        bucketEventRepository.insert({ dealId: deal.deal_id, listId: LIST_ID, bucket: b, enteredAt: deal.clickup_created_at, isBackfilled: true });
         rowsInserted += 1;
       }
       dealsInserted += 1;
     }
   });
-  tx();
 
   return { total: deals.length, dealsInserted, rowsInserted, skippedAlreadyTracked, skippedUnmapped, skippedNoDate };
 }
 
 function closedQuartersWithData() {
-  const nowQ = getCurrentQuarter();
-  return getQuartersWithData(LIST_ID).filter((q) => q < nowQ);
+  const nowQ = quarterMetricsService.getCurrentQuarter();
+  return quarterMetricsService.getQuartersWithData(LIST_ID).filter((q) => q < nowQ);
 }
 
 function backfillSnapshots() {
-  const existing = new Set(
-    db.prepare('SELECT quarter FROM commercial_lead_quarter_snapshots WHERE list_id = ?').all(LIST_ID).map((r) => r.quarter)
-  );
-
-  const insert = db.prepare(`
-    INSERT INTO commercial_lead_quarter_snapshots (
-      list_id, quarter, cohort_size, qualified_count, onboarding_count, in_progress_count,
-      won_count, lost_count, conversion_1_rate, conversion_2_rate,
-      repeat_clients_completed_count, repeat_clients_returned_count, repeat_client_rate,
-      is_estimated, frozen_at
-    ) VALUES (
-      @listId, @quarter, @cohortSize, @qualifiedCount, @onboardingCount, @inProgressCount,
-      @wonCount, @lostCount, @conversion1Rate, @conversion2Rate,
-      @repeatClientsCompletedCount, @repeatClientsReturnedCount, @repeatClientRate,
-      1, @frozenAt
-    )
-  `);
+  const existing = new Set(quarterSnapshotRepository.listQuartersByListId(LIST_ID));
 
   let inserted = 0;
   let skipped = 0;
@@ -104,8 +83,8 @@ function backfillSnapshots() {
       continue;
     }
     const asOf = quarterCloseTimestampUtc(quarter);
-    const metrics = computeQuarterMetrics({ listId: LIST_ID, quarter, asOf });
-    insert.run({
+    const metrics = quarterMetricsService.computeQuarterMetrics({ listId: LIST_ID, quarter, asOf });
+    quarterSnapshotRepository.insert({
       listId: LIST_ID,
       quarter,
       cohortSize: metrics.cohortSize,
@@ -119,6 +98,7 @@ function backfillSnapshots() {
       repeatClientsCompletedCount: metrics.repeatClientsCompletedCount,
       repeatClientsReturnedCount: metrics.repeatClientsReturnedCount,
       repeatClientRate: metrics.repeatClientRate,
+      isEstimated: 1,
       frozenAt: new Date().toISOString(),
     });
     inserted += 1;

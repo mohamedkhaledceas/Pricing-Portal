@@ -9,7 +9,7 @@
     "seed": "node src/seed-owner.js",
     "create-user": "node src/create-user.js",
     "backup:snapshot": "node src/backup.js",
-    "backfill:commercial-lead": "node src/commercialLeadBackfill.js"
+    "backfill:commercial-lead": "node src/modules/management/commercial-leads/jobs/backfill.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

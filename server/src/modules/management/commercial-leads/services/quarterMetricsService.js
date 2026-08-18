@@ -1,11 +1,8 @@
-const db = require('./db');
-const { cairoQuarterExpr } = require('./commercialLeadQuarter');
-
 /* Shared computation for a single quarter's funnel + repeat-client metrics,
-   used identically by: the historical snapshot backfill (this step), the
-   live current-quarter/cohort-performance dashboard reads (Step 4), and the
-   quarter-close freeze job (Step 5) — one implementation, called with
-   different `asOf` values, rather than three copies that could drift.
+   used identically by: the historical snapshot backfill, the live
+   current-quarter/cohort-performance dashboard reads, and the quarter-close
+   freeze job — one implementation, called with different `asOf` values,
+   rather than three copies that could drift.
 
    asOf = null            -> "cohort performance, as of now" (live, never stored)
    asOf = an ISO timestamp -> "quarter-end snapshot, as it stood at that instant" (frozen)
@@ -13,7 +10,11 @@ const { cairoQuarterExpr } = require('./commercialLeadQuarter');
    See docs/adr/0010-commercial-lead-quarterly-kpis.md for why these two
    modes are kept conceptually distinct, and
    docs/commercial-lead-quarterly-kpis-plan.md §6-§7 for the formulas this
-   implements verbatim. */
+   implements verbatim. Extracted unchanged from commercialLeadQuarterMetrics.js. */
+const dealRepository = require('../repositories/dealRepository');
+const bucketEventRepository = require('../repositories/bucketEventRepository');
+const quarterSnapshotRepository = require('../repositories/quarterSnapshotRepository');
+const { toQuarterSnapshot } = require('../models/quarterSnapshot.model');
 
 function normalizeIdentityField(value) {
   return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : null;
@@ -36,7 +37,7 @@ function normalizeIdentityField(value) {
    ClickUp's actual field name) has lower coverage (50/196 vs 152/196) but
    its values look like real, distinct client businesses. */
 function buildClientIdentityResolver(listId) {
-  const rows = db.prepare('SELECT deal_id, fields_json FROM commercial_lead_live_cache WHERE list_id = ?').all(listId);
+  const rows = dealRepository.findFieldsByListId(listId);
 
   const parent = new Map();
   function find(id) {
@@ -93,21 +94,9 @@ function buildClientIdentityResolver(listId) {
 }
 
 function computeQuarterMetrics({ listId, quarter, asOf }) {
-  const ceiling = asOf ? 'AND entered_at < @asOf' : '';
-  const params = { listId, quarter, asOf: asOf || null };
+  const cohortSize = dealRepository.countByListAndQuarter(listId, quarter);
 
-  const cohortSize = db.prepare(`
-    SELECT COUNT(*) AS n FROM commercial_lead_live_cache WHERE list_id = @listId AND origin_quarter = @quarter
-  `).get(params).n;
-
-  function bucketCount(bucket) {
-    return db.prepare(`
-      SELECT COUNT(DISTINCT e.deal_id) AS n
-      FROM commercial_lead_bucket_events e
-      JOIN commercial_lead_live_cache d ON d.deal_id = e.deal_id
-      WHERE d.list_id = @listId AND d.origin_quarter = @quarter AND e.bucket = @bucket ${ceiling}
-    `).get({ ...params, bucket }).n;
-  }
+  const bucketCount = (bucket) => bucketEventRepository.countDistinctDealsInBucket({ listId, quarter, bucket, asOf });
 
   const qualifiedCount = bucketCount('qualified');
   const onboardingCount = bucketCount('onboarding');
@@ -119,10 +108,7 @@ function computeQuarterMetrics({ listId, quarter, asOf }) {
   const conversion2Rate = inProgressCount > 0 ? wonCount / inProgressCount : null;
 
   // Repeat Client Rate — anchored on the Won event's OWN event_quarter, not origin_quarter (ADR-0010).
-  const wonThisQuarter = db.prepare(`
-    SELECT deal_id, entered_at FROM commercial_lead_bucket_events
-    WHERE list_id = @listId AND bucket = 'won' AND event_quarter = @quarter
-  `).all(params);
+  const wonThisQuarter = bucketEventRepository.findWonInQuarter({ listId, quarter });
 
   const { resolve, dealsByClient } = buildClientIdentityResolver(listId);
 
@@ -136,16 +122,10 @@ function computeQuarterMetrics({ listId, quarter, asOf }) {
 
   const repeatClientsCompletedCount = earliestWonByClient.size;
 
-  const hasLaterLeadsStmt = db.prepare(`
-    SELECT 1 FROM commercial_lead_bucket_events
-    WHERE deal_id = @dealId AND bucket = 'leads' AND entered_at > @wonEnteredAt ${ceiling}
-    LIMIT 1
-  `);
-
   let repeatClientsReturnedCount = 0;
   for (const [clientId, wonEnteredAt] of earliestWonByClient) {
     const dealIds = dealsByClient.get(clientId) || [];
-    const returned = dealIds.some((dealId) => hasLaterLeadsStmt.get({ ...params, dealId, wonEnteredAt }));
+    const returned = dealIds.some((dealId) => bucketEventRepository.hasLaterLeadsEntry({ dealId, wonEnteredAt, asOf }));
     if (returned) repeatClientsReturnedCount += 1;
   }
 
@@ -169,25 +149,17 @@ function computeQuarterMetrics({ listId, quarter, asOf }) {
 /* Single implementation of "what quarter is it right now" — reused by the
    backfill script (to know which quarters already closed) and the live
    dashboard (to default to the current quarter and to tell it apart from
-   past ones in the response). Delegates to the same cairoQuarterExpr the
-   generated columns use, rather than a separate JS reimplementation. */
+   past ones in the response). */
 function getCurrentQuarter() {
-  return db.prepare(`SELECT (${cairoQuarterExpr("datetime('now')")}) AS q`).get().q;
+  return dealRepository.getCurrentQuarter();
 }
 
-/* Every distinct origin_quarter with at least one deal, ascending — the
-   full set of quarters that could ever be shown (current + all past, live
-   and backfilled alike). Callers filter further as needed (the backfill
-   script excludes the current, still-open quarter; the dashboard doesn't). */
+/* The full set of quarters that could ever be shown (current + all past,
+   live and backfilled alike). Callers filter further as needed (the
+   backfill script excludes the current, still-open quarter; the dashboard
+   doesn't). */
 function getQuartersWithData(listId) {
-  return db
-    .prepare(
-      `SELECT DISTINCT origin_quarter FROM commercial_lead_live_cache
-       WHERE list_id = ? AND origin_quarter IS NOT NULL
-       ORDER BY origin_quarter`
-    )
-    .all(listId)
-    .map((r) => r.origin_quarter);
+  return dealRepository.listDistinctQuartersByListId(listId);
 }
 
 /* Whether ANY of a quarter's cohort deals rely on backfilled (rather than
@@ -196,47 +168,20 @@ function getQuartersWithData(listId) {
    at finer granularity isn't worth the complexity yet. The dashboard badges
    the whole quarter's view as including estimated data when this is true. */
 function hasBackfilledData({ listId, quarter }) {
-  const row = db
-    .prepare(
-      `SELECT 1
-       FROM commercial_lead_bucket_events e
-       JOIN commercial_lead_live_cache d ON d.deal_id = e.deal_id
-       WHERE d.list_id = @listId AND d.origin_quarter = @quarter AND e.is_backfilled = 1
-       LIMIT 1`
-    )
-    .get({ listId, quarter });
-  return !!row;
+  return bucketEventRepository.hasBackfilledDataForQuarter({ listId, quarter });
 }
 
 /* The frozen quarter-end snapshot, if one has been written for this
-   quarter (Step 5's freeze job, or the historical backfill) — null for the
+   quarter (the freeze job, or the historical backfill) — null for the
    still-open current quarter, which never gets one, and for a closed
    quarter the freeze job hasn't reached yet (shouldn't happen for any
-   already-closed quarter once Step 5 is live, but a fresh install between
+   already-closed quarter once the job is live, but a fresh install between
    backfill and the job's first run could briefly have a gap). Deliberately
    a separate read from computeQuarterMetrics — ADR-0010's whole point is
    that these two are different questions with different answers, never
    merged into one. */
 function getQuarterSnapshot(listId, quarter) {
-  const row = db
-    .prepare('SELECT * FROM commercial_lead_quarter_snapshots WHERE list_id = ? AND quarter = ?')
-    .get(listId, quarter);
-  if (!row) return null;
-  return {
-    cohortSize: row.cohort_size,
-    qualifiedCount: row.qualified_count,
-    onboardingCount: row.onboarding_count,
-    inProgressCount: row.in_progress_count,
-    wonCount: row.won_count,
-    lostCount: row.lost_count,
-    conversion1Rate: row.conversion_1_rate,
-    conversion2Rate: row.conversion_2_rate,
-    repeatClientsCompletedCount: row.repeat_clients_completed_count,
-    repeatClientsReturnedCount: row.repeat_clients_returned_count,
-    repeatClientRate: row.repeat_client_rate,
-    isEstimated: !!row.is_estimated,
-    frozenAt: row.frozen_at,
-  };
+  return toQuarterSnapshot(quarterSnapshotRepository.findByListAndQuarter(listId, quarter));
 }
 
 module.exports = {

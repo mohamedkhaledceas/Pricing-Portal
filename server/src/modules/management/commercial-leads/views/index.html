@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commercial Lead — CEAS Portal</title>
+<script>
+(function(){
+  try{
+    var t = localStorage.getItem('pricingPortalTheme');
+    if(t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  }catch(err){}
+})();
+</script>
+<link rel="stylesheet" href="/commercial-lead/css/commercialLeads.css">
+</head>
+<body>
+
+<div id="loginGate">
+  <div id="loginGateChecking">Checking your session…</div>
+  <div id="loginGateFail" hidden>
+    <p>You're not logged in.</p>
+    <a class="btn" href="/" style="text-decoration:none;">Go to the Pricing Portal to log in</a>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <img id="brandLogo" alt="Back to Pricing Portal" title="Back to Pricing Portal" style="height:38px; width:auto; cursor:pointer">
+    <div>
+      <h1>Commercial Lead</h1>
+      <div class="sub">Live from ClickUp</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connLabel">Connecting…</span></div>
+    <div id="accountMenuWrap" style="position:relative;">
+      <button id="btnAccountMenu" class="ghost" aria-haspopup="true" aria-expanded="false" title="Account menu"
+        style="display:flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border-radius:50%;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="8" r="4"></circle>
+          <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"></path>
+        </svg>
+      </button>
+      <div id="accountMenu" hidden role="menu"
+        style="position:absolute; right:0; top:calc(100% + 8px); min-width:200px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 14px 34px rgba(0,0,0,0.22); padding:6px; z-index:30;">
+        <div id="accountMenuEmail" style="padding:8px 10px; font-size:12.5px; color:var(--ink-2); border-bottom:1px solid var(--border); margin-bottom:4px; word-break:break-all;"></div>
+        <button type="button" id="btnAccountSettings" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Account Settings</button>
+        <button type="button" id="btnThemeToggle" role="menuitem" class="ghost" title="Click to cycle: Light / Dark / System" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
+          <span>Theme</span><span id="themeToggleState" class="muted"></span>
+        </button>
+        <button type="button" id="btnUsersView" role="menuitem" class="ghost" hidden style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Users</button>
+        <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
+        <button type="button" id="btnLogout" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px; color:var(--critical);">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="qk-header">
+        <h2>Commercial Lead — <span id="qkQuarterLabel">—</span></h2>
+        <span class="qk-badge" id="qkEstimatedBadge" hidden title="This quarter includes deals backfilled from before live tracking began — timing is approximate, which stages were reached is not.">Includes estimated data</span>
+        <span class="qk-badge" id="qkFrozenBadge" hidden style="background:var(--grid); color:var(--ink-2);">Frozen at close — some tiles show today's figure too</span>
+        <div class="spacer"></div>
+        <div class="qk-nav">
+          <button type="button" id="qkPrev" class="ghost" aria-label="Previous quarter" title="Previous quarter">‹</button>
+          <button type="button" id="qkNext" class="ghost" aria-label="Next quarter" title="Next quarter">›</button>
+        </div>
+      </div>
+      <p class="hint">Live data: figures reflect the current status of clients per quarter and may differ from the official quarter-end snapshot once the period is closed.</p>
+      <div class="kpi-grid" id="qkGrid"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Pipeline by status</h2>
+        <p class="hint">2026 Projects — current count per stage</p>
+        <div id="chartStatus"></div>
+      </div>
+      <div class="card">
+        <h2>Lead source</h2>
+        <p class="hint">Count only — conversion-by-source needs a "converted" definition, not yet decided</p>
+        <div id="chartSource"></div>
+      </div>
+      <div class="card">
+        <h2>Business line</h2>
+        <p class="hint">The "Company" field — which CEAS entity each lead is under</p>
+        <div id="chartBusinessLine"></div>
+      </div>
+      <div class="card">
+        <h2>Country</h2>
+        <div id="chartCountry"></div>
+      </div>
+    </div>
+
+    <!-- <div class="card">
+      <h2>Time in stage</h2>
+      <p class="hint">2026 Projects — exact durations from real stage changes since this system started tracking. Sparse until more real transitions happen.</p>
+      <table class="data-table" id="stageDurationTable">
+        <thead><tr><th>Status</th><th>Transitions</th><th>Avg days</th><th>Min</th><th>Max</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div> -->
+
+    <div class="card">
+      <h2>2026 Projects — live deals</h2>
+      <p class="hint">Click a row for every populated field on that deal</p>
+      <div class="table-toolbar">
+        <label>Status <select id="filterStatus"><option value="">All</option></select></label>
+        <label>Country <select id="filterCountry"><option value="">All</option></select></label>
+        <label>Source <select id="filterSource"><option value="">All</option></select></label>
+        <input type="search" id="searchPipeline" placeholder="Search name or contact…" aria-label="Search by name or contact">
+        <button id="btnClearFilters" class="danger" hidden>Clear filters</button>
+      </div>
+      <table class="data-table" id="pipelineTable">
+        <thead><tr>
+          <th><div class="name-th-inner">Name
+            <select id="sortPipeline">
+              <option value="edited-desc">Most recently edited</option>
+              <option value="edited-asc">Least recently edited</option>
+              <option value="name-asc">A → Z</option>
+              <option value="name-desc">Z → A</option>
+            </select>
+          </div></th>
+          <th>Status</th><th>Contact</th><th>Country</th><th>Source</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="pagination" id="paginationPipeline"></div>
+    </div>
+
+    <div class="card">
+      <h2>Active Clients — AM</h2>
+      <p class="hint">Live display only — no computed insights for this list</p>
+      <table class="data-table" id="activeClientsTable">
+        <thead><tr><th>Name</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="pagination" id="paginationActiveClients"></div>
+    </div>
+  </main>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/commercial-lead/js/main.js"></script>
+
+</body>
+</html>

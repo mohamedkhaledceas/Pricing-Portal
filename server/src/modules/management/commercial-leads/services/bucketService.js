@@ -5,7 +5,7 @@
    docs/adr/0010-commercial-lead-quarterly-kpis.md for why each bucket is
    defined the way it is; 'complete' (distinct from 'contract completed')
    is intentionally absent — excluded from the funnel pending clarification
-   of its operational meaning. */
+   of its operational meaning. Extracted unchanged from commercialLeadBuckets.js. */
 const STATUS_TO_BUCKET = {
   'leads': 'leads',
   'qualified': 'qualified',
@@ -40,7 +40,7 @@ const FUNNEL_ORDER = ['leads', 'qualified', 'onboarding', 'in_progress', 'won'];
 
 /* For the one-time historical backfill only (see
    docs/commercial-lead-quarterly-kpis-plan.md §4): live-captured data
-   (clickupSync.js) logs a bucket_events row for every stage a deal
+   (clickupSyncService) logs a bucket_events row for every stage a deal
    actually passes through in real time, so "has an event for bucket X"
    already means "reached X at some point" for anything tracked going
    forward. Backfilled data has only one known data point per deal — its

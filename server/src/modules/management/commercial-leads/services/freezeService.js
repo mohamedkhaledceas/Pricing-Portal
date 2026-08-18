@@ -1,9 +1,10 @@
+/* Quarter-close freeze job. Extracted unchanged from commercialLeadFreeze.js. */
 const cron = require('node-cron');
-const db = require('./db');
-const logger = require('./common/logger');
-const { quarterCloseTimestampUtc, previousQuarter } = require('./commercialLeadQuarter');
-const { computeQuarterMetrics, getCurrentQuarter, hasBackfilledData } = require('./commercialLeadQuarterMetrics');
-const { LISTS } = require('./commercialLead');
+const logger = require('../../../../common/logger');
+const { quarterCloseTimestampUtc, previousQuarter } = require('../../../../utils/cairoQuarter');
+const { LISTS } = require('../constants');
+const quarterMetricsService = require('./quarterMetricsService');
+const quarterSnapshotRepository = require('../repositories/quarterSnapshotRepository');
 
 /* Writes the one immutable commercial_lead_quarter_snapshots row for a
    quarter — "what we reported at the instant it closed" (ADR-0010), never
@@ -13,29 +14,17 @@ const { LISTS } = require('./commercialLead');
    exact same numbers rather than drifting with whenever it happens to run.
    is_estimated reflects whether this quarter's own cohort relies on any
    backfilled data — true for a while yet even for freshly-closing
-   quarters, since the historical backfill (Step 3) seeded a baseline for
-   every deal that existed before live tracking began, including ones in
-   the quarter that's closing now. */
+   quarters, since the historical backfill seeded a baseline for every deal
+   that existed before live tracking began, including ones in the quarter
+   that's closing now. */
 function freezeQuarter(quarter) {
   const listId = LISTS.pipeline;
   const asOf = quarterCloseTimestampUtc(quarter);
-  const metrics = computeQuarterMetrics({ listId, quarter, asOf });
-  const isEstimated = hasBackfilledData({ listId, quarter });
+  const metrics = quarterMetricsService.computeQuarterMetrics({ listId, quarter, asOf });
+  const isEstimated = quarterMetricsService.hasBackfilledData({ listId, quarter });
 
   try {
-    db.prepare(`
-      INSERT INTO commercial_lead_quarter_snapshots (
-        list_id, quarter, cohort_size, qualified_count, onboarding_count, in_progress_count,
-        won_count, lost_count, conversion_1_rate, conversion_2_rate,
-        repeat_clients_completed_count, repeat_clients_returned_count, repeat_client_rate,
-        is_estimated, frozen_at
-      ) VALUES (
-        @listId, @quarter, @cohortSize, @qualifiedCount, @onboardingCount, @inProgressCount,
-        @wonCount, @lostCount, @conversion1Rate, @conversion2Rate,
-        @repeatClientsCompletedCount, @repeatClientsReturnedCount, @repeatClientRate,
-        @isEstimated, @frozenAt
-      )
-    `).run({
+    quarterSnapshotRepository.insert({
       listId,
       quarter,
       cohortSize: metrics.cohortSize,
@@ -81,7 +70,7 @@ function scheduleQuarterFreeze() {
   cron.schedule(
     '0 0 1 1,4,7,10 *',
     () => {
-      const closingQuarter = previousQuarter(getCurrentQuarter());
+      const closingQuarter = previousQuarter(quarterMetricsService.getCurrentQuarter());
       freezeQuarter(closingQuarter);
     },
     { timezone: 'Africa/Cairo' }
@@ -91,8 +80,8 @@ function scheduleQuarterFreeze() {
   // Startup catch-up: if the server was down exactly when a boundary
   // passed (a redeploy, an outage), the next boot still freezes the
   // quarter that closed while nothing was running — mirrors
-  // clickupReconcile.js's own startup-run rationale. Idempotent either way.
-  const closingQuarter = previousQuarter(getCurrentQuarter());
+  // reconcile.job.js's own startup-run rationale. Idempotent either way.
+  const closingQuarter = previousQuarter(quarterMetricsService.getCurrentQuarter());
   freezeQuarter(closingQuarter);
 }
 

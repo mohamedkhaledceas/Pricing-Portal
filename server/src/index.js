@@ -5,17 +5,13 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const db = require('./db');
 const { router: authRouter, authenticate: authMiddleware } = require('./modules/auth');
+const management = require('./modules/management');
 const logger = require('./common/logger');
 const audit = require('./common/audit');
 const correlationId = require('./common/correlationId');
 const errorHandler = require('./common/errorHandler');
 const { ValidationError } = require('./common/errors');
-const { getWorkspaceSurvey } = require('./clickup');
-const { clickupWebhookRouter } = require('./clickupWebhook');
-const { initRealtime } = require('./realtime');
-const { startReconciliationSchedule } = require('./clickupReconcile');
-const { scheduleQuarterFreeze } = require('./commercialLeadFreeze');
-const { getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis } = require('./commercialLead');
+const { initRealtime } = require('./common/realtime');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -45,7 +41,7 @@ app.use(correlationId);
    its own express.raw() parser so the exact bytes ClickUp sent are still
    available for HMAC signature verification. By the time a request reaches
    express.json(), the raw body is gone. */
-app.use('/api/clickup/webhook', clickupWebhookRouter());
+app.use('/api/clickup/webhook', management.webhookRouter);
 
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
@@ -67,10 +63,13 @@ app.get('/', (req, res) => {
   res.sendFile(clientHtmlPath);
 });
 
-const commercialLeadHtmlPath = path.join(__dirname, '..', '..', 'commercial-lead.html');
+/* Relocated from the old repo-root commercial-lead.html into the module
+   that now owns it. */
+const commercialLeadHtmlPath = path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views', 'index.html');
 app.get('/commercial-lead', (req, res) => {
   res.sendFile(commercialLeadHtmlPath);
 });
+app.use('/commercial-lead', express.static(path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views')));
 
 /* Shared static assets (currently just the two logo variants) — extracted
    from margin-planner_1.html's previously-inline base64 constants so both
@@ -83,6 +82,11 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
    container.js). Same paths, same behavior, unchanged from the caller's
    perspective. */
 app.use('/api', authRouter);
+
+/* /api/clickup/survey, /api/commercial-lead/* — relocated into
+   modules/management/commercial-leads/ with full layering. Same paths,
+   same behavior. */
+app.use('/api', management.router);
 
 function serializeSettings(row) {
   const rates = row && row.rates_json ? JSON.parse(row.rates_json || '{}') : { EGP: 1 };
@@ -465,48 +469,6 @@ function buildStateResponse() {
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'pricing-portal-server' });
-});
-
-/* Exploratory: structural map of the connected ClickUp workspace (spaces,
-   folders, lists) so we can pick a concrete data source before building
-   anything that reads real ClickUp data into the portal. */
-app.get('/api/clickup/survey', authMiddleware, async (req, res, next) => {
-  try {
-    const teams = await getWorkspaceSurvey();
-    res.json({ teams });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/* Reads only from our own DB (commercial_lead_live_cache /
-   _daily_counts / _stage_history) — never a live ClickUp call. That data
-   is kept fresh by clickupSync.js (webhooks) and clickupReconcile.js
-   (periodic safety net), independent of any request hitting these routes. */
-app.get('/api/commercial-lead/deals', authMiddleware, (req, res) => {
-  res.json({ deals: getDeals() });
-});
-
-app.get('/api/commercial-lead/stats', authMiddleware, (req, res) => {
-  const days = numOrDefault(req.query.days, 30, 'days');
-  res.json({ stats: getDailyStats(days) });
-});
-
-app.get('/api/commercial-lead/stage-durations', authMiddleware, (req, res) => {
-  res.json({ stageDurations: getStageDurations() });
-});
-
-app.get('/api/commercial-lead/status-colors', authMiddleware, (req, res) => {
-  res.json({ statusColors: getStatusColors() });
-});
-
-/* Cohort-performance quarterly KPIs (docs/adr/0010-commercial-lead-quarterly-kpis.md)
-   — always live, computed fresh from commercial_lead_bucket_events, never
-   from the frozen commercial_lead_quarter_snapshots table Step 5 adds. An
-   unrecognized/omitted ?quarter falls back to the current quarter inside
-   getQuarterlyKpis rather than erroring. */
-app.get('/api/commercial-lead/quarterly-kpis', authMiddleware, (req, res) => {
-  res.json(getQuarterlyKpis(req.query.quarter));
 });
 
 app.get('/api/settings', authMiddleware, (req, res) => {
@@ -911,6 +873,6 @@ initRealtime(httpServer);
 
 httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);
-  startReconciliationSchedule();
-  scheduleQuarterFreeze();
+  management.startReconciliationSchedule();
+  management.scheduleQuarterFreeze();
 });

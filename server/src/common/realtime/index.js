@@ -1,10 +1,11 @@
+/* Socket.IO init is app-wide infra (attaches to the one shared HTTP
+   server), so it lives in common/ rather than inside commercial-leads/ —
+   but commercial-leads/ is still the only feature calling emitClickupEvent
+   today; a second module could adopt this same broadcast() without any
+   restructuring here. Relocated from the old flat realtime.js unchanged. */
 const { Server } = require('socket.io');
-const logger = require('./common/logger');
+const logger = require('../logger');
 
-/* Attaches to the same http.Server Express already listens on — no second
-   port, no second Render service. Same-origin by construction (the app has
-   no other legitimate frontend), so no CORS config is needed here either,
-   consistent with the rest of this app. */
 let io = null;
 
 function initRealtime(httpServer) {

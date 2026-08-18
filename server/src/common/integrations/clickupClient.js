@@ -1,4 +1,9 @@
-const { AppError } = require('./common/errors');
+/* The one place CLICKUP_API_KEY is read — a generic authenticated GET
+   wrapper, shared by every module that needs ClickUp (today: Commercial
+   Lead; later: Employees' roster lookup, per the plan). Never called from
+   the frontend; never returns the raw key. Promoted here from the old
+   flat clickup.js unchanged. */
+const { AppError } = require('../errors');
 
 const CLICKUP_BASE = 'https://api.clickup.com/api/v2';
 
@@ -18,9 +23,9 @@ async function clickupGet(path) {
 }
 
 /* Structural survey only — space/folder/list names and IDs, not tasks or
-   custom fields. Cheap enough to run in a handful of requests regardless of
-   workspace size, and enough to point at a specific list for a follow-up,
-   deeper fetch once we know what we actually need. */
+   custom fields. Generic diagnostic tool, not tied to any one module's
+   data model, so it lives alongside the low-level client rather than
+   inside commercial-leads/. */
 async function getWorkspaceSurvey() {
   const { teams } = await clickupGet('/team');
 

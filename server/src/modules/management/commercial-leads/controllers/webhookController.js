@@ -1,16 +1,10 @@
+/* Authenticity is verified via the HMAC-SHA256 signature ClickUp sends in
+   X-Signature, computed over the exact raw request bytes with the secret
+   returned when the webhook was registered (scripts/clickup/register-webhook.js).
+   Extracted unchanged from clickupWebhook.js. */
 const crypto = require('crypto');
-const express = require('express');
-const logger = require('./common/logger');
-const clickupSync = require('./clickupSync');
+const logger = require('../../../../common/logger');
 
-/* No authMiddleware here — the caller is ClickUp, not a logged-in portal
-   user. Authenticity is instead verified via the HMAC-SHA256 signature
-   ClickUp sends in X-Signature, computed over the exact raw request bytes
-   with the secret returned when the webhook was registered
-   (scripts/clickup/register-webhook.js). This requires the raw body, which
-   is why this route carries its own express.raw() middleware instead of
-   relying on the app-wide express.json() — by the time a request reaches
-   that global parser the raw bytes are already gone. */
 function verifySignature(rawBody, signatureHeader, secret) {
   if (!signatureHeader || !secret) return false;
   const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
@@ -20,10 +14,8 @@ function verifySignature(rawBody, signatureHeader, secret) {
   return crypto.timingSafeEqual(expectedBuf, signatureBuf);
 }
 
-function clickupWebhookRouter() {
-  const router = express.Router();
-
-  router.post('/', express.raw({ type: 'application/json', limit: '2mb' }), (req, res) => {
+function createWebhookController({ clickupSyncService }) {
+  function receive(req, res) {
     const secret = process.env.CLICKUP_WEBHOOK_SECRET;
     if (!secret) {
       logger.error('CLICKUP_WEBHOOK_SECRET is not configured — rejecting ClickUp webhook.');
@@ -55,15 +47,15 @@ function clickupWebhookRouter() {
 
     /* Ack fast, before syncing — ClickUp expects a prompt 200 and will
        retry/back off on slow or failing responses; nothing downstream of
-       this should be able to delay or fail that ack. clickupSync does its
-       own error handling internally (a failed sync is logged, not thrown),
-       so it's deliberately not awaited here — the HTTP response doesn't
-       wait on DB writes or the Socket.IO broadcast. */
+       this should be able to delay or fail that ack. clickupSyncService
+       does its own error handling internally (a failed sync is logged, not
+       thrown), so it's deliberately not awaited here — the HTTP response
+       doesn't wait on DB writes or the Socket.IO broadcast. */
     res.status(200).end();
-    clickupSync.handleEvent(payload);
-  });
+    clickupSyncService.handleEvent(payload);
+  }
 
-  return router;
+  return { receive };
 }
 
-module.exports = { clickupWebhookRouter, verifySignature };
+module.exports = { createWebhookController, verifySignature };

@@ -16,13 +16,12 @@ fs.mkdirSync(dbDir, { recursive: true });
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 
-/* Cairo-local calendar-quarter SQL fragment builder — extracted to its own
-   module (commercialLeadQuarter.js) rather than defined here, so the same
-   formula is available to commercialLeadQuarterMetrics.js and the one-time
-   backfill script without a second implementation. Used by both
+/* Cairo-local calendar-quarter SQL fragment builder — lives in utils/
+   (genuinely cross-module: needed here and by the commercial-leads module's
+   quarter-metric queries, and owned by neither). Used by both
    commercial_lead_bucket_events.event_quarter and
    commercial_lead_live_cache.origin_quarter below. */
-const { cairoQuarterExpr } = require('./commercialLeadQuarter');
+const { cairoQuarterExpr } = require('./utils/cairoQuarter');
 
 const schema = `
   CREATE TABLE IF NOT EXISTS users (
