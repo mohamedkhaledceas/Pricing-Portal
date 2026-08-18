@@ -41,6 +41,7 @@ const schema = `
     token_hash TEXT NOT NULL UNIQUE,
     expires_at TEXT NOT NULL,
     revoked_at TEXT,
+    revoked_reason TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
@@ -400,6 +401,18 @@ if (!liveCacheColumns.includes('linked_tasks_json')) {
 if (!liveCacheColumns.includes('origin_quarter')) {
   db.exec(`ALTER TABLE commercial_lead_live_cache ADD COLUMN origin_quarter TEXT GENERATED ALWAYS AS (${cairoQuarterExpr('clickup_created_at')}) VIRTUAL`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_cl_live_cache_origin_quarter ON commercial_lead_live_cache(origin_quarter)');
+}
+
+/* revoked_reason distinguishes *why* a refresh token was revoked — added so
+   the rotation-race grace window in auth.js's findRecentlyRevokedRefreshToken
+   can only resurrect a token that was revoked by normal rotation, never one
+   revoked by logout, a password change, or an admin deactivating/demoting
+   the account. Those are deliberate "this session must end now" actions;
+   letting a refresh call that arrives moments later still succeed would
+   quietly undo them. */
+const refreshTokenColumns = db.prepare("PRAGMA table_xinfo(refresh_tokens)").all().map((c) => c.name);
+if (!refreshTokenColumns.includes('revoked_reason')) {
+  db.exec('ALTER TABLE refresh_tokens ADD COLUMN revoked_reason TEXT');
 }
 
 module.exports = db;
