@@ -29,7 +29,7 @@ const { clickupWebhookRouter } = require('./clickupWebhook');
 const { initRealtime } = require('./realtime');
 const { startReconciliationSchedule } = require('./clickupReconcile');
 const { scheduleQuarterFreeze } = require('./commercialLeadFreeze');
-const { getDeals, getDailyStats, getStageDurations, getStatusColors, getFunnel, getQuarterlyKpis } = require('./commercialLead');
+const { getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis } = require('./commercialLead');
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -540,10 +540,6 @@ app.get('/api/commercial-lead/stage-durations', authMiddleware, (req, res) => {
 
 app.get('/api/commercial-lead/status-colors', authMiddleware, (req, res) => {
   res.json({ statusColors: getStatusColors() });
-});
-
-app.get('/api/commercial-lead/funnel', authMiddleware, (req, res) => {
-  res.json({ funnel: getFunnel() });
 });
 
 /* Cohort-performance quarterly KPIs (docs/adr/0010-commercial-lead-quarterly-kpis.md)
