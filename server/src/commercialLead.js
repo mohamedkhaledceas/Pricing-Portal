@@ -73,71 +73,6 @@ function getStatusColors() {
   return result;
 }
 
-const PIPELINE_FUNNEL_STAGES = ['leads', 'in progress', 'in queue ', 'onboarding', 'qualified', 'contract completed', 'complete'];
-
-/* Extends the pipeline-status snapshot with two cross-list stages computed
-   from ClickUp's own Task Relationships ("Related") links — bidirectional,
-   never written by us, only mirrored via clickupSync (linked_tasks_json).
-   Coverage is partial today (not every downstream task has been linked
-   yet) and self-improves as more get linked in ClickUp; linkedCoverage
-   exposes that so the UI can be honest about it instead of implying a
-   complete count. */
-function getFunnel() {
-  const latestDateRow = db.prepare(
-    "SELECT MAX(date) as date FROM commercial_lead_daily_counts WHERE list_id = ? AND dimension = 'status'"
-  ).get(LISTS.pipeline);
-
-  const statusCounts = {};
-  if (latestDateRow && latestDateRow.date) {
-    const rows = db.prepare(
-      "SELECT value, count FROM commercial_lead_daily_counts WHERE list_id = ? AND dimension = 'status' AND date = ?"
-    ).all(LISTS.pipeline, latestDateRow.date);
-    for (const row of rows) statusCounts[row.value] = row.count;
-  }
-
-  const stages = PIPELINE_FUNNEL_STAGES.map((status) => ({
-    label: status.trim(),
-    count: statusCounts[status] || 0,
-  }));
-
-  const pipelineIds = new Set(
-    db.prepare('SELECT deal_id FROM commercial_lead_live_cache WHERE list_id = ?').all(LISTS.pipeline).map((r) => r.deal_id)
-  );
-
-  // For a downstream list, how many of its tasks link back to a pipeline
-  // deal we still have cached (matchedCount — the funnel stage's count),
-  // versus how many of its tasks have ANY link at all (linkedTaskCount —
-  // the coverage figure, since a link to something other than a live
-  // pipeline deal still shows the habit is being followed).
-  const linkedPipelineDealsIn = (listId) => {
-    const rows = db.prepare('SELECT linked_tasks_json FROM commercial_lead_live_cache WHERE list_id = ?').all(listId);
-    let linkedTaskCount = 0;
-    const matchedDealIds = new Set();
-    for (const row of rows) {
-      const links = JSON.parse(row.linked_tasks_json || '[]');
-      if (links.length) linkedTaskCount += 1;
-      for (const id of links) {
-        if (pipelineIds.has(id)) matchedDealIds.add(id);
-      }
-    }
-    return { matchedCount: matchedDealIds.size, linkedTaskCount, totalTasks: rows.length };
-  };
-
-  const activeClient = linkedPipelineDealsIn(LISTS.activeClients);
-  const offboarded = linkedPipelineDealsIn(LISTS.offboarding);
-
-  stages.push({ label: 'active client', count: activeClient.matchedCount });
-  stages.push({ label: 'offboarded', count: offboarded.matchedCount });
-
-  return {
-    stages,
-    linkedCoverage: {
-      activeClients: { linked: activeClient.linkedTaskCount, total: activeClient.totalTasks },
-      offboarding: { linked: offboarded.linkedTaskCount, total: offboarded.totalTasks },
-    },
-  };
-}
-
 function getStageDurations() {
   const rows = db.prepare(`
     SELECT status,
@@ -187,4 +122,4 @@ function getQuarterlyKpis(requestedQuarter) {
   };
 }
 
-module.exports = { LISTS, getDeals, getDailyStats, getStageDurations, getStatusColors, getFunnel, getQuarterlyKpis };
+module.exports = { LISTS, getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis };

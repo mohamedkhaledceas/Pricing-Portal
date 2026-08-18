@@ -127,14 +127,6 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
   line-height:1.25; max-width:100%; word-break:break-word; overflow-wrap:anywhere;
 }
 
-.funnel{display:flex; flex-direction:column; align-items:center; gap:14px; padding:6px 0 2px}
-.funnel-row{display:flex; flex-direction:column; align-items:center; width:100%; max-width:520px}
-.funnel-row .funnel-label{font-size:12.5px; color:var(--ink-2); margin-bottom:5px; text-align:center}
-.funnel-row .funnel-label b{color:var(--ink); font-variant-numeric:tabular-nums; font-weight:650}
-.funnel-row .funnel-bar{height:20px; border-radius:5px; background:var(--s1); min-width:6%}
-.funnel-row.is-linked .funnel-bar{background:transparent; border:2px dashed var(--s1); box-sizing:border-box}
-.funnel-note{color:var(--muted); font-size:11.5px; margin-top:2px; max-width:60ch; text-align:center}
-
 table.data-table{width:100%; border-collapse:collapse; font-size:13px}
 table.data-table th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); border-bottom:1px solid var(--grid); padding:6px 8px; font-weight:500}
 table.data-table td{padding:8px; border-bottom:1px solid var(--grid); vertical-align:top}
@@ -240,12 +232,6 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
         <h2>Country</h2>
         <div id="chartCountry"></div>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>Sales funnel</h2>
-      <p class="hint" id="funnelHint">2026 Projects, current snapshot. Dashed bars are cross-list stages linked via ClickUp's "Related" feature.</p>
-      <div id="funnelChart"></div>
     </div>
 
     <!-- <div class="card">
@@ -487,29 +473,6 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     } catch (err) {}
   }
 
-  function renderFunnel(funnel) {
-    const el = $('#funnelChart');
-    const stages = funnel.stages || [];
-    if (stages.length === 0) {
-      el.innerHTML = '<div class="empty-note">No data yet.</div>';
-      return;
-    }
-    const max = Math.max(...stages.map((s) => s.count), 1);
-    const linkedLabels = new Set(['active client', 'offboarded']);
-    el.innerHTML = stages.map((s) => `
-      <div class="funnel-row${linkedLabels.has(s.label) ? ' is-linked' : ''}">
-        <div class="funnel-label">${escapeHtml(s.label)} <b>${s.count}</b></div>
-        <div class="funnel-bar" style="width:${Math.max(6, (s.count / max) * 100)}%"></div>
-      </div>
-    `).join('');
-
-    const am = (funnel.linkedCoverage && funnel.linkedCoverage.activeClients) || { linked: 0, total: 0 };
-    const off = (funnel.linkedCoverage && funnel.linkedCoverage.offboarding) || { linked: 0, total: 0 };
-    $('#funnelHint').textContent =
-      `2026 Projects, current snapshot. "Active client" and "offboarded" only count deals linked via ClickUp's "Related" feature — ` +
-      `currently ${am.linked}/${am.total} Active Clients — AM tasks and ${off.linked}/${off.total} Offboarding tasks are linked, so these two will grow as more get linked.`;
-  }
-
   function renderStageDurations(rows) {
     const tbody = document.querySelector('#stageDurationTable tbody');
     if (!tbody) return; // card is commented out pending its move into the live-deals table
@@ -693,18 +656,16 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     ['chartStatus', 'chartSource', 'chartBusinessLine', 'chartCountry'].forEach((id) => {
       $('#' + id).innerHTML = Array.from({ length: 4 }, () => `<div style="margin:6px 0;">${skeletonBlock('100%', '16px')}</div>`).join('');
     });
-    $('#funnelChart').innerHTML = Array.from({ length: 5 }, () => `<div style="margin:8px 0;">${skeletonBlock('80%', '18px')}</div>`).join('');
     document.querySelector('#pipelineTable tbody').innerHTML = skeletonTableRows(['85%', '60%', '70%', '50%', '60%']);
     document.querySelector('#activeClientsTable tbody').innerHTML = skeletonTableRows(['85%', '60%']);
   }
 
   async function loadAll() {
-    const [dealsRes, statsRes, durationsRes, statusColorsRes, funnelRes, quarterlyRes] = await Promise.all([
+    const [dealsRes, statsRes, durationsRes, statusColorsRes, quarterlyRes] = await Promise.all([
       apiFetch('/api/commercial-lead/deals'),
       apiFetch('/api/commercial-lead/stats?days=30'),
       apiFetch('/api/commercial-lead/stage-durations'),
       apiFetch('/api/commercial-lead/status-colors'),
-      apiFetch('/api/commercial-lead/funnel'),
       apiFetch('/api/commercial-lead/quarterly-kpis'),
     ]);
     dealsCache = dealsRes.deals;
@@ -713,7 +674,6 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     renderActiveClientsTable();
     renderStats(statsRes.stats);
     renderStageDurations(durationsRes.stageDurations);
-    renderFunnel(funnelRes.funnel);
     renderQuarterlyKpis(quarterlyRes);
   }
 
@@ -723,7 +683,6 @@ table.data-table tbody tr.deal-row:hover{background:var(--plane); cursor:pointer
     statsRefreshTimer = setTimeout(() => {
       apiFetch('/api/commercial-lead/stats?days=30').then((r) => renderStats(r.stats)).catch(() => {});
       apiFetch('/api/commercial-lead/stage-durations').then((r) => renderStageDurations(r.stageDurations)).catch(() => {});
-      apiFetch('/api/commercial-lead/funnel').then((r) => renderFunnel(r.funnel)).catch(() => {});
     }, 1500);
   }
 
