@@ -25,4 +25,4 @@ function canModifyStatus(actorRole, targetCurrentRole) {
   return targetCurrentRole !== 'admin';
 }
 
-module.exports = { ASSIGNABLE_ROLES, canManageUsers, canAssignRole, canModifyStatus };
+module.exports = { USER_MANAGER_ROLES, ASSIGNABLE_ROLES, canManageUsers, canAssignRole, canModifyStatus };

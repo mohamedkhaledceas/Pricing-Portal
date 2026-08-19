@@ -90,6 +90,19 @@ function bindUi() {
   $('#loginGate').style.display = 'none';
   $('#app').style.display = 'block';
   renderDashboardSkeletons();
-  await loadAll();
+  try {
+    await loadAll();
+  } catch (err) {
+    /* Most commonly a 403 — authenticated, but not manager/operations/admin
+       (requireRole on the server, see modules/management/commercial-leads/
+       routes/index.js). Falls back to the same "Unauthorized" state as an
+       outright failed login rather than leaving the skeletons stuck
+       loading forever with no explanation. */
+    $('#app').style.display = 'none';
+    $('#loginGate').style.display = 'flex';
+    $('#loginGateChecking').hidden = true;
+    $('#loginGateFail').hidden = false;
+    return;
+  }
   connectSocket({ onEvent: scheduleStatsRefresh });
 })();
