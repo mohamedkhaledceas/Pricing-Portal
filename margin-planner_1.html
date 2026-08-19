@@ -242,11 +242,11 @@ body[data-mode="admin"] .bd-only{display:none !important}
     Show figures in <select id="dispCur" style="padding:5px 7px"></select>
   </label>
   <span class="mode-badge bd-only"><span class="light" style="background:var(--s4)"></span>Team view</span>
-  <button id="btnUnlock" class="bd-only">Unlock owner view</button>
-  <button id="btnLock" class="admin-only">Switch to team view</button>
-  <button id="btnCommercialLead" hidden>Commercial Lead</button>
+  <button id="btnUnlock" class="bd-only ghost">Unlock owner view</button>
+  <button id="btnLock" class="admin-only ghost">Switch to team view</button>
+  <button id="btnEmployees" class="ghost">Employees</button>
+  <button id="btnCommercialLead" class="ghost" hidden>Commercial Lead</button>
   <button id="btnLogin" class="primary">Log in</button>
-  <button id="btnLoad">Refresh from server</button>
   <input type="file" id="fileInput" accept="application/json" style="display:none">
   <div id="accountMenuWrap" style="position:relative;">
     <button id="btnAccountMenu" class="ghost" hidden aria-haspopup="true" aria-expanded="false" title="Account menu"
@@ -2130,7 +2130,6 @@ function updateLoginUi(){
   $('#btnLogin').hidden = true;
   $('#btnAccountMenu').hidden = false;
   closeAccountMenu();
-  $('#btnLoad').textContent = 'Refresh from server';
 
   if (auth.user) {
     $('#accountMenuEmail').textContent = auth.user.email || '';
@@ -2485,7 +2484,6 @@ function bindFiles(){
     }
     $('#fileInput').click();
   };
-  $('#btnLoad').addEventListener('click', pick);
   $('#btnLoad2').addEventListener('click', pick);
   $('#fileInput').addEventListener('change', e => {
     const f = e.target.files[0]; if(!f) return;
@@ -2810,6 +2808,9 @@ function bindAccountMenu(){
   $('#brandLogo').addEventListener('click', () => {
     closeAccountMenu();
     showPlannerView();
+  });
+  $('#btnEmployees').addEventListener('click', () => {
+    window.location.href = '/';
   });
   $('#btnCommercialLead').addEventListener('click', () => {
     window.location.href = '/commercial-lead';
