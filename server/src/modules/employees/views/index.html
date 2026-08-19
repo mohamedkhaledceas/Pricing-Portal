@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Employees — CEAS Portal</title>
+<script>
+(function(){
+  try{
+    var t = localStorage.getItem('pricingPortalTheme');
+    if(t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  }catch(err){}
+})();
+</script>
+<link rel="stylesheet" href="/employees/css/employees.css">
+</head>
+<body>
+
+<div id="loginGate">
+  <div id="loginGateChecking">Checking your session…</div>
+  <div id="loginGateFail" hidden>
+    <p>You're not logged in.</p>
+    <a class="btn" href="/" style="text-decoration:none;">Go to the Pricing Portal to log in</a>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <img id="brandLogo" alt="Back to Pricing Portal" title="Back to Pricing Portal" style="height:38px; width:auto; cursor:pointer">
+    <div>
+      <h1>Employees</h1>
+      <div class="sub">Time Off · KPIs · Roster</div>
+    </div>
+    <div class="spacer"></div>
+    <div id="accountMenuWrap" style="position:relative;">
+      <button id="btnAccountMenu" class="ghost" aria-haspopup="true" aria-expanded="false" title="Account menu"
+        style="display:flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border-radius:50%;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="8" r="4"></circle>
+          <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"></path>
+        </svg>
+      </button>
+      <div id="accountMenu" hidden role="menu"
+        style="position:absolute; right:0; top:calc(100% + 8px); min-width:200px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 14px 34px rgba(0,0,0,0.22); padding:6px; z-index:30;">
+        <div id="accountMenuEmail" style="padding:8px 10px; font-size:12.5px; color:var(--ink-2); border-bottom:1px solid var(--border); margin-bottom:4px; word-break:break-all;"></div>
+        <button type="button" id="btnThemeToggle" role="menuitem" class="ghost" title="Click to cycle: Light / Dark / System" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
+          <span>Theme</span><span id="themeToggleState" class="muted"></span>
+        </button>
+        <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
+        <button type="button" id="btnLogout" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px; color:var(--critical);">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width:1180px; margin:0 auto; padding:16px 20px 60px;">
+
+    <div class="nav-tabs" id="main-nav">
+      <button class="nav-tab active" id="maintab-overview" data-tab="overview">🏠 Overview</button>
+      <button class="nav-tab" id="maintab-timeoff" data-tab="timeoff">🗓 Time Off</button>
+      <button class="nav-tab" id="maintab-kpi" data-tab="kpi">📈 KPIs</button>
+      <button class="nav-tab" id="maintab-team" data-tab="team" style="display:none;">👔 My Team</button>
+      <button class="nav-tab" id="maintab-roster" data-tab="roster" style="display:none;">👥 Roster</button>
+    </div>
+
+    <div class="sub-nav-tabs" id="timeoff-subnav" style="display:none;">
+      <button class="sub-nav-tab active" id="subtab-new-request" data-subtab="new-request">➕ New Request</button>
+      <button class="sub-nav-tab" id="subtab-today" data-subtab="today">👥 Today</button>
+      <button class="sub-nav-tab" id="subtab-history" data-subtab="history">📋 My History</button>
+      <button class="sub-nav-tab" id="subtab-rules" data-subtab="rules">📖 Leave Rules</button>
+    </div>
+
+    <div id="content">
+
+      <div id="tab-overview" class="tab-panel active">
+        <div class="page-header">
+          <div class="page-title">Overview</div>
+        </div>
+        <div id="ov-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+      </div>
+
+      <div id="tab-timeoff" class="tab-panel">
+        <div id="subtab-panel-new-request" class="tab-panel active"></div>
+        <div id="subtab-panel-today" class="tab-panel">
+          <div class="page-header">
+            <div class="page-title">Team Status Today</div>
+            <div class="page-subtitle" id="today-date-label"></div>
+          </div>
+          <div id="today-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+        </div>
+        <div id="subtab-panel-history" class="tab-panel">
+          <div class="page-header">
+            <div class="page-title">My Request History</div>
+          </div>
+          <div id="history-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+        </div>
+        <div id="subtab-panel-rules" class="tab-panel">
+          <div class="page-header">
+            <div class="page-title">Leave Rules &amp; SOPs</div>
+            <div class="page-subtitle">Know before you request</div>
+          </div>
+          <div id="rules-content"></div>
+        </div>
+      </div>
+
+      <div id="tab-kpi" class="tab-panel">
+        <div class="page-header">
+          <div class="page-title">KPI Dashboard</div>
+          <div class="page-subtitle">Full breakdown — Pillar A dimensions, Pillar B metrics, and the final weighted score</div>
+        </div>
+        <div id="kpi-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+      </div>
+
+      <div id="tab-team" class="tab-panel">
+        <div class="page-header">
+          <div class="page-title">My Team</div>
+          <div class="page-subtitle">Direct-report leave requests and P&amp;C's company-wide confirmation queue</div>
+        </div>
+        <div id="team-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+      </div>
+
+      <div id="tab-roster" class="tab-panel">
+        <div id="roster-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div id="toast" hidden></div>
+
+<script type="module" src="/employees/js/main.js"></script>
+</body>
+</html>

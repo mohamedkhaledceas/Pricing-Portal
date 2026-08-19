@@ -6,6 +6,7 @@ const cookieParser = require('cookie-parser');
 const db = require('./db');
 const { router: authRouter, authenticate: authMiddleware } = require('./modules/auth');
 const management = require('./modules/management');
+const { router: employeesRouter } = require('./modules/employees');
 const logger = require('./common/logger');
 const audit = require('./common/audit');
 const correlationId = require('./common/correlationId');
@@ -71,6 +72,14 @@ app.get('/commercial-lead', (req, res) => {
 });
 app.use('/commercial-lead', express.static(path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views')));
 
+/* /employees* — modules/employees/views (see that module's container.js
+   for the API side). Same static-mount pattern as Commercial Lead. */
+const employeesHtmlPath = path.join(__dirname, 'modules', 'employees', 'views', 'index.html');
+app.get('/employees', (req, res) => {
+  res.sendFile(employeesHtmlPath);
+});
+app.use('/employees', express.static(path.join(__dirname, 'modules', 'employees', 'views')));
+
 /* Shared static assets (currently just the two logo variants) — extracted
    from margin-planner_1.html's previously-inline base64 constants so both
    frontends reference the same file instead of each embedding their own
@@ -87,6 +96,9 @@ app.use('/api', authRouter);
    modules/management/commercial-leads/ with full layering. Same paths,
    same behavior. */
 app.use('/api', management.router);
+
+/* /api/employees* — new module, see modules/employees/container.js. */
+app.use('/api', employeesRouter);
 
 function serializeSettings(row) {
   const rates = row && row.rates_json ? JSON.parse(row.rates_json || '{}') : { EGP: 1 };

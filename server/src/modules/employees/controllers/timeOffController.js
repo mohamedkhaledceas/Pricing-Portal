@@ -1,0 +1,129 @@
+const { EmployeesError } = require('../errors');
+
+function requireEmployee(req) {
+  if (!req.employee) {
+    throw new EmployeesError('You need a completed employee profile before you can use Time Off. Contact People & Culture.', 403);
+  }
+  return req.employee;
+}
+
+function createTimeOffController({ timeOffService }) {
+  function handleError(res, error) {
+    if (error instanceof EmployeesError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    throw error;
+  }
+
+  function submit(req, res) {
+    try {
+      const employee = requireEmployee(req);
+      const body = req.body || {};
+      const request = timeOffService.submit({
+        employeeId: employee.id,
+        leaveType: body.leaveType,
+        startDate: body.startDate,
+        endDate: body.endDate,
+        halfDay: !!body.halfDay,
+        halfDayPeriod: body.halfDayPeriod,
+        handoverEmployeeId: body.handoverEmployeeId,
+        reason: body.reason,
+        actorId: req.user.id,
+        ip: req.ip,
+      });
+      return res.status(201).json({ request });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  function listMine(req, res) {
+    try {
+      const employee = requireEmployee(req);
+      return res.json({ requests: timeOffService.listMine(employee.id) });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  function listTeam(req, res) {
+    try {
+      const employee = requireEmployee(req);
+      return res.json({ requests: timeOffService.listTeam(employee.id) });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  function offToday(req, res) {
+    try {
+      const date = req.query.date;
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new EmployeesError('date query parameter (YYYY-MM-DD) is required.');
+      }
+      return res.json({ offToday: timeOffService.listOffToday(date) });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  function listPcPending(req, res) {
+    try {
+      const requests = timeOffService.listPcPending({ actorEmployee: req.employee });
+      return res.json({ requests });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  function managerDecision(req, res) {
+    try {
+      const request = timeOffService.managerDecision({
+        requestId: Number(req.params.id),
+        actorEmployee: req.employee,
+        decision: (req.body || {}).decision,
+        actorId: req.user.id,
+        ip: req.ip,
+      });
+      return res.json({ request });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  function pcConfirm(req, res) {
+    try {
+      const body = req.body || {};
+      const request = timeOffService.pcConfirm({
+        requestId: Number(req.params.id),
+        actorEmployee: req.employee,
+        decision: body.decision,
+        salaryDeduction: body.salaryDeduction,
+        unpaidDaysCount: body.unpaidDaysCount,
+        actorId: req.user.id,
+        ip: req.ip,
+      });
+      return res.json({ request });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  function cancel(req, res) {
+    try {
+      const request = timeOffService.cancel({
+        requestId: Number(req.params.id),
+        actorEmployee: req.employee,
+        actorId: req.user.id,
+        ip: req.ip,
+      });
+      return res.json({ request });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
+  return { submit, listMine, listTeam, offToday, listPcPending, managerDecision, pcConfirm, cancel };
+}
+
+module.exports = createTimeOffController;
