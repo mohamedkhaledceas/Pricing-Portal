@@ -9,6 +9,9 @@ import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
 
 const MANAGE_ROSTER_ROLES = ['admin'];
+// Same gate as margin-planner_1.html's own Commercial Lead button
+// (USER_MANAGER_ROLES) — role only, not the is_people_culture flag.
+const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
 
 export function switchMainTab(tabId, btn) {
   state.mainTab = tabId;
@@ -38,6 +41,7 @@ function bindUi() {
   });
   document.addEventListener('click', () => { $('#accountMenu').hidden = true; });
   $('#btnThemeToggle').addEventListener('click', (e) => { e.stopPropagation(); cycleTheme(); });
+  $('#btnMarginPlanner').addEventListener('click', () => { window.location.href = '/planner'; });
   $('#btnLogout').addEventListener('click', async () => {
     try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
     window.location.href = '/';
@@ -75,6 +79,7 @@ function bindUi() {
   // is via the employee flag, which does require a profile.
   const isAdmin = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
   $('#maintab-roster').style.display = isAdmin || (emp && emp.isPeopleCulture) ? '' : 'none';
+  $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
 
   $('#loginGate').style.display = 'none';
   $('#app').style.display = 'block';

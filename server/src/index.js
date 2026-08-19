@@ -59,8 +59,22 @@ function numOrDefault(value, fallback, fieldName) {
   return n;
 }
 
-const clientHtmlPath = path.join(__dirname, '..', '..', 'margin-planner_1.html');
+/* '/' is the landing page for every authenticated role — employees included
+   — and always resolves to the Employees module. Margin planner moved to
+   /planner (still linked from Employees' own header for manager/operations/
+   admin, see modules/employees/views/js/main.js). /employees is kept only
+   as a redirect to '/' so there's one canonical URL for this content. */
+const employeesHtmlPath = path.join(__dirname, 'modules', 'employees', 'views', 'index.html');
 app.get('/', (req, res) => {
+  res.sendFile(employeesHtmlPath);
+});
+app.get('/employees', (req, res) => {
+  res.redirect('/');
+});
+app.use('/employees', express.static(path.join(__dirname, 'modules', 'employees', 'views')));
+
+const clientHtmlPath = path.join(__dirname, '..', '..', 'margin-planner_1.html');
+app.get('/planner', (req, res) => {
   res.sendFile(clientHtmlPath);
 });
 
@@ -71,14 +85,6 @@ app.get('/commercial-lead', (req, res) => {
   res.sendFile(commercialLeadHtmlPath);
 });
 app.use('/commercial-lead', express.static(path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views')));
-
-/* /employees* — modules/employees/views (see that module's container.js
-   for the API side). Same static-mount pattern as Commercial Lead. */
-const employeesHtmlPath = path.join(__dirname, 'modules', 'employees', 'views', 'index.html');
-app.get('/employees', (req, res) => {
-  res.sendFile(employeesHtmlPath);
-});
-app.use('/employees', express.static(path.join(__dirname, 'modules', 'employees', 'views')));
 
 /* /login — the one place auth (sign in / sign up) lives. Every other page
    redirects here when a silent refresh fails; on success this page's own
