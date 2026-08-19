@@ -9,11 +9,11 @@ const rateLimit = require('express-rate-limit');
    working without any frontend change. */
 function createAuthRouter({ authController, accountAdminController, authenticate }) {
   const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
+    windowMs: 60 * 1000,
+    max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+    message: { error: 'Too many attempts. Please wait a minute and try again.' },
   });
 
   const router = express.Router();
