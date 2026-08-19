@@ -29,7 +29,7 @@ async function loadViewCandidates() {
   if (viewerEmployee) byId[viewerEmployee.id] = { id: viewerEmployee.id, firstName: viewerEmployee.firstName, lastName: viewerEmployee.lastName, self: true };
 
   try {
-    if (viewerEmployee && viewerEmployee.isPeopleCulture) {
+    if (state.currentUser && state.currentUser.role === 'people_culture') {
       const res = await apiFetch('/api/employees');
       (res.employees || []).forEach((e) => { byId[e.id] = { id: e.id, firstName: e.firstName, lastName: e.lastName }; });
     } else {
@@ -78,12 +78,12 @@ async function enterMetricScore(employeeId, quarter, metricId) {
 window.kpiEnterMetricScore = enterMetricScore;
 
 function canEnterPillarA(employeeId) {
-  return viewerEmployee && viewerEmployee.isPeopleCulture && employeeId !== viewerEmployee.id;
+  return viewerEmployee && state.currentUser && state.currentUser.role === 'people_culture' && employeeId !== viewerEmployee.id;
 }
 
 function canEnterMetric(target) {
   if (!viewerEmployee) return false;
-  if (viewerEmployee.isPeopleCulture) return true;
+  if (state.currentUser && state.currentUser.role === 'people_culture') return true;
   const cand = viewCandidates.find((c) => c.id === target);
   return !!cand && !cand.self; // populated from /team when actor is a manager, not P&C
 }
@@ -129,7 +129,7 @@ function pillarBSectionHtml(pillarB, employeeId, quarter) {
   if (!pillarB.defined) {
     return `
       <div class="kpi-section-title">Pillar B — Role Metrics (40%)</div>
-      <div class="card empty-state"><div class="empty-state-icon">📊</div><div style="font-weight:650;">Not yet defined for this role</div><div class="muted small">Contact People &amp; Culture to have this role's Pillar B framework set up.</div></div>`;
+      <div class="card empty-state"><div style="font-weight:650;">Not yet defined for this role</div><div class="muted small">Contact People &amp; Culture to have this role's Pillar B framework set up.</div></div>`;
   }
 
   const bySection = {};
@@ -201,7 +201,7 @@ async function renderBreakdown(employeeId, quarter) {
       <div class="mt-16">${pillarBSectionHtml(pillarB, employeeId, quarter)}</div>
     `;
   } catch (err) {
-    container.innerHTML = `<div class="alert alert-danger"><span>⚠️</span><div>${escapeHtml(err.message)}</div></div>`;
+    container.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
   }
 }
 
@@ -209,7 +209,7 @@ export async function renderKpi() {
   const container = $('#kpi-content');
   const emp = state.myEmployee;
   if (!emp) {
-    container.innerHTML = `<div class="card empty-state"><div class="empty-state-icon">📈</div>You need an employee profile to view KPIs.</div>`;
+    container.innerHTML = `<div class="card empty-state">You need an employee profile to view KPIs.</div>`;
     return;
   }
 
