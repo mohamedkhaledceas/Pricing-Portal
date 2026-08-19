@@ -156,6 +156,19 @@ tfoot td{border-top:1px solid var(--axis); border-bottom:none; font-weight:650; 
 .pill.good{color:var(--good-text); border-color:color-mix(in srgb, var(--good) 45%, transparent)}
 .pill.warn{color:var(--serious); border-color:color-mix(in srgb, var(--serious) 55%, transparent)}
 .pill.bad{color:var(--critical); border-color:color-mix(in srgb, var(--critical) 45%, transparent)}
+/* Matches /employees' Users table (employees.css .badge / button.danger) so
+   the two pages' Users menus render identically instead of drifting into
+   this app's own outlined-pill / plain-button look. */
+#tab-users .badge{display:inline-block; font-size:10.5px; font-weight:650; padding:2px 8px; border-radius:20px; white-space:nowrap; border:none}
+#tab-users .badge-approved{background:rgba(12,163,12,0.16); color:var(--good-text)}
+#tab-users .badge-neutral{background:var(--panel); color:var(--ink-2); border:1px solid var(--border)}
+#tab-users button.small{font-size:12px; padding:5px 9px}
+#tab-users button.danger{background:var(--critical); border-color:transparent; color:#fff; font-weight:600}
+#tab-users table{font-size:12.5px}
+#tab-users th{font-size:11px; letter-spacing:0.02em; padding:8px 8px}
+#tab-users td{padding:9px 8px}
+#tab-users tbody tr:hover{background:rgba(127,127,127,0.06)}
+#tab-users select{font-size:12px; padding:8px 10px; background:var(--surface-1)}
 .scenDelta{font-size:11px; color:var(--muted)}
 .banner{
   background:color-mix(in srgb, var(--warn) 14%, var(--surface-1));
@@ -703,6 +716,25 @@ body[data-mode="admin"] .bd-only{display:none !important}
       </p>
     </div>
   </section>
+
+  <!-- USERS -->
+  <section class="tabpanel" id="tab-users" hidden>
+    <div class="card">
+      <h2>Users</h2>
+      <p class="hint">Manage account roles and access.</p>
+      <div id="usersError" role="alert" hidden style="color:var(--critical); font-size:12.5px; margin-bottom:12px;"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 </main>
 
 <div id="saveErrorToast" role="alert" hidden></div>
@@ -718,31 +750,6 @@ body[data-mode="admin"] .bd-only{display:none !important}
 </div>
 
 <div id="printArea"></div>
-</div>
-
-<div id="usersView" hidden style="display:none;">
-  <header class="top">
-    <button type="button" id="btnUsersBack" class="ghost" title="Back to planner">← Back to planner</button>
-    <div>
-      <h1>Users</h1>
-      <div class="sub">Manage accounts and roles</div>
-    </div>
-  </header>
-  <main>
-    <div class="card">
-      <div id="usersError" role="alert" hidden style="color:var(--critical); font-size:12.5px; margin-bottom:12px;"></div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>First name</th><th>Last name</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th><th>Updated</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="usersTableBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </main>
 </div>
 
 <div id="accountSettingsView" hidden style="display:none;">
@@ -1029,8 +1036,9 @@ function applyMode(){
   document.body.setAttribute('data-mode', bd ? 'bd' : 'admin');
   $('#appSub').textContent = bd ? 'Build an estimate and check the price'
                                 : 'Salaries → true hourly cost → project margins';
+  const onUsersTab = !$('#tab-users').hidden;
   const active = $('nav.tabs button[aria-selected="true"]');
-  if(bd && (!active || active.classList.contains('admin-only'))) selectTab('projects');
+  if(bd && !onUsersTab && (!active || active.classList.contains('admin-only'))) selectTab('projects');
 }
 function selectTab(name){
   $$('nav.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.tab === name ? 'true' : 'false'));
@@ -2599,11 +2607,11 @@ function bindTheme(){
     e.preventDefault(); e.returnValue = '';
   });
 }
-/* The three mutually-exclusive top-level views once logged in. Centralized
-   here since adding a third view (accountSettings) made the previous
-   per-view show/hide pairs (repeating "hide the other one, show this one")
-   start to duplicate. */
-const VIEWS = { planner: '#appShell', users: '#usersView', accountSettings: '#accountSettingsView' };
+/* The two mutually-exclusive top-level views once logged in. Users lives
+   inside the planner view as an ordinary tabpanel (like /employees' Users
+   tab) rather than its own top-level view — reached only via the account
+   menu, same as employees, with no dedicated "back" button. */
+const VIEWS = { planner: '#appShell', accountSettings: '#accountSettingsView' };
 function showView(name){
   Object.entries(VIEWS).forEach(([key, sel]) => {
     const el = $(sel);
@@ -2616,8 +2624,10 @@ function showPlannerView(){
   showView('planner');
 }
 function openUsersView(){
-  showView('users');
+  showPlannerView();
+  selectTab('users');
   loadUsersTable();
+  window.scrollTo({top:0});
 }
 function openAccountSettings(){
   showView('accountSettings');
@@ -2728,18 +2738,15 @@ function renderUsersTable(users){
     const roleCell = canAct
       ? `<select data-id="${u.id}" data-act="role">${usersRoleOptionsHtml(myRole, u.role)}</select>`
       : esc(ROLE_LABELS[u.role] || u.role);
-    const statusPill = `<span class="pill ${u.isActive ? 'good' : 'bad'}">${u.isActive ? 'Active' : 'Deactivated'}</span>`;
+    const statusBadge = u.isActive ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Deactivated</span>';
     const statusBtn = canAct
-      ? `<button type="button" class="tiny" data-id="${u.id}" data-act="${u.isActive ? 'deactivate' : 'reactivate'}">${u.isActive ? 'Deactivate' : 'Reactivate'}</button>`
+      ? `<button type="button" class="small ${u.isActive ? 'danger' : ''}" data-id="${u.id}" data-act="${u.isActive ? 'deactivate' : 'reactivate'}">${u.isActive ? 'Deactivate' : 'Reactivate'}</button>`
       : '';
     return `<tr>
-      <td>${esc(u.firstName)}</td>
-      <td>${esc(u.lastName)}</td>
+      <td>${esc(u.firstName)} ${esc(u.lastName)}</td>
       <td>${esc(u.email)}</td>
       <td>${roleCell}</td>
-      <td>${statusPill}</td>
-      <td>${esc(u.createdAt)}</td>
-      <td>${esc(u.updatedAt)}</td>
+      <td>${statusBadge}</td>
       <td>${statusBtn}</td>
     </tr>`;
   }).join('');
@@ -2748,7 +2755,7 @@ async function loadUsersTable(){
   const errBox = $('#usersError');
   errBox.hidden = true;
   const cell = () => `<td><div class="skeleton" style="width:80%; height:13px;"></div></td>`;
-  $('#usersTableBody').innerHTML = Array.from({ length: 5 }, () => `<tr>${cell().repeat(8)}</tr>`).join('');
+  $('#usersTableBody').innerHTML = Array.from({ length: 5 }, () => `<tr>${cell().repeat(5)}</tr>`).join('');
   try{
     const result = await apiRequest('/api/users');
     renderUsersTable(result.users || []);
@@ -2759,7 +2766,6 @@ async function loadUsersTable(){
   }
 }
 function bindUsersView(){
-  $('#btnUsersBack').addEventListener('click', showPlannerView);
   $('#usersTableBody').addEventListener('change', async (e) => {
     if(e.target.dataset.act !== 'role') return;
     const id = e.target.dataset.id;
@@ -2802,7 +2808,7 @@ function bindAccountMenu(){
   document.addEventListener('keydown', (e) => {
     if(e.key !== 'Escape') return;
     closeAccountMenu();
-    if(!$('#usersView').hidden || !$('#accountSettingsView').hidden) showPlannerView();
+    if(!$('#accountSettingsView').hidden) showPlannerView();
     if(!$('#historyPanel').hidden) closeHistoryPanel();
   });
   $('#brandLogo').addEventListener('click', () => {
