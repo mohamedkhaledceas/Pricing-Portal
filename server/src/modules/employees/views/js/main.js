@@ -49,7 +49,10 @@ function bindUi() {
   $('#btnUsersView').addEventListener('click', () => { switchMainTab('users'); });
   $('#btnLogout').addEventListener('click', async () => {
     try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
-    window.location.href = '/';
+    // Not '/' — this page has no logged-out state of its own, so bouncing
+    // back here with no session just re-triggers the loginGate's harsh
+    // "Unauthorized" screen instead of a clean sign-in form.
+    window.location.href = '/login';
   });
 
   $all('.nav-tab').forEach((btn) => btn.addEventListener('click', () => switchMainTab(btn.dataset.tab, btn)));
