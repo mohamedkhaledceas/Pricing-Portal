@@ -52,6 +52,7 @@ function scheduleStatsRefresh() {
 
 function bindUi() {
   $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
+  $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/'; });
   $('#btnAccountMenu').addEventListener('click', (e) => {
     e.stopPropagation();
     const menu = $('#accountMenu');

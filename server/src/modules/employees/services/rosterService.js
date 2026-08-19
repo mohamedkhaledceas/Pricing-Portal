@@ -1,12 +1,12 @@
 const { EmployeesError } = require('../errors');
 
-/* Manual CRUD by P&C/admin — v1 phasing per the plan: automatic ClickUp
-   roster sync is explicitly deferred. Access to roster management is
-   gated on the auth role: admin (system-level escape hatch) or
-   people_culture. */
+/* Manual CRUD by P&C/admin/manager — v1 phasing per the plan: automatic
+   ClickUp roster sync is explicitly deferred. Access to roster management
+   is gated on the auth role: admin (system-level escape hatch), people_culture,
+   or manager (the CEO's role — full company-wide roster access, same as P&C). */
 function createRosterService({ employeeRepository, employeeModel, audit, roles }) {
   function canManageRoster({ actorAuthRole }) {
-    return actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE;
+    return actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE || actorAuthRole === roles.MANAGER;
   }
 
   function requireCanManageRoster({ actorAuthRole }) {

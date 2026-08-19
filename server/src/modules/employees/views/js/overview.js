@@ -23,10 +23,69 @@ function statCard(title, body) {
   </div>`;
 }
 
+// The manager role is the CEO's account — company-wide visibility even
+// without a roster record of their own (unlike a plain employee, who
+// genuinely has nothing to show until P&C onboards them). Built from
+// existing pieces only: off-today is already role-agnostic, and the
+// roster list is now reachable to this role via rosterService.canManageRoster.
+async function renderManagerOverview() {
+  const container = $('#ov-content');
+  container.innerHTML = `<div class="cards-row section">${Array.from({ length: 2 }, () => statCard('', skeletonBlock('60%', '30px'))).join('')}</div>`;
+
+  const [rosterRes, offTodayRes] = await Promise.all([
+    apiFetch('/api/employees'),
+    apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
+  ]);
+
+  const roster = rosterRes.employees || [];
+  const active = roster.filter((e) => e.active).length;
+  const inactive = roster.length - active;
+
+  const offToday = offTodayRes.offToday || [];
+  const teamGrid = offToday.length
+    ? offToday.map((o) => `
+      <div class="team-tile">
+        <div class="team-tile-name">${escapeHtml(o.name)}</div>
+        <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.halfDay ? ' · half-day' : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
+      </div>`).join('')
+    : `<div class="empty-state" style="grid-column:1/-1;padding:18px;">Nobody's off today</div>`;
+
+  container.innerHTML = `
+    <div class="cards-row section">
+      ${statCard('Company Roster', `
+        <div class="stat-row mt-8">
+          <span class="stat-num" style="font-size:22px;">${active}</span><span class="stat-lbl">Active</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-num" style="font-size:22px;">${inactive}</span><span class="stat-lbl">Inactive</span>
+        </div>
+        <div class="mt-8">
+          <button onclick="switchMainTab('roster', document.getElementById('maintab-roster'))"
+            style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
+            Manage Roster →
+          </button>
+        </div>`)}
+      ${statCard('Reporting', `<div class="mt-8"><span class="badge badge-approved">Manager (CEO)</span></div>`)}
+    </div>
+
+    <div class="card section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div class="card-title" style="margin-bottom:0;">Who's Off Today</div>
+        <div class="small muted">${fmtDate(todayIso())}</div>
+      </div>
+      <div class="team-grid">${teamGrid}</div>
+    </div>
+  `;
+}
+
 export async function renderOverview() {
   const container = $('#ov-content');
   const emp = state.myEmployee;
-  if (!emp) { renderNoProfile(); return; }
+  if (!emp) {
+    if (state.currentUser && state.currentUser.role === 'manager') { await renderManagerOverview(); return; }
+    renderNoProfile();
+    return;
+  }
 
   container.innerHTML = `<div class="cards-row section">${Array.from({ length: 3 }, () => statCard('', skeletonBlock('60%', '30px'))).join('')}</div>`;
 

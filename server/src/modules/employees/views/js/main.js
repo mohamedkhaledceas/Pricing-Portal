@@ -9,7 +9,9 @@ import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
 import { renderUsersAdmin } from './usersAdmin.js';
 
-const MANAGE_ROSTER_ROLES = ['admin', 'people_culture'];
+// 'manager' is the CEO's role in this org — full company-wide roster
+// access, same as people_culture (see rosterService.canManageRoster).
+const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'manager'];
 // Same gate as margin-planner_1.html's own Commercial Lead button
 // (USER_MANAGER_ROLES) — role only.
 const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
@@ -71,6 +73,7 @@ function bindUi() {
   if (!ok) {
     $('#loginGateChecking').hidden = true;
     $('#loginGateFail').hidden = false;
+    $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/'; });
     return;
   }
 
