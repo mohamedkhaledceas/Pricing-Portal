@@ -23,12 +23,21 @@ async function apiPost(path, body) {
   return data;
 }
 
+/* Swaps a submit button's label for a spinner while an async action is in
+   flight — avoids innerHTML so the (currently static) loading text never
+   goes through unescaped HTML parsing. Same pattern as margin-planner_1.html's
+   own setButtonLoading. */
 function setButtonLoading(btn, loading, loadingText) {
   if (!btn) return;
   if (loading) {
     if (btn.dataset.originalText === undefined) btn.dataset.originalText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = loadingText || btn.dataset.originalText;
+    btn.textContent = '';
+    const spin = document.createElement('span');
+    spin.className = 'spinner';
+    spin.setAttribute('aria-hidden', 'true');
+    btn.appendChild(spin);
+    btn.appendChild(document.createTextNode(loadingText || btn.dataset.originalText));
   } else {
     btn.disabled = false;
     if (btn.dataset.originalText !== undefined) btn.textContent = btn.dataset.originalText;
@@ -125,12 +134,20 @@ $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; })
   }
 
   /* Already-authenticated visitors (a valid refresh cookie still on file)
-     skip the form entirely rather than being asked to log in again. */
-  try {
-    const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (res.ok) {
-      window.location.href = '/';
-      return;
-    }
-  } catch (err) { /* no valid session — show the form below */ }
+     skip the form entirely rather than being asked to log in again. A
+     definitive 401 means there's really no session; anything else (rate
+     limiting, a 5xx, a dropped connection) gets one retry before falling
+     back to showing the form, so a transient hiccup doesn't force a
+     needless re-login. */
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        window.location.href = '/';
+        return;
+      }
+      if (res.status === 401) break;
+    } catch (err) { /* fall through to retry / show the form below */ }
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 })();

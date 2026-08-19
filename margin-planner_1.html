@@ -2169,15 +2169,26 @@ function setButtonLoading(btn, loading, loadingText){
 let refreshInFlight = null;
 async function attemptSilentRefresh(){
   if (!refreshInFlight) {
-    refreshInFlight = fetch(API_BASE + '/api/auth/refresh', { method: 'POST', credentials: 'include' })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return response.json();
-      })
-      .catch(() => null)
-      .finally(() => { refreshInFlight = null; });
+    refreshInFlight = doSilentRefresh().finally(() => { refreshInFlight = null; });
   }
   return refreshInFlight;
+}
+
+async function doSilentRefresh(isRetry){
+  let response;
+  try {
+    response = await fetch(API_BASE + '/api/auth/refresh', { method: 'POST', credentials: 'include' });
+  } catch (err) {
+    response = null;
+  }
+  if (response && response.ok) return response.json();
+  /* A definitive 401 means the session really is gone. Anything else (rate
+     limiting, a 5xx, a dropped connection) is more likely a transient
+     hiccup than an expired session, so it gets one retry before the caller
+     treats this as logged out. */
+  if (isRetry || (response && response.status === 401)) return null;
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  return doSilentRefresh(true);
 }
 
 async function apiRequest(path, options = {}, _isRetry = false){

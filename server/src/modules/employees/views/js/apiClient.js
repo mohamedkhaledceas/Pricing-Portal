@@ -35,16 +35,29 @@ export async function apiFetch(path, options, _isRetry) {
 let refreshInFlight = null;
 export async function bootstrapAuth() {
   if (!refreshInFlight) {
-    refreshInFlight = fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
-      .then(async (res) => {
-        if (!res.ok) return false;
-        const data = await res.json();
-        state.accessToken = data.token;
-        state.currentUser = data.user;
-        return true;
-      })
-      .catch(() => false)
-      .finally(() => { refreshInFlight = null; });
+    refreshInFlight = doRefresh().finally(() => { refreshInFlight = null; });
   }
   return refreshInFlight;
+}
+
+async function doRefresh(isRetry) {
+  let res;
+  try {
+    res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
+  } catch (err) {
+    res = null;
+  }
+  if (res && res.ok) {
+    const data = await res.json();
+    state.accessToken = data.token;
+    state.currentUser = data.user;
+    return true;
+  }
+  /* A definitive 401 means the session really is gone. Anything else (rate
+     limiting, a 5xx, a dropped connection) is more likely a transient
+     hiccup than an expired session, so it gets one retry before the caller
+     is shown the logged-out state. */
+  if (isRetry || (res && res.status === 401)) return false;
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  return doRefresh(true);
 }

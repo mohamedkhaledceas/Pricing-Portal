@@ -46,6 +46,16 @@ button.ghost:hover{filter:none; background-color:rgba(0,0,0,0.08)}
 button.primary{background:var(--accent); border-color:transparent; color:var(--on-accent); font-weight:600}
 button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 
+.spinner{
+  display:inline-block; width:13px; height:13px; margin-right:7px; vertical-align:-2px;
+  border:2px solid currentColor; border-right-color:transparent; border-radius:50%;
+  animation:spin .6s linear infinite; opacity:0.85;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce){
+  .spinner{ animation:none; }
+}
+
 .card{background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius); padding:16px}
 
 .form-group{display:flex; flex-direction:column; gap:5px; margin-bottom:14px}
