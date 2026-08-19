@@ -63,6 +63,14 @@ function setActive(id, active) {
   return findById(id);
 }
 
+// Deliberately doesn't touch updated_at — this is a background reconciliation
+// against ClickUp's member list (see services/clickupUserSync.js), not a
+// user-initiated edit, and "unchanged since" queries elsewhere shouldn't
+// have to account for it.
+function setClickupUserId(id, clickupUserId) {
+  db.prepare('UPDATE employees SET clickup_user_id = ? WHERE id = ?').run(clickupUserId, id);
+}
+
 module.exports = {
   findAll,
   findAllActive,
@@ -73,4 +81,5 @@ module.exports = {
   insert,
   update,
   setActive,
+  setClickupUserId,
 };

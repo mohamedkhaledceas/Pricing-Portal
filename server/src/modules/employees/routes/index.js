@@ -1,4 +1,5 @@
 const express = require('express');
+const catchAsync = require('../../../common/catchAsync');
 
 /* Mounted at /api in index.js. authenticate (from modules/auth) +
    attachEmployee (this module's own middleware) run on every route here —
@@ -17,14 +18,18 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.post('/employees/:id/deactivate', rosterController.deactivate);
   router.post('/employees/:id/reactivate', rosterController.reactivate);
 
-  router.post('/employees/leave-requests', timeOffController.submit);
+  // submit/managerDecision/pcConfirm/cancel are async (they await the
+  // ClickUp sync — see clickupLeaveSync.js) and need catchAsync so an
+  // unexpected error reaches errorHandler.js instead of just hanging the
+  // request (Express 4 doesn't do this for async handlers on its own).
+  router.post('/employees/leave-requests', catchAsync(timeOffController.submit));
   router.get('/employees/leave-requests/mine', timeOffController.listMine);
   router.get('/employees/leave-requests/team', timeOffController.listTeam);
   router.get('/employees/leave-requests/off-today', timeOffController.offToday);
   router.get('/employees/leave-requests/pending', timeOffController.listPcPending);
-  router.patch('/employees/leave-requests/:id/manager-decision', timeOffController.managerDecision);
-  router.patch('/employees/leave-requests/:id/pc-confirm', timeOffController.pcConfirm);
-  router.post('/employees/leave-requests/:id/cancel', timeOffController.cancel);
+  router.patch('/employees/leave-requests/:id/manager-decision', catchAsync(timeOffController.managerDecision));
+  router.patch('/employees/leave-requests/:id/pc-confirm', catchAsync(timeOffController.pcConfirm));
+  router.post('/employees/leave-requests/:id/cancel', catchAsync(timeOffController.cancel));
 
   router.get('/employees/conflict-pairs', conflictPairController.list);
   router.post('/employees/conflict-pairs', conflictPairController.create);

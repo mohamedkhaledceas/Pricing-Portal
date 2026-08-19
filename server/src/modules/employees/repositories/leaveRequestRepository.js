@@ -94,6 +94,13 @@ function updateCancelled(id) {
   return findById(id);
 }
 
+// Fire-and-log territory (see clickupLeaveSync.js) — doesn't touch
+// updated_at, since this reflects a side-effect landing, not an edit to
+// the request itself.
+function setClickupTaskId(id, clickupTaskId) {
+  db.prepare('UPDATE leave_requests SET clickup_task_id = ? WHERE id = ?').run(clickupTaskId, id);
+}
+
 module.exports = {
   insert,
   findById,
@@ -105,4 +112,5 @@ module.exports = {
   updateManagerDecision,
   updatePcDecision,
   updateCancelled,
+  setClickupTaskId,
 };

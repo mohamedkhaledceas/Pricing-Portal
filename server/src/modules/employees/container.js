@@ -14,6 +14,7 @@ const conflictPairModel = require('./models/conflictPair.model');
 const audit = require('../../common/audit');
 const { ROLES } = require('../../common/constants/roles');
 const { authenticate } = require('../auth');
+const clickupClient = require('../../common/integrations/clickupClient');
 
 const timeOffRules = require('./services/timeOffRules');
 const kpiFrameworkSeed = require('./services/kpiFrameworkSeed.data');
@@ -22,6 +23,8 @@ const createRosterService = require('./services/rosterService');
 const createTimeOffService = require('./services/timeOffService');
 const createConflictPairService = require('./services/conflictPairService');
 const createKpiScoringService = require('./services/kpiScoringService');
+const createClickupLeaveSync = require('./services/clickupLeaveSync');
+const createClickupUserSync = require('./services/clickupUserSync');
 const createRosterController = require('./controllers/rosterController');
 const createTimeOffController = require('./controllers/timeOffController');
 const createConflictPairController = require('./controllers/conflictPairController');
@@ -35,9 +38,15 @@ kpiDefinitionRepository.seedMany(kpiFrameworkSeed);
 const attachEmployee = createAttachEmployeeMiddleware({ employeeRepository, employeeModel });
 
 const rosterService = createRosterService({ employeeRepository, employeeModel, audit, roles: ROLES });
-const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit });
+const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
+const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, employeeRepository, roles: ROLES });
 const kpiScoringService = createKpiScoringService({ employeeRepository, kpiDefinitionRepository, kpiScoreRepository, pillarAReviewRepository });
+
+// Fire-and-forget, same reasoning as clickupLeaveSync's own methods — a
+// ClickUp outage at boot must never block the app from starting. Errors
+// are caught and logged inside clickupUserSync.run() itself.
+createClickupUserSync({ employeeRepository, clickupClient }).run();
 
 const rosterController = createRosterController({ rosterService });
 const timeOffController = createTimeOffController({ timeOffService });

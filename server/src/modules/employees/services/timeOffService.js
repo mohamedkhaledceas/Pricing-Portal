@@ -13,8 +13,8 @@ function parseDateOnly(value) {
    -> manager decision -> P&C confirmation. timeOffRules holds the pure
    notice-window math; this service is what actually touches the DB and
    enforces who's allowed to do what. */
-function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit }) {
-  function submit({ employeeId, leaveType, startDate, endDate, halfDay, halfDayPeriod, handoverEmployeeId, reason, actorId, ip }) {
+function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync }) {
+  async function submit({ employeeId, leaveType, startDate, endDate, halfDay, halfDayPeriod, handoverEmployeeId, reason, actorId, ip }) {
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       throw new EmployeesError(`Leave type must be one of: ${VALID_LEAVE_TYPES.join(', ')}.`);
     }
@@ -85,6 +85,9 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       ip,
     });
 
+    const clickupTaskId = await clickupLeaveSync.createTask(leaveRequestModel.toLeaveRequest(created));
+    if (clickupTaskId) leaveRequestRepository.setClickupTaskId(created.id, clickupTaskId);
+
     const requiresDoctorNote = leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({ startDate: start, endDate: end });
     return { ...leaveRequestModel.toLeaveRequest(created), requiresDoctorNote };
   }
@@ -122,7 +125,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest);
   }
 
-  function managerDecision({ requestId, actorEmployee, decision, actorId, ip }) {
+  async function managerDecision({ requestId, actorEmployee, decision, actorId, ip }) {
     if (!['approved', 'rejected'].includes(decision)) {
       throw new EmployeesError('Decision must be "approved" or "rejected".');
     }
@@ -148,6 +151,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       details: { before: { status: request.status }, after: { status: newStatus } },
       ip,
     });
+    await clickupLeaveSync.updateStatus(request.clickup_task_id, newStatus);
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
@@ -157,7 +161,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
      non-automatic rows — everything except the same-day short-notice/
      mental-health case, which is already applied automatically at
      submission time and isn't meant to be overwritten by this step). */
-  function pcConfirm({ requestId, actorEmployee, decision, salaryDeduction, unpaidDaysCount, actorId, ip }) {
+  async function pcConfirm({ requestId, actorEmployee, decision, salaryDeduction, unpaidDaysCount, actorId, ip }) {
     if (!actorEmployee || !actorEmployee.isPeopleCulture) {
       throw new EmployeesError('You do not have permission to confirm leave requests.', 403);
     }
@@ -189,10 +193,11 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       details: { before: { status: request.status }, after: { status: decision, salaryDeduction: deduction } },
       ip,
     });
+    await clickupLeaveSync.updateStatus(request.clickup_task_id, decision);
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
-  function cancel({ requestId, actorEmployee, actorId, ip }) {
+  async function cancel({ requestId, actorEmployee, actorId, ip }) {
     const request = leaveRequestRepository.findById(requestId);
     if (!request) throw new EmployeesError('Leave request not found.', 404);
     if (!actorEmployee || request.employee_id !== actorEmployee.id) {
@@ -211,6 +216,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       details: { before: { status: request.status } },
       ip,
     });
+    await clickupLeaveSync.updateStatus(request.clickup_task_id, 'cancelled');
     return leaveRequestModel.toLeaveRequest(updated);
   }
 

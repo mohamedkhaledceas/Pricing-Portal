@@ -15,11 +15,11 @@ function createTimeOffController({ timeOffService }) {
     throw error;
   }
 
-  function submit(req, res) {
+  async function submit(req, res) {
     try {
       const employee = requireEmployee(req);
       const body = req.body || {};
-      const request = timeOffService.submit({
+      const request = await timeOffService.submit({
         employeeId: employee.id,
         leaveType: body.leaveType,
         startDate: body.startDate,
@@ -76,9 +76,9 @@ function createTimeOffController({ timeOffService }) {
     }
   }
 
-  function managerDecision(req, res) {
+  async function managerDecision(req, res) {
     try {
-      const request = timeOffService.managerDecision({
+      const request = await timeOffService.managerDecision({
         requestId: Number(req.params.id),
         actorEmployee: req.employee,
         decision: (req.body || {}).decision,
@@ -91,10 +91,10 @@ function createTimeOffController({ timeOffService }) {
     }
   }
 
-  function pcConfirm(req, res) {
+  async function pcConfirm(req, res) {
     try {
       const body = req.body || {};
-      const request = timeOffService.pcConfirm({
+      const request = await timeOffService.pcConfirm({
         requestId: Number(req.params.id),
         actorEmployee: req.employee,
         decision: body.decision,
@@ -109,9 +109,9 @@ function createTimeOffController({ timeOffService }) {
     }
   }
 
-  function cancel(req, res) {
+  async function cancel(req, res) {
     try {
-      const request = timeOffService.cancel({
+      const request = await timeOffService.cancel({
         requestId: Number(req.params.id),
         actorEmployee: req.employee,
         actorId: req.user.id,

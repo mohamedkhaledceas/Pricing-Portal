@@ -1,25 +1,46 @@
-/* The one place CLICKUP_API_KEY is read — a generic authenticated GET
-   wrapper, shared by every module that needs ClickUp (today: Commercial
-   Lead; later: Employees' roster lookup, per the plan). Never called from
-   the frontend; never returns the raw key. Promoted here from the old
-   flat clickup.js unchanged. */
+/* The one place CLICKUP_API_KEY is read — generic authenticated request
+   wrappers, shared by every module that needs ClickUp (today: Commercial
+   Lead reads, Employees' leave-request sync writes; Employees' roster
+   lookup, per the plan). Never called from the frontend; never returns
+   the raw key. clickupGet promoted here from the old flat clickup.js
+   unchanged; clickupPost/clickupPut added for Employees' ClickUp sync
+   (see modules/employees/services/clickupLeaveSync.js) — same shape,
+   just a body and a different HTTP method. */
 const { AppError } = require('../errors');
 
 const CLICKUP_BASE = 'https://api.clickup.com/api/v2';
 
-async function clickupGet(path) {
+async function clickupRequest(method, path, body) {
   const apiKey = process.env.CLICKUP_API_KEY;
   if (!apiKey) {
     throw new AppError('ClickUp integration is not configured — set CLICKUP_API_KEY.', 500);
   }
   const res = await fetch(`${CLICKUP_BASE}${path}`, {
-    headers: { Authorization: apiKey },
+    method,
+    headers: {
+      Authorization: apiKey,
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new AppError(`ClickUp API error (${res.status}) on ${path}: ${body}`, 502);
+    const responseBody = await res.text().catch(() => '');
+    throw new AppError(`ClickUp API error (${res.status}) on ${method} ${path}: ${responseBody}`, 502);
   }
+  if (res.status === 204) return null;
   return res.json();
+}
+
+function clickupGet(path) {
+  return clickupRequest('GET', path);
+}
+
+function clickupPost(path, body) {
+  return clickupRequest('POST', path, body);
+}
+
+function clickupPut(path, body) {
+  return clickupRequest('PUT', path, body);
 }
 
 /* Structural survey only — space/folder/list names and IDs, not tasks or
@@ -54,4 +75,4 @@ async function getWorkspaceSurvey() {
   }));
 }
 
-module.exports = { clickupGet, getWorkspaceSurvey };
+module.exports = { clickupGet, clickupPost, clickupPut, getWorkspaceSurvey };
