@@ -76,9 +76,9 @@ async function submitRequest() {
     const req = res.request;
     let banner = `<div class="alert alert-${req.status === 'auto_rejected' ? 'danger' : 'info'}">`;
     if (req.status === 'auto_rejected') {
-      banner += `<span>🚫</span><div><strong>Auto-rejected.</strong> ${escapeHtml(req.autoRejectReason || '')}</div>`;
+      banner += `<div><strong>Auto-rejected.</strong> ${escapeHtml(req.autoRejectReason || '')}</div>`;
     } else {
-      banner += `<span>✅</span><div><strong>Submitted.</strong> Awaiting your manager's decision.${req.requiresDoctorNote ? ' A doctor\'s note will be required (sick leave over 2 days).' : ''}</div>`;
+      banner += `<div><strong>Submitted.</strong> Awaiting your manager's decision.${req.requiresDoctorNote ? ' A doctor\'s note will be required (sick leave over 2 days).' : ''}</div>`;
     }
     banner += '</div>';
     resultEl.innerHTML = banner;
@@ -87,7 +87,7 @@ async function submitRequest() {
     onTypeChange();
     $('#req-reason').value = '';
   } catch (err) {
-    resultEl.innerHTML = `<div class="alert alert-danger"><span>⚠️</span><div>${escapeHtml(err.message)}</div></div>`;
+    resultEl.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
   } finally {
     btn.disabled = false;
   }
@@ -109,7 +109,7 @@ export function renderNewRequestForm() {
           <label class="form-label">Request Type *</label>
           <select class="form-control" id="req-type">
             <option value="">— Select request type —</option>
-            ${LEAVE_TYPES.filter((t) => t.value !== 'public_holiday').map((t) => `<option value="${t.value}">${t.icon} ${escapeHtml(t.label)}</option>`).join('')}
+            ${LEAVE_TYPES.filter((t) => t.value !== 'public_holiday').map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}
           </select>
           <div class="form-hint" id="req-type-notice"></div>
         </div>
@@ -173,7 +173,7 @@ function todayIso() {
 
 async function renderToday() {
   const container = $('#today-content');
-  container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">👥</div>Loading team data...</div>`;
+  container.innerHTML = `<div class="empty-state">Loading team data...</div>`;
   const res = await apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso());
   const offToday = res.offToday || [];
   $('#today-date-label').textContent = fmtDate(todayIso());
@@ -183,15 +183,20 @@ async function renderToday() {
         <div class="team-tile-name">${escapeHtml(o.name)}</div>
         <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.halfDay ? ' · half-day (' + escapeHtml(o.halfDayPeriod || '') + ')' : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
       </div>`).join('')}</div>`
-    : `<div class="empty-state"><div class="empty-state-icon">✅</div>Nobody's off today</div>`;
+    : `<div class="empty-state">Nobody's off today</div>`;
 }
 
 /* ── History ── */
+// Native window.confirm() blocks the whole tab (and browser-automation
+// input) until manually dismissed — a two-click inline confirm avoids that
+// without introducing a modal component the codebase doesn't otherwise have.
+let confirmingCancelId = null;
+
 async function cancelRequest(id) {
-  if (!window.confirm('Cancel this request?')) return;
   try {
     await apiFetch(`/api/employees/leave-requests/${id}/cancel`, { method: 'POST' });
     toast('Request cancelled', 'info');
+    confirmingCancelId = null;
     renderHistory();
   } catch (err) {
     toast(err.message, 'danger');
@@ -199,13 +204,25 @@ async function cancelRequest(id) {
 }
 window.cancelRequest = cancelRequest;
 
+function askCancelRequest(id) {
+  confirmingCancelId = id;
+  renderHistory();
+}
+window.askCancelRequest = askCancelRequest;
+
+function cancelCancelRequest() {
+  confirmingCancelId = null;
+  renderHistory();
+}
+window.cancelCancelRequest = cancelCancelRequest;
+
 async function renderHistory() {
   const container = $('#history-content');
-  container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div>Loading history...</div>`;
+  container.innerHTML = `<div class="empty-state">Loading history...</div>`;
   const res = await apiFetch('/api/employees/leave-requests/mine');
   const requests = res.requests || [];
   if (!requests.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div>No requests yet</div>`;
+    container.innerHTML = `<div class="empty-state">No requests yet</div>`;
     return;
   }
   container.innerHTML = `
@@ -220,8 +237,14 @@ async function renderHistory() {
               <span class="badge badge-${r.status}">${escapeHtml(r.status.replace('_', ' '))}</span>
               ${r.autoRejectReason ? `<div class="small muted mt-8">${escapeHtml(r.autoRejectReason)}</div>` : ''}
             </td>
-            <td>${r.salaryDeduction && r.salaryDeduction !== 'none' ? `<span class="badge badge-rejected">${escapeHtml(r.salaryDeduction.replace('_', ' '))}</span>` : '—'}</td>
-            <td>${['pending', 'manager_approved'].includes(r.status) ? `<button class="btn small" onclick="cancelRequest(${r.id})">Cancel</button>` : ''}</td>
+            <td>${r.salaryDeduction && r.salaryDeduction !== 'none'
+              ? `<span class="badge badge-rejected">${escapeHtml(r.salaryDeduction.replace('_', ' '))}</span>${r.salaryDeduction === 'unpaid' && r.unpaidDaysCount ? ` <span class="small muted">(${r.unpaidDaysCount} day${r.unpaidDaysCount === 1 ? '' : 's'})</span>` : ''}`
+              : '—'}</td>
+            <td>${['pending', 'manager_approved'].includes(r.status)
+              ? (confirmingCancelId === r.id
+                ? `<span class="small">Cancel this request? </span><button class="btn small danger" onclick="cancelRequest(${r.id})">Yes</button> <button class="btn small" onclick="cancelCancelRequest()">No</button>`
+                : `<button class="btn small" onclick="askCancelRequest(${r.id})">Cancel</button>`)
+              : ''}</td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -237,21 +260,18 @@ export function renderRules() {
         <table class="data-table">
           <thead><tr><th>Leave Type</th><th>Notice Required</th></tr></thead>
           <tbody>
-            ${LEAVE_TYPES.map((t) => `<tr><td>${t.icon} ${escapeHtml(t.label)}</td><td>${escapeHtml(t.notice)}</td></tr>`).join('')}
+            ${LEAVE_TYPES.map((t) => `<tr><td>${escapeHtml(t.label)}</td><td>${escapeHtml(t.notice)}</td></tr>`).join('')}
           </tbody>
         </table>
       </div>
     </div>
     <div class="section alert alert-info">
-      <span>ℹ️</span>
       <div>Short-notice types (Short-Notice Leave, Mental Health Day) submitted with less than 1 working day's notice, and Planned/Unpaid Leave submitted with less than 3 working days' notice, are <strong>auto-rejected</strong>. Sick and Emergency leave have no notice requirement.</div>
     </div>
     <div class="section alert alert-warn">
-      <span>🤒</span>
       <div>Sick leave longer than 2 consecutive working days requires a doctor's note, submitted within 2 working days of your return.</div>
     </div>
     <div class="section alert alert-info">
-      <span>🏠</span>
       <div>Work From Home is limited to <strong>1 request per calendar month</strong>. A second request in the same month is auto-rejected.</div>
     </div>
     <div class="section">
