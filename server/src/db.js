@@ -30,7 +30,7 @@ const schema = `
     first_name TEXT NOT NULL DEFAULT '',
     last_name TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('employee', 'manager', 'operations', 'finance', 'admin')),
+    role TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('employee', 'manager', 'operations', 'finance', 'admin', 'people_culture')),
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

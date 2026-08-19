@@ -87,7 +87,7 @@ export async function renderTeam() {
   const emp = state.myEmployee;
   if (!emp) { container.innerHTML = ''; return; }
 
-  container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⏳</div>Loading...</div>`;
+  container.innerHTML = `<div class="empty-state">Loading...</div>`;
   await loadDirectoryIndex();
 
   const sections = [];
@@ -95,27 +95,28 @@ export async function renderTeam() {
   const teamRequests = teamRes.requests || [];
   const myPending = teamRequests.filter((r) => r.status === 'pending');
 
-  if (teamRequests.length || emp.isPeopleCulture) {
+  const isPeopleCulture = state.currentUser && state.currentUser.role === 'people_culture';
+  if (teamRequests.length || isPeopleCulture) {
     sections.push(`
       <div class="card section">
-        <div class="card-title">⏳ Pending My Decision</div>
-        ${myPending.length ? myPending.map((r) => requestCard(r, managerActions(r))).join('') : `<div class="empty-state"><div class="empty-state-icon">✅</div>No pending requests</div>`}
+        <div class="card-title">Pending My Decision</div>
+        ${myPending.length ? myPending.map((r) => requestCard(r, managerActions(r))).join('') : `<div class="empty-state">No pending requests</div>`}
       </div>
       <div class="card section">
-        <div class="card-title">📋 All My Direct Reports' Requests</div>
-        ${teamRequests.length ? teamRequests.map((r) => requestCard(r)).join('') : `<div class="empty-state"><div class="empty-state-icon">📭</div>No requests yet</div>`}
+        <div class="card-title">All My Direct Reports' Requests</div>
+        ${teamRequests.length ? teamRequests.map((r) => requestCard(r)).join('') : `<div class="empty-state">No requests yet</div>`}
       </div>`);
   }
 
-  if (emp.isPeopleCulture) {
+  if (isPeopleCulture) {
     const pcRes = await apiFetch('/api/employees/leave-requests/pending');
     const pcPending = pcRes.requests || [];
     sections.push(`
       <div class="card section">
-        <div class="card-title">🗂️ Pending P&amp;C Confirmation (company-wide)</div>
-        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r))).join('') : `<div class="empty-state"><div class="empty-state-icon">✅</div>Nothing waiting on P&amp;C</div>`}
+        <div class="card-title">Pending P&amp;C Confirmation (company-wide)</div>
+        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
       </div>`);
   }
 
-  container.innerHTML = sections.length ? sections.join('') : `<div class="empty-state"><div class="empty-state-icon">👔</div>You don't manage anyone yet.</div>`;
+  container.innerHTML = sections.length ? sections.join('') : `<div class="empty-state">You don't manage anyone yet.</div>`;
 }

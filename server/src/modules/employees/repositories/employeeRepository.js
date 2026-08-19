@@ -39,22 +39,22 @@ function existsByUserId(userId) {
   return !!db.prepare('SELECT id FROM employees WHERE user_id = ?').get(userId);
 }
 
-function insert({ userId, clickupUserId, department, kpiProfile, managerEmployeeId, isPeopleCulture }) {
+function insert({ userId, clickupUserId, department, kpiProfile, managerEmployeeId }) {
   const info = db
     .prepare(
-      `INSERT INTO employees (user_id, clickup_user_id, department, kpi_profile, manager_employee_id, is_people_culture)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO employees (user_id, clickup_user_id, department, kpi_profile, manager_employee_id)
+       VALUES (?, ?, ?, ?, ?)`
     )
-    .run(userId, clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null, isPeopleCulture ? 1 : 0);
+    .run(userId, clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null);
   return findById(info.lastInsertRowid);
 }
 
-function update(id, { clickupUserId, department, kpiProfile, managerEmployeeId, isPeopleCulture }) {
+function update(id, { clickupUserId, department, kpiProfile, managerEmployeeId }) {
   db.prepare(
     `UPDATE employees SET
-       clickup_user_id = ?, department = ?, kpi_profile = ?, manager_employee_id = ?, is_people_culture = ?, updated_at = CURRENT_TIMESTAMP
+       clickup_user_id = ?, department = ?, kpi_profile = ?, manager_employee_id = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`
-  ).run(clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null, isPeopleCulture ? 1 : 0, id);
+  ).run(clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null, id);
   return findById(id);
 }
 

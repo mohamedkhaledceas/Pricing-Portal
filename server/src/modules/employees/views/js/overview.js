@@ -11,15 +11,13 @@ function todayIso() {
 function renderNoProfile() {
   $('#ov-content').innerHTML = `
     <div class="card empty-state">
-      <div class="empty-state-icon">👋</div>
       <div style="font-weight:650;margin-bottom:4px;">You don't have an employee profile yet</div>
       <div class="muted">Time Off and KPI tracking need a completed employee record. Contact People &amp; Culture to get set up.</div>
     </div>`;
 }
 
-function statCard(icon, title, body) {
+function statCard(title, body) {
   return `<div class="stat-card">
-    <div class="stat-card-icon">${icon}</div>
     <div class="stat-card-title">${escapeHtml(title)}</div>
     ${body}
   </div>`;
@@ -30,7 +28,7 @@ export async function renderOverview() {
   const emp = state.myEmployee;
   if (!emp) { renderNoProfile(); return; }
 
-  container.innerHTML = `<div class="cards-row section">${Array.from({ length: 3 }, () => statCard('', '', skeletonBlock('60%', '30px'))).join('')}</div>`;
+  container.innerHTML = `<div class="cards-row section">${Array.from({ length: 3 }, () => statCard('', skeletonBlock('60%', '30px'))).join('')}</div>`;
 
   const [mineRes, offTodayRes] = await Promise.all([
     apiFetch('/api/employees/leave-requests/mine'),
@@ -52,11 +50,11 @@ export async function renderOverview() {
         <div class="team-tile-name">${escapeHtml(o.name)}</div>
         <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.halfDay ? ' · half-day' : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
       </div>`).join('')
-    : `<div class="empty-state" style="grid-column:1/-1;padding:18px;"><div class="empty-state-icon">✅</div>Nobody's off today</div>`;
+    : `<div class="empty-state" style="grid-column:1/-1;padding:18px;">Nobody's off today</div>`;
 
   container.innerHTML = `
     <div class="cards-row section">
-      ${statCard('📋', 'My Requests', `
+      ${statCard('My Requests', `
         <div class="stat-row mt-8">
           <span class="stat-num" style="font-size:22px;">${counts.approved}</span><span class="stat-lbl">Approved</span>
         </div>
@@ -66,14 +64,14 @@ export async function renderOverview() {
         <div class="stat-row">
           <span class="stat-num" style="font-size:22px;">${counts.rejected}</span><span class="stat-lbl">Rejected</span>
         </div>`)}
-      ${statCard('🏢', 'Department', `<div class="mt-8" style="font-weight:650;">${escapeHtml(emp.department || '—')}</div>
+      ${statCard('Department', `<div class="mt-8" style="font-weight:650;">${escapeHtml(emp.department || '—')}</div>
         <div class="muted small mt-8">${emp.kpiProfile ? 'KPI profile: ' + escapeHtml(emp.kpiProfile) : 'No KPI profile assigned'}</div>`)}
-      ${statCard('👔', 'Reporting', `<div class="mt-8">${emp.isPeopleCulture ? '<span class="badge badge-approved">People &amp; Culture</span>' : '<span class="badge badge-neutral">Team member</span>'}</div>`)}
+      ${statCard('Reporting', `<div class="mt-8">${state.currentUser && state.currentUser.role === 'people_culture' ? '<span class="badge badge-approved">People &amp; Culture</span>' : '<span class="badge badge-neutral">Team member</span>'}</div>`)}
     </div>
 
     <div class="card section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div class="card-title" style="margin-bottom:0;">👥 Who's Off Today</div>
+        <div class="card-title" style="margin-bottom:0;">Who's Off Today</div>
         <div class="small muted">${fmtDate(todayIso())}</div>
       </div>
       <div class="team-grid">${teamGrid}</div>
@@ -93,7 +91,7 @@ export async function renderOverview() {
               </tr>`).join('')}
             </tbody>
           </table>
-        </div>` : `<div class="empty-state"><div class="empty-state-icon">📋</div>No requests yet</div>`}
+        </div>` : `<div class="empty-state">No requests yet</div>`}
     </div>
   `;
 }

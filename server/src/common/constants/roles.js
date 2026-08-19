@@ -11,6 +11,7 @@ const ROLES = Object.freeze({
   OPERATIONS: 'operations',
   FINANCE: 'finance',
   ADMIN: 'admin',
+  PEOPLE_CULTURE: 'people_culture',
 });
 
 const ALL_ROLES = Object.freeze(Object.values(ROLES));

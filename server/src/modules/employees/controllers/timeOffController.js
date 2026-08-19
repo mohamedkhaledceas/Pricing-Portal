@@ -69,7 +69,7 @@ function createTimeOffController({ timeOffService }) {
 
   function listPcPending(req, res) {
     try {
-      const requests = timeOffService.listPcPending({ actorEmployee: req.employee });
+      const requests = timeOffService.listPcPending({ actorAuthRole: req.user.role });
       return res.json({ requests });
     } catch (error) {
       return handleError(res, error);
@@ -97,6 +97,7 @@ function createTimeOffController({ timeOffService }) {
       const request = await timeOffService.pcConfirm({
         requestId: Number(req.params.id),
         actorEmployee: req.employee,
+        actorAuthRole: req.user.role,
         decision: body.decision,
         salaryDeduction: body.salaryDeduction,
         unpaidDaysCount: body.unpaidDaysCount,

@@ -1,10 +1,9 @@
 const { EmployeesError } = require('../errors');
 
 function canViewBreakdown({ actorAuthRole, actorEmployee, targetEmployee, roles }) {
-  if (actorAuthRole === roles.ADMIN) return true;
+  if (actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE) return true;
   if (!actorEmployee) return false;
   if (actorEmployee.id === targetEmployee.id) return true;
-  if (actorEmployee.isPeopleCulture) return true;
   return targetEmployee.managerEmployeeId === actorEmployee.id;
 }
 
@@ -53,6 +52,7 @@ function createKpiController({ kpiScoringService, pillarAReviewRepository, emplo
         metricId: body.metricId,
         actualValue: body.actualValue,
         actorEmployee: req.employee,
+        actorAuthRole: req.user.role,
         actorId: req.user.id,
       });
       return res.status(201).json({ score });
@@ -68,7 +68,7 @@ function createKpiController({ kpiScoringService, pillarAReviewRepository, emplo
      stored (see the migration's schema comment). */
   function enterPillarA(req, res) {
     try {
-      if (!req.employee || !req.employee.isPeopleCulture) {
+      if (!req.employee || req.user.role !== roles.PEOPLE_CULTURE) {
         throw new EmployeesError('You do not have permission to enter Pillar A review results.', 403);
       }
       const body = req.body || {};

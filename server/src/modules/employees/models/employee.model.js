@@ -13,7 +13,6 @@ function toEmployee(row) {
     department: row.department,
     kpiProfile: row.kpi_profile,
     managerEmployeeId: row.manager_employee_id,
-    isPeopleCulture: row.is_people_culture !== 0,
     active: row.active !== 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

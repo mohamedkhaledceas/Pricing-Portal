@@ -39,9 +39,9 @@ const attachEmployee = createAttachEmployeeMiddleware({ employeeRepository, empl
 
 const rosterService = createRosterService({ employeeRepository, employeeModel, audit, roles: ROLES });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
-const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync });
+const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, roles: ROLES });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, employeeRepository, roles: ROLES });
-const kpiScoringService = createKpiScoringService({ employeeRepository, kpiDefinitionRepository, kpiScoreRepository, pillarAReviewRepository });
+const kpiScoringService = createKpiScoringService({ employeeRepository, kpiDefinitionRepository, kpiScoreRepository, pillarAReviewRepository, roles: ROLES });
 
 // Fire-and-forget, same reasoning as clickupLeaveSync's own methods — a
 // ClickUp outage at boot must never block the app from starting. Errors

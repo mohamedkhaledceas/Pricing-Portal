@@ -6,20 +6,20 @@ const { EmployeesError } = require('../errors');
    otherwise) is implemented here. Adding that later is additive: one new
    call in timeOffService, no schema change. */
 function createConflictPairService({ conflictPairRepository, conflictPairModel, employeeRepository, roles }) {
-  function requireCanManage({ actorAuthRole, actorEmployee }) {
-    const allowed = actorAuthRole === roles.ADMIN || !!(actorEmployee && actorEmployee.isPeopleCulture);
+  function requireCanManage({ actorAuthRole }) {
+    const allowed = actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE;
     if (!allowed) {
       throw new EmployeesError('You do not have permission to manage conflict pairs.', 403);
     }
   }
 
-  function list({ actorAuthRole, actorEmployee }) {
-    requireCanManage({ actorAuthRole, actorEmployee });
+  function list({ actorAuthRole }) {
+    requireCanManage({ actorAuthRole });
     return conflictPairRepository.findAll().map(conflictPairModel.toConflictPair);
   }
 
-  function create({ actorAuthRole, actorEmployee, employeeIdA, employeeIdB }) {
-    requireCanManage({ actorAuthRole, actorEmployee });
+  function create({ actorAuthRole, employeeIdA, employeeIdB }) {
+    requireCanManage({ actorAuthRole });
     if (!employeeIdA || !employeeIdB || employeeIdA === employeeIdB) {
       throw new EmployeesError('Two distinct employees are required.');
     }
@@ -29,8 +29,8 @@ function createConflictPairService({ conflictPairRepository, conflictPairModel, 
     return conflictPairModel.toConflictPair(conflictPairRepository.insert({ employeeIdA, employeeIdB }));
   }
 
-  function setActive({ actorAuthRole, actorEmployee, id, active }) {
-    requireCanManage({ actorAuthRole, actorEmployee });
+  function setActive({ actorAuthRole, id, active }) {
+    requireCanManage({ actorAuthRole });
     return conflictPairModel.toConflictPair(conflictPairRepository.setActive(id, active));
   }
 

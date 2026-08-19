@@ -44,7 +44,6 @@ function createRosterController({ rosterService }) {
         department: body.department,
         kpiProfile: body.kpiProfile,
         managerEmployeeId: body.managerEmployeeId,
-        isPeopleCulture: body.isPeopleCulture,
         actorId: req.user.id,
         ip: req.ip,
       });
@@ -65,7 +64,6 @@ function createRosterController({ rosterService }) {
         department: body.department,
         kpiProfile: body.kpiProfile,
         managerEmployeeId: body.managerEmployeeId,
-        isPeopleCulture: body.isPeopleCulture,
         actorId: req.user.id,
         ip: req.ip,
       });

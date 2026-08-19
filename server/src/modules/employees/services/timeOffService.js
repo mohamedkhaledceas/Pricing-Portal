@@ -13,7 +13,7 @@ function parseDateOnly(value) {
    -> manager decision -> P&C confirmation. timeOffRules holds the pure
    notice-window math; this service is what actually touches the DB and
    enforces who's allowed to do what. */
-function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync }) {
+function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, roles }) {
   async function submit({ employeeId, leaveType, startDate, endDate, halfDay, halfDayPeriod, handoverEmployeeId, reason, actorId, ip }) {
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       throw new EmployeesError(`Leave type must be one of: ${VALID_LEAVE_TYPES.join(', ')}.`);
@@ -118,8 +118,8 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     }));
   }
 
-  function listPcPending({ actorEmployee }) {
-    if (!actorEmployee || !actorEmployee.isPeopleCulture) {
+  function listPcPending({ actorAuthRole }) {
+    if (actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to view the company-wide approval queue.', 403);
     }
     return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest);
@@ -161,8 +161,8 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
      non-automatic rows — everything except the same-day short-notice/
      mental-health case, which is already applied automatically at
      submission time and isn't meant to be overwritten by this step). */
-  async function pcConfirm({ requestId, actorEmployee, decision, salaryDeduction, unpaidDaysCount, actorId, ip }) {
-    if (!actorEmployee || !actorEmployee.isPeopleCulture) {
+  async function pcConfirm({ requestId, actorEmployee, actorAuthRole, decision, salaryDeduction, unpaidDaysCount, actorId, ip }) {
+    if (!actorEmployee || actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to confirm leave requests.', 403);
     }
     if (!['approved', 'rejected'].includes(decision)) {

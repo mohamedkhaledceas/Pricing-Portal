@@ -67,7 +67,7 @@ function computeMetricScore(formulaConfig, actualValue) {
   return null;
 }
 
-function createKpiScoringService({ employeeRepository, kpiDefinitionRepository, kpiScoreRepository, pillarAReviewRepository }) {
+function createKpiScoringService({ employeeRepository, kpiDefinitionRepository, kpiScoreRepository, pillarAReviewRepository, roles }) {
   function buildPillarA(reviewRow) {
     const dimensions = PILLAR_A_DIMENSIONS.map((dim) => {
       const raw = reviewRow ? reviewRow[dim.key] : null;
@@ -185,10 +185,10 @@ function createKpiScoringService({ employeeRepository, kpiDefinitionRepository, 
     };
   }
 
-  function enterManualScore({ employeeId, quarter, metricId, actualValue, actorEmployee, actorId, kpiProfile }) {
+  function enterManualScore({ employeeId, quarter, metricId, actualValue, actorEmployee, actorAuthRole, actorId, kpiProfile }) {
     const employee = employeeRepository.findById(employeeId);
     if (!employee) throw new EmployeesError('Employee not found.', 404);
-    if (!actorEmployee || (!actorEmployee.isPeopleCulture && actorEmployee.id !== employee.manager_employee_id)) {
+    if (!actorEmployee || (actorAuthRole !== roles.PEOPLE_CULTURE && actorEmployee.id !== employee.manager_employee_id)) {
       throw new EmployeesError('You do not have permission to enter KPI scores for this employee.', 403);
     }
     const definitions = kpiDefinitionRepository.findByProfileAndQuarter(employee.kpi_profile, quarter);

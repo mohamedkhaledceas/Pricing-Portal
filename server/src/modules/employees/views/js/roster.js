@@ -40,14 +40,13 @@ async function submitCreate() {
       department: $('#roster-department').value || undefined,
       kpiProfile: $('#roster-kpi-profile').value || undefined,
       managerEmployeeId: $('#roster-manager').value ? Number($('#roster-manager').value) : undefined,
-      isPeopleCulture: $('#roster-is-pc').checked,
     };
     await apiFetch('/api/employees', { method: 'POST', body: JSON.stringify(payload) });
     toast('Employee added to roster', 'info');
     candidateUsers = null;
     await renderRoster();
   } catch (err) {
-    resultEl.innerHTML = `<div class="alert alert-danger"><span>⚠️</span><div>${escapeHtml(err.message)}</div></div>`;
+    resultEl.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
   } finally {
     btn.disabled = false;
   }
@@ -61,7 +60,6 @@ async function updateEmployee(id) {
       department: row.querySelector('.edit-department').value || undefined,
       kpiProfile: row.querySelector('.edit-kpi-profile').value || undefined,
       managerEmployeeId: row.querySelector('.edit-manager').value ? Number(row.querySelector('.edit-manager').value) : undefined,
-      isPeopleCulture: row.querySelector('.edit-is-pc').checked,
     };
     await apiFetch(`/api/employees/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
     toast('Updated', 'info');
@@ -104,7 +102,7 @@ async function renderRosterTable() {
           ${managerOptions(e.id)}
         </select>
       </td>
-      <td style="text-align:center;"><input type="checkbox" class="edit-is-pc" ${e.isPeopleCulture ? 'checked' : ''}></td>
+      <td style="text-align:center;">${e.authRole === 'people_culture' ? '<span class="badge badge-approved">P&amp;C</span>' : ''}</td>
       <td>${e.active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
       <td>
         <button class="btn small" onclick="rosterUpdateEmployee(${e.id})">Save</button>
@@ -150,10 +148,6 @@ async function renderCreateForm() {
       <div class="form-group">
         <label class="form-label">Manager</label>
         <select class="form-control" id="roster-manager"><option value="">— None —</option>${managerOpts}</select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">People &amp; Culture?</label>
-        <div><input type="checkbox" id="roster-is-pc"> <span class="small muted">Grants roster management + leave-confirmation rights</span></div>
       </div>
       <div class="form-group full" id="roster-create-result"></div>
       <div class="form-group full"><button class="btn primary" id="roster-create-btn">Add to Roster</button></div>

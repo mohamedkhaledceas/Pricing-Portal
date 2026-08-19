@@ -8,9 +8,9 @@ import { renderTeam } from './team.js';
 import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
 
-const MANAGE_ROSTER_ROLES = ['admin'];
+const MANAGE_ROSTER_ROLES = ['admin', 'people_culture'];
 // Same gate as margin-planner_1.html's own Commercial Lead button
-// (USER_MANAGER_ROLES) — role only, not the is_people_culture flag.
+// (USER_MANAGER_ROLES) — role only.
 const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
 
 export function switchMainTab(tabId, btn) {
@@ -74,11 +74,10 @@ function bindUi() {
   // "My Team" tab stays visible whenever the viewer has an employee profile
   // at all — renderTeam() itself shows an empty state if they manage no one.
   $('#maintab-team').style.display = emp ? '' : 'none';
-  // Admin can manage the roster with no employee profile at all (the
-  // backend's canManageRoster grants it on auth role alone); P&C's access
-  // is via the employee flag, which does require a profile.
-  const isAdmin = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
-  $('#maintab-roster').style.display = isAdmin || (emp && emp.isPeopleCulture) ? '' : 'none';
+  // Admin and P&C can both manage the roster with no employee profile at
+  // all — the backend's canManageRoster grants it on auth role alone.
+  const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
+  $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
   $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
 
   $('#loginGate').style.display = 'none';
