@@ -23,12 +23,15 @@ function statCard(title, body) {
   </div>`;
 }
 
-// The manager role is the CEO's account — company-wide visibility even
-// without a roster record of their own (unlike a plain employee, who
-// genuinely has nothing to show until P&C onboards them). Built from
-// existing pieces only: off-today is already role-agnostic, and the
-// roster list is now reachable to this role via rosterService.canManageRoster.
-async function renderManagerOverview() {
+// manager (the CEO's account) and admin (the developer's own escape-hatch
+// role, strictly more privileged than manager) both get company-wide
+// visibility even without a roster record of their own — unlike a plain
+// employee, who genuinely has nothing to show until P&C onboards them.
+// Built from existing pieces only: off-today is already role-agnostic, and
+// the roster list is reachable to both roles via rosterService.canManageRoster.
+const COMPANY_OVERVIEW_ROLES = { manager: 'Manager (CEO)', admin: 'Admin' };
+
+async function renderManagerOverview(role) {
   const container = $('#ov-content');
   container.innerHTML = `<div class="cards-row section">${Array.from({ length: 2 }, () => statCard('', skeletonBlock('60%', '30px'))).join('')}</div>`;
 
@@ -65,7 +68,7 @@ async function renderManagerOverview() {
             Manage Roster →
           </button>
         </div>`)}
-      ${statCard('Reporting', `<div class="mt-8"><span class="badge badge-approved">Manager (CEO)</span></div>`)}
+      ${statCard('Reporting', `<div class="mt-8"><span class="badge badge-approved">${escapeHtml(COMPANY_OVERVIEW_ROLES[role])}</span></div>`)}
     </div>
 
     <div class="card section">
@@ -82,7 +85,8 @@ export async function renderOverview() {
   const container = $('#ov-content');
   const emp = state.myEmployee;
   if (!emp) {
-    if (state.currentUser && state.currentUser.role === 'manager') { await renderManagerOverview(); return; }
+    const role = state.currentUser && state.currentUser.role;
+    if (role && COMPANY_OVERVIEW_ROLES[role]) { await renderManagerOverview(role); return; }
     renderNoProfile();
     return;
   }
