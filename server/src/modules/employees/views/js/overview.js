@@ -1,4 +1,4 @@
-import { $, escapeHtml, fmtDate, skeletonBlock } from './dom.js';
+import { $, escapeHtml, fmtDate, fmtDateTime, skeletonBlock } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { leaveTypeLabel } from './leaveTypes.js';
@@ -81,6 +81,42 @@ async function renderManagerOverview(role) {
   `;
 }
 
+// Summary + link only, not a second copy of the actual confirm/edit UI —
+// "Pending Your Confirmation" points at team.js's existing P&C queue
+// (pcConfirm), "KPI Setup" points at roster.js's existing kpiProfile
+// editor. Both fetches reuse endpoints already gated server-side for
+// people_culture; nothing new to authorize here.
+function pcActionCards(pending, roster) {
+  const missingKpi = roster.filter((e) => e.active && !e.kpiProfile).length;
+
+  return `
+    <div class="cards-row section">
+      ${statCard('Pending Your Confirmation', pending.length
+        ? `<div class="stat-row mt-8">
+            <span class="stat-num" style="font-size:22px;">${pending.length}</span><span class="stat-lbl">awaiting confirmation</span>
+          </div>
+          <div class="muted small mt-8">Oldest: ${fmtDateTime(pending[0].createdAt)}</div>
+          <div class="mt-8">
+            <button onclick="switchMainTab('team', document.getElementById('maintab-team'))"
+              style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
+              Go to Queue →
+            </button>
+          </div>`
+        : `<div class="muted small mt-8">All caught up</div>`)}
+      ${statCard('KPI Setup', missingKpi
+        ? `<div class="stat-row mt-8">
+            <span class="stat-num" style="font-size:22px;">${missingKpi}</span><span class="stat-lbl">missing a KPI profile</span>
+          </div>
+          <div class="mt-8">
+            <button onclick="switchMainTab('roster', document.getElementById('maintab-roster'))"
+              style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
+              Manage Roster →
+            </button>
+          </div>`
+        : `<div class="muted small mt-8">All employees have a KPI profile</div>`)}
+    </div>`;
+}
+
 export async function renderOverview() {
   const container = $('#ov-content');
   const emp = state.myEmployee;
@@ -93,9 +129,12 @@ export async function renderOverview() {
 
   container.innerHTML = `<div class="cards-row section">${Array.from({ length: 3 }, () => statCard('', skeletonBlock('60%', '30px'))).join('')}</div>`;
 
-  const [mineRes, offTodayRes] = await Promise.all([
+  const isPeopleCulture = state.currentUser && state.currentUser.role === 'people_culture';
+  const [mineRes, offTodayRes, pendingRes, rosterRes] = await Promise.all([
     apiFetch('/api/employees/leave-requests/mine'),
     apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
+    isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
+    isPeopleCulture ? apiFetch('/api/employees') : Promise.resolve(null),
   ]);
 
   const requests = mineRes.requests || [];
@@ -131,6 +170,8 @@ export async function renderOverview() {
         <div class="muted small mt-8">${emp.kpiProfile ? 'KPI profile: ' + escapeHtml(emp.kpiProfile) : 'No KPI profile assigned'}</div>`)}
       ${statCard('Reporting', `<div class="mt-8">${state.currentUser && state.currentUser.role === 'people_culture' ? '<span class="badge badge-approved">People &amp; Culture</span>' : '<span class="badge badge-neutral">Team member</span>'}</div>`)}
     </div>
+
+    ${isPeopleCulture ? pcActionCards(pendingRes.requests || [], rosterRes.employees || []) : ''}
 
     <div class="card section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
