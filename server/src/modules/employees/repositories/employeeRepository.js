@@ -49,12 +49,23 @@ function insert({ userId, clickupUserId, department, kpiProfile, managerEmployee
   return findById(info.lastInsertRowid);
 }
 
+// Genuinely partial — a field absent from the call (undefined) leaves its
+// column untouched; only fields actually present get written (empty
+// string/explicit null both clear it, same normalization insert() uses).
+// Callers that mean to fully replace a row's editable fields, like
+// roster.js's Save button, are expected to keep passing all of them every
+// time — this only stops fields nobody mentioned from being wiped.
 function update(id, { clickupUserId, department, kpiProfile, managerEmployeeId }) {
-  db.prepare(
-    `UPDATE employees SET
-       clickup_user_id = ?, department = ?, kpi_profile = ?, manager_employee_id = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`
-  ).run(clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null, id);
+  const sets = [];
+  const values = [];
+  if (clickupUserId !== undefined) { sets.push('clickup_user_id = ?'); values.push(clickupUserId || null); }
+  if (department !== undefined) { sets.push('department = ?'); values.push(department || null); }
+  if (kpiProfile !== undefined) { sets.push('kpi_profile = ?'); values.push(kpiProfile || null); }
+  if (managerEmployeeId !== undefined) { sets.push('manager_employee_id = ?'); values.push(managerEmployeeId || null); }
+  if (sets.length === 0) return findById(id);
+
+  sets.push('updated_at = CURRENT_TIMESTAMP');
+  db.prepare(`UPDATE employees SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
   return findById(id);
 }
 

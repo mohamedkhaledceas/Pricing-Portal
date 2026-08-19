@@ -56,10 +56,14 @@ window.rosterSubmitCreate = submitCreate;
 async function updateEmployee(id) {
   const row = $('#roster-row-' + id);
   try {
+    // Always send all three, even blank ones — this Save button means "set
+    // the row to exactly what's in these fields now", so a cleared input
+    // must send an explicit clearing value, not omit the key (which the
+    // repository's partial-update now reads as "leave it alone").
     const payload = {
-      department: row.querySelector('.edit-department').value || undefined,
-      kpiProfile: row.querySelector('.edit-kpi-profile').value || undefined,
-      managerEmployeeId: row.querySelector('.edit-manager').value ? Number(row.querySelector('.edit-manager').value) : undefined,
+      department: row.querySelector('.edit-department').value,
+      kpiProfile: row.querySelector('.edit-kpi-profile').value,
+      managerEmployeeId: row.querySelector('.edit-manager').value ? Number(row.querySelector('.edit-manager').value) : null,
     };
     await apiFetch(`/api/employees/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
     toast('Updated', 'info');
