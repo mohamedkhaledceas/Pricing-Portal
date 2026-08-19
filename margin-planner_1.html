@@ -89,14 +89,6 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 }
 @keyframes spin{ to{ transform:rotate(360deg); } }
 
-#loginScreen{ transition:opacity .25s ease; }
-#loginScreen.is-leaving{ opacity:0; pointer-events:none; }
-#appShell.is-entering{ animation:appReveal .35s ease; }
-@keyframes appReveal{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
-@media (prefers-reduced-motion: reduce){
-  #loginScreen{ transition:none; }
-  #appShell.is-entering{ animation:none; }
-}
 
 .skeleton{ position:relative; overflow:hidden; background:var(--plane); border-radius:6px; display:block; }
 .skeleton::after{
@@ -237,59 +229,6 @@ body[data-mode="admin"] .bd-only{display:none !important}
 </style>
 </head>
 <body>
-
-<div id="loginScreen" style="position:fixed; inset:0; background:rgba(4,41,64,0.82); display:flex; align-items:center; justify-content:center; z-index:40;">
-  <form id="loginForm" style="width:min(92vw, 420px); background:var(--surface-1); border:1px solid var(--border); border-radius:16px; padding:28px 24px; box-shadow:0 22px 50px rgba(0,0,0,0.22);">
-    <h2 style="margin:0 0 8px; font-size:24px; letter-spacing:-0.02em;">Sign in</h2>
-    <p style="margin:0 0 18px; color:var(--muted);">Use your pricing portal account to access the planner.</p>
-    <div style="display:flex; flex-direction:column; gap:14px;">
-      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
-        Email
-        <input id="loginEmail" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
-      </label>
-      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
-        Password
-        <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="password" required>
-      </label>
-      <button type="submit" class="primary" style="margin-top:6px;">Log in</button>
-      <div id="loginError" role="alert" hidden style="color:var(--critical); font-size:12.5px; min-height:18px;"></div>
-      <button type="button" id="btnShowSignup" class="ghost" style="margin-top:2px; font-size:12.5px;">Don't have an account? Sign up</button>
-    </div>
-  </form>
-
-  <form id="signupForm" hidden style="width:min(92vw, 420px); background:var(--surface-1); border:1px solid var(--border); border-radius:16px; padding:28px 24px; box-shadow:0 22px 50px rgba(0,0,0,0.22);">
-    <h2 style="margin:0 0 8px; font-size:24px; letter-spacing:-0.02em;">Create your account</h2>
-    <p style="margin:0 0 18px; color:var(--muted);">Sign up with your work email to access the planner.</p>
-    <div style="display:flex; flex-direction:column; gap:14px;">
-      <div style="display:flex; gap:10px;">
-        <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2); flex:1;">
-          First name
-          <input id="signupFirstName" name="firstName" type="text" autocomplete="given-name" placeholder="Jane" required>
-        </label>
-        <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2); flex:1;">
-          Last name
-          <input id="signupLastName" name="lastName" type="text" autocomplete="family-name" placeholder="Doe" required>
-        </label>
-      </div>
-      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
-        Email
-        <input id="signupEmail" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
-      </label>
-      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
-        Password
-        <input id="signupPassword" name="password" type="password" autocomplete="new-password" placeholder="at least 8 characters" minlength="8" required>
-      </label>
-      <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-2);">
-        Confirm password
-        <input id="signupPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" placeholder="re-enter password" minlength="8" required>
-      </label>
-      <button type="submit" class="primary" style="margin-top:6px;">Sign up</button>
-      <div id="signupError" role="alert" hidden style="color:var(--critical); font-size:12.5px; min-height:18px;"></div>
-      <button type="button" id="btnShowLogin" class="ghost" style="margin-top:2px; font-size:12.5px;">Already have an account? Log in</button>
-    </div>
-  </form>
-</div>
-
 
 <div id="appShell" style="display:none;">
 <header class="top">
@@ -2144,14 +2083,27 @@ function loadSettingsInputs(){
   document.title = (S().company ? S().company + ' — ' : '') + 'Team Cost & Margin Planner';
 }
 const API_BASE = '';
-const AUTH_KEY = 'pricingPortalAuth';
 
+/* Access tokens live in frontend memory only — never localStorage, never a
+   cookie (see CLAUDE.md's security rules and /employees, /commercial-lead,
+   which already do this correctly). This module-scoped variable is lost on
+   every full page reload by design; the boot sequence below re-derives it
+   via a silent refresh against the httpOnly refresh cookie every time,
+   same as every other page. getStoredAuth/setStoredAuth keep their names
+   and {token, user}-or-null shape so every existing call site throughout
+   this file is unaffected by the storage change. */
+/* One-time cleanup: every browser that used this page before this fix has
+   a real access token sitting in localStorage under this key. Nothing here
+   reads it anymore, but leaving it in place would mean it just sits there
+   exposed until it naturally expires — purge it outright instead. */
+try { localStorage.removeItem('pricingPortalAuth'); } catch(err) {}
+
+let _memoryAuth = null;
 function getStoredAuth(){
-  try{ return JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); }catch(err){ return null; }
+  return _memoryAuth;
 }
 function setStoredAuth(token, user){
-  if(token && user){ localStorage.setItem(AUTH_KEY, JSON.stringify({token, user})); }
-  else { localStorage.removeItem(AUTH_KEY); }
+  _memoryAuth = (token && user) ? { token, user } : null;
 }
 const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
 
@@ -2160,57 +2112,35 @@ function closeAccountMenu(){
   $('#btnAccountMenu').setAttribute('aria-expanded', 'false');
 }
 
-/* animate:true plays a fade-out-login/fade-in-app transition instead of an
-   instant swap — used only for the interactive login/signup submit flow,
-   where hydrateFromApi() has already resolved so there's real data behind
-   the reveal. Every other caller (page boot, session expiry, logout) keeps
-   the instant swap: those aren't user-triggered "arrivals" worth animating,
-   and boot in particular relies on showing state immediately. */
-function updateLoginUi(opts){
-  const animate = !!(opts && opts.animate);
+/* Auth now lives on its own page (/login) — a visitor with no live session
+   is sent there directly rather than shown an embedded form. Every caller
+   of this function (boot, session expiry, logout) is fine with that being
+   an immediate navigation away from this page; nothing here needs to
+   animate a same-page transition anymore. */
+function updateLoginUi(){
   const auth = getStoredAuth();
   const isLoggedIn = !!(auth && auth.token);
-  const loginScreen = $('#loginScreen');
-  const appShell = $('#appShell');
-
-  $('#btnLogin').hidden = isLoggedIn;
-  $('#btnAccountMenu').hidden = !isLoggedIn;
-  closeAccountMenu();
-  $('#btnLoad').textContent = isLoggedIn ? 'Refresh from server' : 'Load file';
-
-  if (isLoggedIn && auth.user) {
-    $('#accountMenuEmail').textContent = auth.user.email || '';
-    $('#btnUsersView').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
-    $('#btnCommercialLead').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
-  } else {
-    $('#btnCommercialLead').hidden = true;
-  }
 
   if (!isLoggedIn) {
-    loginScreen.hidden = false;
-    loginScreen.style.display = 'flex';
-    loginScreen.classList.remove('is-leaving');
-    showLoginForm();
-    appShell.hidden = true;
-    appShell.style.display = 'none';
-    appShell.classList.remove('is-entering');
+    window.location.href = '/login';
     return;
   }
 
-  if (animate && !loginScreen.hidden) {
-    loginScreen.classList.add('is-leaving');
-    loginScreen.addEventListener('transitionend', () => {
-      loginScreen.hidden = true;
-      loginScreen.style.display = 'none';
-      showView('planner');
-      appShell.classList.add('is-entering');
-      appShell.addEventListener('animationend', () => appShell.classList.remove('is-entering'), { once: true });
-    }, { once: true });
-  } else {
-    loginScreen.hidden = true;
-    loginScreen.style.display = 'none';
-    showView('planner');
+  const appShell = $('#appShell');
+  $('#btnLogin').hidden = true;
+  $('#btnAccountMenu').hidden = false;
+  closeAccountMenu();
+  $('#btnLoad').textContent = 'Refresh from server';
+
+  if (auth.user) {
+    $('#accountMenuEmail').textContent = auth.user.email || '';
+    $('#btnUsersView').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
+    $('#btnCommercialLead').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
   }
+
+  appShell.hidden = false;
+  appShell.style.display = '';
+  showView('planner');
 }
 
 /* Swaps a submit button's label for a spinner while an async action is in
@@ -2231,15 +2161,6 @@ function setButtonLoading(btn, loading, loadingText){
     btn.disabled = false;
     if (btn.dataset.originalText !== undefined) btn.textContent = btn.dataset.originalText;
   }
-}
-
-function showLoginForm(){
-  $('#signupForm').hidden = true;
-  $('#loginForm').hidden = false;
-}
-function showSignupForm(){
-  $('#loginForm').hidden = true;
-  $('#signupForm').hidden = false;
 }
 
 /* One silent refresh attempt per 401, de-duplicated so several requests
@@ -2283,32 +2204,6 @@ async function apiRequest(path, options = {}, _isRetry = false){
     throw new Error(message);
   }
   return data;
-}
-
-/* Boot renders instantly from the cached user in localStorage (see
-   updateLoginUi/getStoredAuth) so the UI never has to wait on a network
-   round trip to paint. But that cache goes stale the moment an admin
-   changes this user's role server-side — the access token can live up to
-   2h in production, so nothing forces a resync until it expires. This
-   reconciles the cache against /api/me (which always reads the role fresh
-   from the DB) so a role change is reflected on the next plain refresh
-   instead of only after the token expires or a full re-login. */
-async function refreshStoredUser(){
-  const auth = getStoredAuth();
-  if (!auth || !auth.token) return;
-  try {
-    const result = await apiRequest('/api/me');
-    const current = getStoredAuth();
-    if (!current || !current.token) return;
-    if (JSON.stringify(current.user) !== JSON.stringify(result.user)) {
-      setStoredAuth(current.token, result.user);
-      updateLoginUi();
-    }
-  } catch (err) {
-    // Best-effort: keep showing the cached role rather than disrupting boot
-    // over a transient failure (offline, expired session already handled
-    // by apiRequest's own 401 flow above).
-  }
 }
 
 async function hydrateFromApi(){
@@ -2597,34 +2492,8 @@ function bindFiles(){
   });
 }
 
-async function loginToApi(email, password){
-  const result = await apiRequest('/api/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password })
-  });
-  setStoredAuth(result.token, result.user);
-  const ok = await hydrateFromApi();
-  updateLoginUi({ animate: true });
-  if (!ok) {
-    alert('Login succeeded but the server state could not be loaded.');
-  }
-  return true;
-}
-
-async function signupToApi(email, password, firstName, lastName){
-  const result = await apiRequest('/api/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({ email, password, firstName, lastName })
-  });
-  setStoredAuth(result.token, result.user);
-  const ok = await hydrateFromApi();
-  updateLoginUi({ animate: true });
-  if (!ok) {
-    alert('Account created but the server state could not be loaded.');
-  }
-  return true;
-}
-
+/* Login/sign-up themselves now happen on /login (see modules/auth/views/)
+   — this page only needs to end a session and send the visitor there. */
 async function logoutFromApi(){
   try {
     await apiRequest('/api/auth/logout', { method: 'POST' });
@@ -2636,81 +2505,7 @@ async function logoutFromApi(){
 }
 
 $('#btnLogin').addEventListener('click', () => {
-  $('#loginScreen').hidden = false;
-  showLoginForm();
-  $('#loginEmail').focus();
-});
-$('#loginForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = $('#loginEmail').value.trim();
-  const password = $('#loginPassword').value;
-  const errBox = $('#loginError');
-  errBox.hidden = true;
-  errBox.textContent = '';
-  if (!email || !password) {
-    errBox.textContent = 'Please enter both email and password.';
-    errBox.hidden = false;
-    return;
-  }
-  const submitBtn = $('#loginForm').querySelector('button[type=submit]');
-  setButtonLoading(submitBtn, true, 'Logging in…');
-  try {
-    await loginToApi(email, password);
-    $('#loginForm').reset();
-  } catch (err) {
-    errBox.textContent = err.message || 'Login failed.';
-    errBox.hidden = false;
-  } finally {
-    setButtonLoading(submitBtn, false);
-  }
-});
-
-$('#btnShowSignup').addEventListener('click', () => {
-  $('#loginError').hidden = true;
-  showSignupForm();
-  $('#signupFirstName').focus();
-});
-$('#btnShowLogin').addEventListener('click', () => {
-  $('#signupError').hidden = true;
-  showLoginForm();
-  $('#loginEmail').focus();
-});
-$('#signupForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const firstName = $('#signupFirstName').value.trim();
-  const lastName = $('#signupLastName').value.trim();
-  const email = $('#signupEmail').value.trim();
-  const password = $('#signupPassword').value;
-  const passwordConfirm = $('#signupPasswordConfirm').value;
-  const errBox = $('#signupError');
-  errBox.hidden = true;
-  errBox.textContent = '';
-  if (!firstName || !lastName || !email || !password || !passwordConfirm) {
-    errBox.textContent = 'Please fill in every field.';
-    errBox.hidden = false;
-    return;
-  }
-  if (password.length < 8) {
-    errBox.textContent = 'Password must be at least 8 characters long.';
-    errBox.hidden = false;
-    return;
-  }
-  if (password !== passwordConfirm) {
-    errBox.textContent = 'Passwords do not match.';
-    errBox.hidden = false;
-    return;
-  }
-  const submitBtn = $('#signupForm').querySelector('button[type=submit]');
-  setButtonLoading(submitBtn, true, 'Creating account…');
-  try {
-    await signupToApi(email, password, firstName, lastName);
-    $('#signupForm').reset();
-  } catch (err) {
-    errBox.textContent = err.message || 'Sign up failed.';
-    errBox.hidden = false;
-  } finally {
-    setButtonLoading(submitBtn, false);
-  }
+  window.location.href = '/login';
 });
 $('#btnLogout').addEventListener('click', logoutFromApi);
 function migrate(d){
@@ -3027,45 +2822,46 @@ state.projects.forEach(pr => {
 });
 bindTabs(); bindTables(); bindSettings(); bindFiles(); bindModes(); bindTheme(); bindAccountMenu(); bindAccountSettingsView(); bindUsersView();
 $('#fitStart').value = thisMonth();
-updateLoginUi();
-refreshStoredUser();
-loadSettingsInputs(); applyMode(); renderAllStructures();
 
-/* Lets other pages sharing this backend (e.g. commercial-lead.html) deep-link
-   into Account Settings / Users rather than duplicating those views — visit
-   /?open=accountSettings or /?open=users and, if logged in (and, for users,
-   permitted), that view opens immediately. Strips the param afterward so a
-   manual refresh doesn't keep reopening it. */
-(() => {
-  const params = new URLSearchParams(window.location.search);
-  const open = params.get('open');
-  if (!open) return;
-  const auth = getStoredAuth();
-  if (auth && auth.token && auth.user) {
-    if (open === 'accountSettings') openAccountSettings();
-    else if (open === 'users' && USER_MANAGER_ROLES.includes(auth.user.role)) openUsersView();
-  }
-  params.delete('open');
-  const query = params.toString();
-  window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
-})();
-
-/* A stored token from a previous session means the app shell renders immediately,
-   but `state` above is still local sample/demo data with client-only ids — none of
-   it has been confirmed against the database yet. Re-hydrate from the server before
-   the user can touch anything, so every id on screen is a real, editable server id. */
+/* No persisted cache to render from instantly — access tokens are memory-
+   only (see getStoredAuth/setStoredAuth above), so every fresh load has to
+   wait on one silent-refresh round trip before it knows whether there's a
+   live session, same as /employees and /commercial-lead already do.
+   updateLoginUi() sends the visitor to /login if that comes back empty. */
 (async () => {
+  const refreshed = await attemptSilentRefresh();
+  if (refreshed && refreshed.token) {
+    setStoredAuth(refreshed.token, refreshed.user);
+  }
+  updateLoginUi();
+  loadSettingsInputs(); applyMode(); renderAllStructures();
+
   const auth = getStoredAuth();
   if (!auth || !auth.token) return;
+
+  /* Lets other pages sharing this backend (e.g. commercial-lead.html) deep-link
+     into Account Settings / Users rather than duplicating those views — visit
+     /?open=accountSettings or /?open=users and, if permitted, that view opens
+     immediately. Strips the param afterward so a manual refresh doesn't keep
+     reopening it. */
+  const params = new URLSearchParams(window.location.search);
+  const open = params.get('open');
+  if (open) {
+    if (open === 'accountSettings') openAccountSettings();
+    else if (open === 'users' && USER_MANAGER_ROLES.includes(auth.user.role)) openUsersView();
+    params.delete('open');
+    const query = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+  }
+
+  /* `state` above is still local sample/demo data with client-only ids —
+     none of it has been confirmed against the database yet. Re-hydrate from
+     the server before the user can touch anything, so every id on screen is
+     a real, editable server id. */
   const ok = await hydrateFromApi();
   if (!ok) {
     setStoredAuth(null, null);
     updateLoginUi();
-    const errBox = $('#loginError');
-    if (errBox) {
-      errBox.textContent = 'Your session expired. Please log in again.';
-      errBox.hidden = false;
-    }
   }
 })();
 })();

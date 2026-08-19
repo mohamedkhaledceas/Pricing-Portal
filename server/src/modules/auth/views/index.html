@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in — CEAS Portal</title>
+<script>
+(function(){
+  try{
+    var t = localStorage.getItem('pricingPortalTheme');
+    if(t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  }catch(err){}
+})();
+</script>
+<link rel="stylesheet" href="/login/css/login.css">
+</head>
+<body>
+
+<div class="login-wrap">
+  <img id="brandLogo" alt="CEAS" class="login-logo">
+
+  <form id="loginForm" class="card login-card">
+    <h2>Sign in</h2>
+    <p class="muted">Use your CEAS Portal account to continue.</p>
+    <div class="form-group">
+      <label class="form-label" for="loginEmail">Email</label>
+      <input id="loginEmail" class="form-control" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="loginPassword">Password</label>
+      <input id="loginPassword" class="form-control" name="password" type="password" autocomplete="current-password" placeholder="password" required>
+    </div>
+    <button type="submit" class="btn primary login-submit">Log in</button>
+    <div id="loginError" class="alert alert-danger" role="alert" hidden></div>
+    <button type="button" id="btnShowSignup" class="btn ghost login-switch">Don't have an account? Sign up</button>
+  </form>
+
+  <form id="signupForm" class="card login-card" hidden>
+    <h2>Create your account</h2>
+    <p class="muted">Sign up with your work email to get started.</p>
+    <div class="login-row">
+      <div class="form-group">
+        <label class="form-label" for="signupFirstName">First name</label>
+        <input id="signupFirstName" class="form-control" name="firstName" type="text" autocomplete="given-name" placeholder="Jane" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="signupLastName">Last name</label>
+        <input id="signupLastName" class="form-control" name="lastName" type="text" autocomplete="family-name" placeholder="Doe" required>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="signupEmail">Email</label>
+      <input id="signupEmail" class="form-control" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="signupPassword">Password</label>
+      <input id="signupPassword" class="form-control" name="password" type="password" autocomplete="new-password" placeholder="at least 8 characters" minlength="8" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="signupPasswordConfirm">Confirm password</label>
+      <input id="signupPasswordConfirm" class="form-control" name="passwordConfirm" type="password" autocomplete="new-password" placeholder="re-enter password" minlength="8" required>
+    </div>
+    <button type="submit" class="btn primary login-submit">Sign up</button>
+    <div id="signupError" class="alert alert-danger" role="alert" hidden></div>
+    <button type="button" id="btnShowLogin" class="btn ghost login-switch">Already have an account? Log in</button>
+  </form>
+</div>
+
+<script type="module" src="/login/js/main.js"></script>
+</body>
+</html>

@@ -80,6 +80,16 @@ app.get('/employees', (req, res) => {
 });
 app.use('/employees', express.static(path.join(__dirname, 'modules', 'employees', 'views')));
 
+/* /login — the one place auth (sign in / sign up) lives. Every other page
+   redirects here when a silent refresh fails; on success this page's own
+   JS redirects to '/' and lets the destination page pull a fresh access
+   token into its own memory (see modules/auth/views/js/main.js). */
+const loginHtmlPath = path.join(__dirname, 'modules', 'auth', 'views', 'index.html');
+app.get('/login', (req, res) => {
+  res.sendFile(loginHtmlPath);
+});
+app.use('/login', express.static(path.join(__dirname, 'modules', 'auth', 'views')));
+
 /* Shared static assets (currently just the two logo variants) — extracted
    from margin-planner_1.html's previously-inline base64 constants so both
    frontends reference the same file instead of each embedding their own
