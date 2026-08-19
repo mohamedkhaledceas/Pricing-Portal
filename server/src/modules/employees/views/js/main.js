@@ -7,11 +7,14 @@ import { renderNewRequestForm, renderRules, switchSubTab } from './timeOff.js';
 import { renderTeam } from './team.js';
 import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
+import { renderUsersAdmin } from './usersAdmin.js';
 
 const MANAGE_ROSTER_ROLES = ['admin', 'people_culture'];
 // Same gate as margin-planner_1.html's own Commercial Lead button
 // (USER_MANAGER_ROLES) — role only.
 const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
+// Matches commercial-lead's own USER_MANAGER_ROLES gate for the Users menu item.
+const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
 
 export function switchMainTab(tabId, btn) {
   state.mainTab = tabId;
@@ -28,6 +31,7 @@ export function switchMainTab(tabId, btn) {
   if (tabId === 'team') renderTeam();
   if (tabId === 'roster') renderRoster();
   if (tabId === 'kpi') renderKpi();
+  if (tabId === 'users') renderUsersAdmin();
 }
 window.switchMainTab = switchMainTab;
 
@@ -42,6 +46,7 @@ function bindUi() {
   document.addEventListener('click', () => { $('#accountMenu').hidden = true; });
   $('#btnThemeToggle').addEventListener('click', (e) => { e.stopPropagation(); cycleTheme(); });
   $('#btnMarginPlanner').addEventListener('click', () => { window.location.href = '/planner'; });
+  $('#btnUsersView').addEventListener('click', () => { switchMainTab('users'); });
   $('#btnLogout').addEventListener('click', async () => {
     try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
     window.location.href = '/';
@@ -79,11 +84,24 @@ function bindUi() {
   const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
   $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
   $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
+  const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
+  $('#btnUsersView').hidden = !canManageUsers;
 
   $('#loginGate').style.display = 'none';
   $('#app').style.display = 'block';
 
   renderNewRequestForm();
   renderRules();
-  switchMainTab('overview', $('#maintab-overview'));
+
+  // Lets /commercial-lead's own Users menu item deep-link here (this page is
+  // now the landing page at "/") rather than duplicating the Users view.
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('open') === 'users' && canManageUsers) {
+    switchMainTab('users');
+    params.delete('open');
+    const query = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+  } else {
+    switchMainTab('overview', $('#maintab-overview'));
+  }
 })();
