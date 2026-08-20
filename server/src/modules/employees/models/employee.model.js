@@ -31,6 +31,7 @@ function toDirectoryEntry(row) {
     lastName: row.user_last_name,
     department: row.department,
     managerEmployeeId: row.manager_employee_id,
+    online: !!row.user_online,
   };
 }
 

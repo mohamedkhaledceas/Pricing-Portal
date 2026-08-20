@@ -44,6 +44,12 @@ function findByStatus(status) {
   return db.prepare('SELECT * FROM leave_requests WHERE status = ? ORDER BY created_at ASC').all(status);
 }
 
+// Company-wide, unscoped — backs the manager role's "sees every request,
+// not just direct reports" queue (see timeOffService.listTeam).
+function findAll() {
+  return db.prepare('SELECT * FROM leave_requests ORDER BY created_at DESC').all();
+}
+
 // Company-wide "who's off today" — joins into employees/users (both owned
 // by this same module) since the Overview page needs names, not just ids.
 function findApprovedOverlapping(date) {
@@ -107,6 +113,7 @@ module.exports = {
   findByEmployeeId,
   findByEmployeeIds,
   findByStatus,
+  findAll,
   findApprovedOverlapping,
   countWfhInMonth,
   updateManagerDecision,
