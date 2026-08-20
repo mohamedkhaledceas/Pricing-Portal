@@ -78,7 +78,10 @@ function bindUi() {
   if (!ok) {
     $('#loginGateChecking').hidden = true;
     $('#loginGateFail').hidden = false;
-    $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/'; });
+    // Not '/' — that always serves this same Employees page (see
+    // src/index.js's root route), which runs this same bootstrapAuth()
+    // check on load and would just fail again, right back to this screen.
+    $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
     return;
   }
 

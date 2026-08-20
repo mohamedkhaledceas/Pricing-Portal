@@ -52,7 +52,11 @@ function scheduleStatsRefresh() {
 
 function bindUi() {
   $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
-  $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/'; });
+  // Not '/' — that always serves the Employees page (see src/index.js's
+  // root route), which runs its own bootstrapAuth() check on load and
+  // would just fail again with the same session gone, right back to an
+  // "Unauthorized" screen instead of anywhere useful.
+  $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
   $('#btnAccountMenu').addEventListener('click', (e) => {
     e.stopPropagation();
     const menu = $('#accountMenu');
