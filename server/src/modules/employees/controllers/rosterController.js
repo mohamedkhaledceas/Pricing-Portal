@@ -1,20 +1,10 @@
-const { EmployeesError } = require('../errors');
-
+/* No local try/catch — EmployeesError extends the shared AppError, so a
+   thrown error is auto-forwarded by Express to errorHandler.js, which
+   already renders it correctly and now logs it with a correlation ID. */
 function createRosterController({ rosterService }) {
-  function handleError(res, error) {
-    if (error instanceof EmployeesError) {
-      return res.status(error.status).json({ error: error.message });
-    }
-    throw error;
-  }
-
   function list(req, res) {
-    try {
-      const employees = rosterService.listAll({ actorAuthRole: req.user.role, actorEmployee: req.employee });
-      return res.json({ employees });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const employees = rosterService.listAll({ actorAuthRole: req.user.role, actorEmployee: req.employee });
+    return res.json({ employees });
   }
 
   function getMine(req, res) {
@@ -34,75 +24,59 @@ function createRosterController({ rosterService }) {
   }
 
   function create(req, res) {
-    try {
-      const body = req.body || {};
-      const employee = rosterService.create({
-        actorAuthRole: req.user.role,
-        actorEmployee: req.employee,
-        userId: body.userId,
-        clickupUserId: body.clickupUserId,
-        department: body.department,
-        kpiProfile: body.kpiProfile,
-        managerEmployeeId: body.managerEmployeeId,
-        actorId: req.user.id,
-        ip: req.ip,
-      });
-      return res.status(201).json({ employee });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const body = req.body || {};
+    const employee = rosterService.create({
+      actorAuthRole: req.user.role,
+      actorEmployee: req.employee,
+      userId: body.userId,
+      clickupUserId: body.clickupUserId,
+      department: body.department,
+      kpiProfile: body.kpiProfile,
+      managerEmployeeId: body.managerEmployeeId,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.status(201).json({ employee });
   }
 
   function update(req, res) {
-    try {
-      const body = req.body || {};
-      const employee = rosterService.update({
-        actorAuthRole: req.user.role,
-        actorEmployee: req.employee,
-        targetId: Number(req.params.id),
-        clickupUserId: body.clickupUserId,
-        department: body.department,
-        kpiProfile: body.kpiProfile,
-        managerEmployeeId: body.managerEmployeeId,
-        actorId: req.user.id,
-        ip: req.ip,
-      });
-      return res.json({ employee });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const body = req.body || {};
+    const employee = rosterService.update({
+      actorAuthRole: req.user.role,
+      actorEmployee: req.employee,
+      targetId: Number(req.params.id),
+      clickupUserId: body.clickupUserId,
+      department: body.department,
+      kpiProfile: body.kpiProfile,
+      managerEmployeeId: body.managerEmployeeId,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ employee });
   }
 
   function deactivate(req, res) {
-    try {
-      const employee = rosterService.setActive({
-        actorAuthRole: req.user.role,
-        actorEmployee: req.employee,
-        targetId: Number(req.params.id),
-        active: false,
-        actorId: req.user.id,
-        ip: req.ip,
-      });
-      return res.json({ employee });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const employee = rosterService.setActive({
+      actorAuthRole: req.user.role,
+      actorEmployee: req.employee,
+      targetId: Number(req.params.id),
+      active: false,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ employee });
   }
 
   function reactivate(req, res) {
-    try {
-      const employee = rosterService.setActive({
-        actorAuthRole: req.user.role,
-        actorEmployee: req.employee,
-        targetId: Number(req.params.id),
-        active: true,
-        actorId: req.user.id,
-        ip: req.ip,
-      });
-      return res.json({ employee });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const employee = rosterService.setActive({
+      actorAuthRole: req.user.role,
+      actorEmployee: req.employee,
+      targetId: Number(req.params.id),
+      active: true,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ employee });
   }
 
   return { list, getMine, directory, getDirectReports, create, update, deactivate, reactivate };

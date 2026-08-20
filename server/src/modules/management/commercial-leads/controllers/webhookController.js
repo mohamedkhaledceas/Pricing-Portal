@@ -18,7 +18,9 @@ function createWebhookController({ clickupSyncService }) {
   function receive(req, res) {
     const secret = process.env.CLICKUP_WEBHOOK_SECRET;
     if (!secret) {
-      logger.error('CLICKUP_WEBHOOK_SECRET is not configured — rejecting ClickUp webhook.');
+      logger.error('CLICKUP_WEBHOOK_SECRET is not configured — rejecting ClickUp webhook.', {
+        correlationId: req.correlationId,
+      });
       return res.status(500).end();
     }
 

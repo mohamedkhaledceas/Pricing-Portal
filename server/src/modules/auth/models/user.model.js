@@ -15,9 +15,14 @@ function toPublicUser(row) {
   };
 }
 
-function toAccount(row) {
+// includeUuid is off by default — the permanent per-account UUID (see
+// migration 006) is an admin-only support-tracing tool, not something
+// every account-manager role should see. Callers pass it explicitly rather
+// than this function inferring role itself, keeping the permission check
+// where the rest of this module's checks live (accountAdminService).
+function toAccount(row, { includeUuid = false } = {}) {
   if (!row) return null;
-  return {
+  const account = {
     id: row.id,
     email: row.email,
     firstName: row.first_name,
@@ -27,6 +32,8 @@ function toAccount(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+  if (includeUuid) account.uuid = row.uuid;
+  return account;
 }
 
 module.exports = { toPublicUser, toAccount };

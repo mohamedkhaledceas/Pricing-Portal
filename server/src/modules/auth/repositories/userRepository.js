@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const db = require('../../../db');
 const { ROLES } = require('../../../common/constants/roles');
 
@@ -15,8 +16,8 @@ function existsByEmail(email) {
 
 function insert({ email, firstName, lastName, passwordHash, role }) {
   const info = db
-    .prepare('INSERT INTO users (email, first_name, last_name, password_hash, role) VALUES (?, ?, ?, ?, ?)')
-    .run(email, firstName, lastName, passwordHash, role);
+    .prepare('INSERT INTO users (email, first_name, last_name, password_hash, role, uuid) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(email, firstName, lastName, passwordHash, role, crypto.randomUUID());
   return findById(info.lastInsertRowid);
 }
 

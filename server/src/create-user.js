@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 const { ALL_ROLES, ROLES } = require('./common/constants/roles');
@@ -41,6 +42,6 @@ if (existing) {
 }
 
 const passwordHash = bcrypt.hashSync(password, 12);
-db.prepare('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)').run(email, passwordHash, role);
+db.prepare('INSERT INTO users (email, password_hash, role, uuid) VALUES (?, ?, ?, ?)').run(email, passwordHash, role, crypto.randomUUID());
 
 console.log(`Created ${role} account: ${email}`);

@@ -238,6 +238,15 @@ function readState() {
     try {
       quoteMeta = project.quote_json ? JSON.parse(project.quote_json || '{}') : {};
     } catch (error) {
+      // Corrupted quote_json shouldn't break the whole state read — still
+      // falls back to {} same as before — but this used to be completely
+      // silent; now at least identifies which project so it's traceable.
+      // No correlation ID here: readState() is called with no `req` in
+      // scope from many call sites, not worth threading through for this.
+      logger.warn('Failed to parse project.quote_json — falling back to empty quote metadata', {
+        projectId: project.id,
+        error: error.message,
+      });
       quoteMeta = {};
     }
     const record = serializeProject(project, lines, directCosts, scenarios, quoteLines, quoteMeta);

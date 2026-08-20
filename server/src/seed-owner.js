@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 
@@ -13,8 +14,8 @@ if (existing) {
 
 const passwordHash = bcrypt.hashSync(password, 12);
 db.prepare(
-  'INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)'
-).run(email, passwordHash, 'admin');
+  'INSERT INTO users (email, password_hash, role, uuid) VALUES (?, ?, ?, ?)'
+).run(email, passwordHash, 'admin', crypto.randomUUID());
 
 console.log(`Created default admin account: ${email} / ${password}`);
 console.log('Change the password immediately in production.');

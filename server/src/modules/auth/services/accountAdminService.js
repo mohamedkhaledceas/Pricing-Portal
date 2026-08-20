@@ -18,7 +18,12 @@ function createAccountAdminService({
     if (!canManageUsers(actorRole)) {
       throw new AuthError('You do not have permission to view accounts.', 403);
     }
-    return userRepository.listAll().map(userModel.toAccount);
+    // uuid is withheld from the response entirely for non-admin roles
+    // (manager/operations can still manage accounts via canManageUsers,
+    // but the support-tracing UUID is admin-only) — server-side, not a
+    // frontend display toggle.
+    const includeUuid = actorRole === roles.ADMIN;
+    return userRepository.listAll().map((row) => userModel.toAccount(row, { includeUuid }));
   }
 
   function changeRole({ actorId, actorRole, targetId, role, ip }) {

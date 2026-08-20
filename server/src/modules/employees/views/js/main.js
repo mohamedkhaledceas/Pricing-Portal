@@ -8,10 +8,14 @@ import { renderTeam } from './team.js';
 import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
 import { renderUsersAdmin } from './usersAdmin.js';
+import { renderLeaveReport } from './leaveBreakdown.js';
 
 // 'manager' is the CEO's role in this org — full company-wide roster
 // access, same as people_culture (see rosterService.canManageRoster).
 const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'manager'];
+// Leave Report is scoped to the two roles that actually review/approve
+// requests — not admin (canManageRoster's superset doesn't apply here).
+const LEAVE_REPORT_ROLES = ['manager', 'people_culture'];
 // Same gate as margin-planner_1.html's own Commercial Lead button
 // (USER_MANAGER_ROLES) — role only.
 const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
@@ -34,6 +38,7 @@ export function switchMainTab(tabId, btn) {
   if (tabId === 'roster') renderRoster();
   if (tabId === 'kpi') renderKpi();
   if (tabId === 'users') renderUsersAdmin();
+  if (tabId === 'leave-report') renderLeaveReport();
 }
 window.switchMainTab = switchMainTab;
 
@@ -94,6 +99,8 @@ function bindUi() {
   // all — the backend's canManageRoster grants it on auth role alone.
   const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
   $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
+  const canSeeLeaveReport = state.currentUser && LEAVE_REPORT_ROLES.includes(state.currentUser.role);
+  $('#maintab-leave-report').style.display = canSeeLeaveReport ? '' : 'none';
   $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
   const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
   $('#btnUsersView').hidden = !canManageUsers;
