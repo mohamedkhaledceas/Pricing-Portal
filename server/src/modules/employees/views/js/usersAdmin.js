@@ -44,9 +44,24 @@ async function toggleActive(id, active) {
 }
 window.usersToggleActive = toggleActive;
 
+function copyUuid(uuid) {
+  navigator.clipboard.writeText(uuid)
+    .then(() => toast('UUID copied', 'info'))
+    .catch(() => toast('Could not copy — select and copy manually', 'danger'));
+}
+window.usersCopyUuid = copyUuid;
+
+// UUID column is admin-only — the server already withholds `uuid` from the
+// response entirely for non-admin roles (accountAdminService.listUsers), so
+// this is belt-and-suspenders on top of that, not the actual gate. Support
+// workflow: an employee reports a bug, admin opens this table, copies the
+// UUID, greps the log files with it (see common/audit.js) to see that
+// account's logins, actions, and errors in one place. Never shown to the
+// account holder themselves.
 function renderUsersTable(users) {
   const myId = state.currentUser ? state.currentUser.id : null;
   const myRole = state.currentUser ? state.currentUser.role : null;
+  const showUuid = myRole === 'admin';
 
   const rows = users.map((u) => {
     const isSelf = u.id === myId;
@@ -58,12 +73,16 @@ function renderUsersTable(users) {
     const statusBtn = canAct
       ? `<button type="button" class="btn small ${u.isActive ? 'danger' : ''}" onclick="usersToggleActive(${u.id}, ${!u.isActive})">${u.isActive ? 'Deactivate' : 'Reactivate'}</button>`
       : '';
+    const uuidCell = showUuid
+      ? `<td><span class="small muted" style="font-family:monospace;">${escapeHtml(u.uuid || '—')}</span>${u.uuid ? ` <button type="button" class="btn small" onclick="usersCopyUuid('${u.uuid}')" title="Copy UUID">Copy</button>` : ''}</td>`
+      : '';
     return `<tr>
       <td>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</td>
       <td>${escapeHtml(u.email)}</td>
       <td>${roleCell}</td>
       <td>${statusBadge}</td>
       <td>${statusBtn}</td>
+      ${uuidCell}
     </tr>`;
   }).join('');
 
@@ -71,8 +90,8 @@ function renderUsersTable(users) {
     <div class="card section">
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="5" class="empty-state">No accounts found</td></tr>'}</tbody>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th>${showUuid ? '<th>UUID (support tracing)</th>' : ''}</tr></thead>
+          <tbody>${rows || `<tr><td colspan="${showUuid ? 6 : 5}" class="empty-state">No accounts found</td></tr>`}</tbody>
         </table>
       </div>
     </div>

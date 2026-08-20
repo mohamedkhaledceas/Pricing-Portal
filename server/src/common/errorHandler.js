@@ -15,6 +15,7 @@ module.exports = function errorHandler(err, req, res, next) {
     path: req.originalUrl,
     method: req.method,
     userId: req.user ? req.user.id : null,
+    userUuid: req.user ? req.user.uuid : null,
   });
 
   if (err instanceof AppError) {

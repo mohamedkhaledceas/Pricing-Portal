@@ -1,50 +1,32 @@
-const { EmployeesError } = require('../errors');
-
-/* Data management only — see conflictPairService.js. */
+/* Data management only — see conflictPairService.js. No local try/catch —
+   EmployeesError extends the shared AppError, so a thrown error is
+   auto-forwarded by Express to errorHandler.js, which already renders it
+   correctly and now logs it with a correlation ID. */
 function createConflictPairController({ conflictPairService }) {
-  function handleError(res, error) {
-    if (error instanceof EmployeesError) {
-      return res.status(error.status).json({ error: error.message });
-    }
-    throw error;
-  }
-
   function list(req, res) {
-    try {
-      const pairs = conflictPairService.list({ actorAuthRole: req.user.role, actorEmployee: req.employee });
-      return res.json({ conflictPairs: pairs });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const pairs = conflictPairService.list({ actorAuthRole: req.user.role, actorEmployee: req.employee });
+    return res.json({ conflictPairs: pairs });
   }
 
   function create(req, res) {
-    try {
-      const body = req.body || {};
-      const pair = conflictPairService.create({
-        actorAuthRole: req.user.role,
-        actorEmployee: req.employee,
-        employeeIdA: body.employeeIdA,
-        employeeIdB: body.employeeIdB,
-      });
-      return res.status(201).json({ conflictPair: pair });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const body = req.body || {};
+    const pair = conflictPairService.create({
+      actorAuthRole: req.user.role,
+      actorEmployee: req.employee,
+      employeeIdA: body.employeeIdA,
+      employeeIdB: body.employeeIdB,
+    });
+    return res.status(201).json({ conflictPair: pair });
   }
 
   function deactivate(req, res) {
-    try {
-      const pair = conflictPairService.setActive({
-        actorAuthRole: req.user.role,
-        actorEmployee: req.employee,
-        id: Number(req.params.id),
-        active: false,
-      });
-      return res.json({ conflictPair: pair });
-    } catch (error) {
-      return handleError(res, error);
-    }
+    const pair = conflictPairService.setActive({
+      actorAuthRole: req.user.role,
+      actorEmployee: req.employee,
+      id: Number(req.params.id),
+      active: false,
+    });
+    return res.json({ conflictPair: pair });
   }
 
   return { list, create, deactivate };

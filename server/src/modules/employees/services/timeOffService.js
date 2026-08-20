@@ -146,6 +146,34 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestRepository.findByStatus('auto_rejected').map(leaveRequestModel.toLeaveRequest);
   }
 
+  // Per-employee "how many of each leave type, and how did they resolve"
+  // history for the two roles that actually review requests. Computed on
+  // read from the existing rows (findByEmployeeId already exists) rather
+  // than a stored counter — no write-path to keep in sync, always correct.
+  // rejected/auto_rejected are deliberately merged (see the leave_requests
+  // status comment in migration 002 — the PDF doesn't distinguish them
+  // either); pending/manager_approved are "in progress"; cancelled gets its
+  // own bucket so every column set sums exactly to `requested`.
+  function getLeaveBreakdown({ employeeId, actorAuthRole }) {
+    if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.PEOPLE_CULTURE) {
+      throw new EmployeesError('You do not have permission to view leave-request history.', 403);
+    }
+    const byType = {};
+    VALID_LEAVE_TYPES.forEach((type) => {
+      byType[type] = { leaveType: type, requested: 0, approved: 0, rejected: 0, inProgress: 0, cancelled: 0 };
+    });
+    leaveRequestRepository.findByEmployeeId(employeeId).forEach((row) => {
+      const bucket = byType[row.leave_type];
+      if (!bucket) return;
+      bucket.requested += 1;
+      if (row.status === 'approved') bucket.approved += 1;
+      else if (row.status === 'rejected' || row.status === 'auto_rejected') bucket.rejected += 1;
+      else if (row.status === 'pending' || row.status === 'manager_approved') bucket.inProgress += 1;
+      else if (row.status === 'cancelled') bucket.cancelled += 1;
+    });
+    return VALID_LEAVE_TYPES.map((type) => byType[type]);
+  }
+
   async function managerDecision({ requestId, actorEmployee, actorAuthRole, decision, actorId, ip }) {
     if (!['approved', 'rejected'].includes(decision)) {
       throw new EmployeesError('Decision must be "approved" or "rejected".');
@@ -247,7 +275,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
-  return { submit, listMine, listTeam, listOffToday, listPcPending, listAutoRejected, managerDecision, pcConfirm, cancel };
+  return { submit, listMine, listTeam, listOffToday, listPcPending, listAutoRejected, getLeaveBreakdown, managerDecision, pcConfirm, cancel };
 }
 
 module.exports = createTimeOffService;
