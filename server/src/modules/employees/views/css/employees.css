@@ -101,11 +101,21 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 
 .empty-state{text-align:center; padding:36px 12px; color:var(--muted)}
 
-/* ── Team grid (who's off today) ── */
+/* ── Team grid (who's off today / who's online) ── */
 .team-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px}
 .team-tile{border:1px solid var(--border); border-radius:8px; padding:10px 12px; background:var(--panel)}
-.team-tile-name{font-weight:650; font-size:13px}
+.team-tile-name{font-weight:650; font-size:13px; display:flex; align-items:center; gap:6px}
 .team-tile-meta{font-size:11.5px; color:var(--muted); margin-top:2px}
+.presence-dot{width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none}
+.presence-dot.online{background:var(--good)}
+
+/* ── Department headcount breakdown ── */
+.dept-row{display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border)}
+.dept-row:last-child{border-bottom:none}
+.dept-row-label{font-size:12.5px; width:120px; flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.dept-bar-track{flex:1; height:6px; background:var(--panel); border-radius:3px; overflow:hidden}
+.dept-bar-fill{height:100%; background:var(--accent)}
+.dept-row-count{font-size:12.5px; font-weight:650; width:24px; text-align:right; flex:none}
 
 /* ── Forms ── */
 .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}

@@ -84,9 +84,6 @@ function pcActions(r) {
 
 export async function renderTeam() {
   const container = $('#team-content');
-  const emp = state.myEmployee;
-  if (!emp) { container.innerHTML = ''; return; }
-
   container.innerHTML = `<div class="empty-state">Loading...</div>`;
   await loadDirectoryIndex();
 
@@ -95,15 +92,17 @@ export async function renderTeam() {
   const teamRequests = teamRes.requests || [];
   const myPending = teamRequests.filter((r) => r.status === 'pending');
 
-  const isPeopleCulture = state.currentUser && state.currentUser.role === 'people_culture';
-  if (teamRequests.length || isPeopleCulture) {
+  const role = state.currentUser && state.currentUser.role;
+  const isPeopleCulture = role === 'people_culture';
+  const isManagerRole = role === 'manager';
+  if (teamRequests.length || isPeopleCulture || isManagerRole) {
     sections.push(`
       <div class="card section">
-        <div class="card-title">Pending My Decision</div>
+        <div class="card-title">Pending My Decision${isManagerRole ? ' (company-wide)' : ''}</div>
         ${myPending.length ? myPending.map((r) => requestCard(r, managerActions(r))).join('') : `<div class="empty-state">No pending requests</div>`}
       </div>
       <div class="card section">
-        <div class="card-title">All My Direct Reports' Requests</div>
+        <div class="card-title">${isManagerRole ? 'All Requests (company-wide)' : "All My Direct Reports' Requests"}</div>
         ${teamRequests.length ? teamRequests.map((r) => requestCard(r)).join('') : `<div class="empty-state">No requests yet</div>`}
       </div>`);
   }

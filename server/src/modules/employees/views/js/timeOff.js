@@ -3,13 +3,9 @@ import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { LEAVE_TYPES, leaveTypeLabel } from './leaveTypes.js';
 
-let directoryCache = null;
 async function getDirectory() {
-  if (!directoryCache) {
-    const res = await apiFetch('/api/employees/directory');
-    directoryCache = res.employees || [];
-  }
-  return directoryCache;
+  const res = await apiFetch('/api/employees/directory');
+  return res.employees || [];
 }
 
 export function switchSubTab(tabId, btn) {
@@ -219,7 +215,13 @@ window.cancelCancelRequest = cancelCancelRequest;
 async function renderHistory() {
   const container = $('#history-content');
   container.innerHTML = `<div class="empty-state">Loading history...</div>`;
-  const res = await apiFetch('/api/employees/leave-requests/mine');
+  let res;
+  try {
+    res = await apiFetch('/api/employees/leave-requests/mine');
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    return;
+  }
   const requests = res.requests || [];
   if (!requests.length) {
     container.innerHTML = `<div class="empty-state">No requests yet</div>`;

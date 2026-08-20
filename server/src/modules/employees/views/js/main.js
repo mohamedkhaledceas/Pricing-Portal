@@ -82,9 +82,14 @@ function bindUi() {
 
   $('#accountMenuEmail').textContent = state.currentUser ? state.currentUser.email || '' : '';
   const emp = state.myEmployee;
-  // "My Team" tab stays visible whenever the viewer has an employee profile
-  // at all — renderTeam() itself shows an empty state if they manage no one.
-  $('#maintab-team').style.display = emp ? '' : 'none';
+  // "My Team" tab is visible with an employee profile (may manage direct
+  // reports) OR for manager/people_culture roles, who need it for their
+  // approval queues even without a roster record of their own — same
+  // reasoning as Overview's COMPANY_OVERVIEW_ROLES. renderTeam() itself
+  // shows an empty state if they manage no one.
+  const TEAM_TAB_ROLES = ['manager', 'people_culture'];
+  const canSeeTeamTab = emp || (state.currentUser && TEAM_TAB_ROLES.includes(state.currentUser.role));
+  $('#maintab-team').style.display = canSeeTeamTab ? '' : 'none';
   // Admin and P&C can both manage the roster with no employee profile at
   // all — the backend's canManageRoster grants it on auth role alone.
   const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);

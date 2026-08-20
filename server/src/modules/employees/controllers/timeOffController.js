@@ -48,8 +48,14 @@ function createTimeOffController({ timeOffService }) {
 
   function listTeam(req, res) {
     try {
-      const employee = requireEmployee(req);
-      return res.json({ requests: timeOffService.listTeam(employee.id) });
+      // Manager role gets every request, company-wide, regardless of
+      // manager_employee_id routing — see timeOffService.listTeam. Anyone
+      // else with no employee profile of their own structurally can't have
+      // any direct reports (manager_employee_id is a real employees.id
+      // FK), so "no one reports to you" is the correct empty answer, not a
+      // 403 (same leniency as rosterController.getDirectReports).
+      const requests = timeOffService.listTeam({ actorEmployee: req.employee, actorAuthRole: req.user.role });
+      return res.json({ requests });
     } catch (error) {
       return handleError(res, error);
     }
@@ -76,11 +82,21 @@ function createTimeOffController({ timeOffService }) {
     }
   }
 
+  function listAutoRejected(req, res) {
+    try {
+      const requests = timeOffService.listAutoRejected({ actorAuthRole: req.user.role });
+      return res.json({ requests });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+
   async function managerDecision(req, res) {
     try {
       const request = await timeOffService.managerDecision({
         requestId: Number(req.params.id),
         actorEmployee: req.employee,
+        actorAuthRole: req.user.role,
         decision: (req.body || {}).decision,
         actorId: req.user.id,
         ip: req.ip,
@@ -124,7 +140,7 @@ function createTimeOffController({ timeOffService }) {
     }
   }
 
-  return { submit, listMine, listTeam, offToday, listPcPending, managerDecision, pcConfirm, cancel };
+  return { submit, listMine, listTeam, offToday, listPcPending, listAutoRejected, managerDecision, pcConfirm, cancel };
 }
 
 module.exports = createTimeOffController;

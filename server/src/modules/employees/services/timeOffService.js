@@ -96,8 +96,19 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestRepository.findByEmployeeId(employeeId).map(leaveRequestModel.toLeaveRequest);
   }
 
-  function listTeam(managerEmployeeId) {
-    const reportIds = employeeRepository.findByManagerId(managerEmployeeId).map((row) => row.id);
+  // The 'manager' role is company-wide by design (the CEO's account, per
+  // Overview's COMPANY_OVERVIEW_ROLES) — explicitly unscoped from
+  // manager_employee_id routing on the user's decision, not the
+  // direct-reports-only default docs/architecture.md §5.4 originally
+  // flagged for confirmation. Anyone else (e.g. a department lead with
+  // role 'employee' who has their own direct reports) still only sees
+  // their own reports' requests.
+  function listTeam({ actorEmployee, actorAuthRole }) {
+    if (actorAuthRole === roles.MANAGER) {
+      return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest);
+    }
+    if (!actorEmployee) return [];
+    const reportIds = employeeRepository.findByManagerId(actorEmployee.id).map((row) => row.id);
     return leaveRequestRepository.findByEmployeeIds(reportIds).map(leaveRequestModel.toLeaveRequest);
   }
 
@@ -125,7 +136,17 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest);
   }
 
-  async function managerDecision({ requestId, actorEmployee, decision, actorId, ip }) {
+  // Backs P&C's Overview "policy breach" widget — auto_rejected requests
+  // never pass through the manager_approved stage, so listPcPending above
+  // never surfaces them; P&C otherwise has no way to see these at all.
+  function listAutoRejected({ actorAuthRole }) {
+    if (actorAuthRole !== roles.PEOPLE_CULTURE) {
+      throw new EmployeesError('You do not have permission to view the company-wide approval queue.', 403);
+    }
+    return leaveRequestRepository.findByStatus('auto_rejected').map(leaveRequestModel.toLeaveRequest);
+  }
+
+  async function managerDecision({ requestId, actorEmployee, actorAuthRole, decision, actorId, ip }) {
     if (!['approved', 'rejected'].includes(decision)) {
       throw new EmployeesError('Decision must be "approved" or "rejected".');
     }
@@ -135,13 +156,19 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       throw new EmployeesError('This request is no longer awaiting a manager decision.');
     }
 
-    const employee = employeeRepository.findById(request.employee_id);
-    if (!employee || !actorEmployee || employee.manager_employee_id !== actorEmployee.id) {
-      throw new EmployeesError("You are not this employee's manager.", 403);
+    // Manager role bypasses the direct-manager check — same company-wide
+    // scope as listTeam above, and works even for a manager account with
+    // no employee profile of its own (managerDecisionBy just stays null,
+    // same as any other nullable FK on this table).
+    if (actorAuthRole !== roles.MANAGER) {
+      const employee = employeeRepository.findById(request.employee_id);
+      if (!employee || !actorEmployee || employee.manager_employee_id !== actorEmployee.id) {
+        throw new EmployeesError("You are not this employee's manager.", 403);
+      }
     }
 
     const newStatus = decision === 'approved' ? 'manager_approved' : 'rejected';
-    const updated = leaveRequestRepository.updateManagerDecision(requestId, { status: newStatus, managerDecisionBy: actorEmployee.id });
+    const updated = leaveRequestRepository.updateManagerDecision(requestId, { status: newStatus, managerDecisionBy: actorEmployee ? actorEmployee.id : null });
 
     audit.record({
       userId: actorId,
@@ -220,7 +247,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
-  return { submit, listMine, listTeam, listOffToday, listPcPending, managerDecision, pcConfirm, cancel };
+  return { submit, listMine, listTeam, listOffToday, listPcPending, listAutoRejected, managerDecision, pcConfirm, cancel };
 }
 
 module.exports = createTimeOffService;

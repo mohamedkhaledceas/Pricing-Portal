@@ -27,6 +27,7 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.get('/employees/leave-requests/team', timeOffController.listTeam);
   router.get('/employees/leave-requests/off-today', timeOffController.offToday);
   router.get('/employees/leave-requests/pending', timeOffController.listPcPending);
+  router.get('/employees/leave-requests/auto-rejected', timeOffController.listAutoRejected);
   router.patch('/employees/leave-requests/:id/manager-decision', catchAsync(timeOffController.managerDecision));
   router.patch('/employees/leave-requests/:id/pc-confirm', catchAsync(timeOffController.pcConfirm));
   router.post('/employees/leave-requests/:id/cancel', catchAsync(timeOffController.cancel));
