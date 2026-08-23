@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CEO Dashboard — CEAS Portal</title>
+<script>
+(function(){
+  try{
+    var t = localStorage.getItem('pricingPortalTheme');
+    if(t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  }catch(err){}
+})();
+</script>
+<link rel="stylesheet" href="/ceo/css/ceoDashboard.css">
+</head>
+<body>
+<div id="tip" role="status" aria-live="polite"></div>
+
+<div id="loginGate">
+  <div id="loginGateChecking">Checking your session…</div>
+  <div id="loginGateFail" hidden>
+    <p>Unauthorized</p>
+    <button id="btnLoginGateHome" class="btn primary">Return to Home</button>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <img id="brandLogo" alt="Back to Pricing Portal" title="Back to Pricing Portal" style="height:38px; width:auto; cursor:pointer">
+    <div class="brand">CEO Dashboard
+      <span class="sub" id="asof"></span>
+    </div>
+    <div class="spacer"></div>
+    <div class="seg" role="group" aria-label="Entity">
+      <button data-ent="ceas" aria-pressed="true">Ceas Comm</button>
+      <button data-ent="lwm" aria-pressed="false">Learn with Marie</button>
+      <button data-ent="all" aria-pressed="false">Consolidated</button>
+    </div>
+    <div id="accountMenuWrap" style="position:relative;">
+      <button id="btnAccountMenu" class="ghost" aria-haspopup="true" aria-expanded="false" title="Account menu"
+        style="display:flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border-radius:50%;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="8" r="4"></circle>
+          <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"></path>
+        </svg>
+      </button>
+      <div id="accountMenu" hidden role="menu"
+        style="position:absolute; right:0; top:calc(100% + 8px); min-width:200px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 14px 34px rgba(0,0,0,0.22); padding:6px; z-index:30;">
+        <div id="accountMenuEmail" style="padding:8px 10px; font-size:12.5px; color:var(--ink-2); border-bottom:1px solid var(--border); margin-bottom:4px; word-break:break-all;"></div>
+        <button type="button" id="btnThemeToggle" role="menuitem" class="ghost" title="Click to cycle: Light / Dark / System" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
+          <span>Theme</span><span id="themeToggleState" class="muted"></span>
+        </button>
+        <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
+        <button type="button" id="btnLogout" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px; color:var(--critical);">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+
+    <div class="banner">
+      <div><b>Prototype with mocked data.</b> Every figure on this page is invented for design review — a plausible mid-size Cairo agency, not Ceas Comm's real numbers. Nothing here is connected to Odoo or ClickUp yet. The point is to react to the <em>experience</em> before we build the pipeline behind it.</div>
+    </div>
+
+    <div class="sync" id="sync"></div>
+
+    <!-- BRIEF -->
+    <section id="brief-sec">
+      <div class="brief" data-open="true" id="brief">
+        <div class="bh" id="briefhead" role="button" tabindex="0" aria-expanded="true">
+          <div>
+            <div class="tag">AI CEO Brief · <span id="briefdate"></span></div>
+            <h1 id="briefheadline"></h1>
+          </div>
+          <div class="chev">▾</div>
+        </div>
+        <div class="bb" id="briefbody"></div>
+        <div class="bfoot">
+          <span>Generated 07:31 from the 06:30 snapshot. Every figure cited is validated against the snapshot before sending.</span>
+          <span class="spacer"></span>
+          <button class="mini" data-fb="up">Useful</button>
+          <button class="mini" data-fb="down">Not useful</button>
+          <span id="fbnote"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1 HEALTH -->
+    <section id="health"><div class="card">
+      <h2><span class="num">01</span>Company health</h2>
+      <p class="sub" id="healthsub"></p>
+      <div class="grid g-hero">
+        <div>
+          <div class="hero">
+            <div class="lab">Composite score</div>
+            <div><span class="score" id="hscore"></span><span class="of"> / 100</span></div>
+            <div class="deltas" id="hdeltas"></div>
+          </div>
+          <figure class="chart" style="margin-top:18px">
+            <figcaption><span class="ct">Last 13 weeks</span><button class="lnk" data-tbl>Table</button></figcaption>
+            <div class="plot" data-chart="healthTrend"></div>
+            <div class="tbl" hidden></div>
+          </figure>
+        </div>
+        <div>
+          <h3>Components</h3>
+          <div id="hcomponents"></div>
+        </div>
+      </div>
+    </div></section>
+
+    <!-- 9 CEO ATTENTION (surfaced high, per the architecture) -->
+    <section id="attention"><div class="card">
+      <h2><span class="num">09</span>Requires CEO attention</h2>
+      <p class="sub" id="actsub"></p>
+      <div class="items" id="actions"></div>
+    </div></section>
+
+    <!-- 2 REVENUE -->
+    <section id="revenue"><div class="card">
+      <h2><span class="num">02</span>Revenue</h2>
+      <p class="sub" id="revsub"></p>
+      <div class="tiles" id="revtiles"></div>
+      <div class="grid g2">
+        <figure class="chart">
+          <figcaption><span class="ct">Monthly revenue vs target</span><span class="cs" id="revchartsub"></span><button class="lnk" data-tbl>Table</button></figcaption>
+          <div class="plot" data-chart="revMonths"></div>
+          <div class="tbl" hidden></div>
+        </figure>
+        <figure class="chart">
+          <figcaption><span class="ct">Revenue by service line · year to date</span><button class="lnk" data-tbl>Table</button></figcaption>
+          <div class="plot" data-chart="revLines"></div>
+          <div class="tbl" hidden></div>
+        </figure>
+      </div>
+      <div class="grid g2" style="margin-top:18px" id="revlower">
+        <figure class="chart">
+          <figcaption><span class="ct">Revenue mix · year to date</span><button class="lnk" data-tbl>Table</button></figcaption>
+          <div class="plot" data-chart="revMix"></div>
+          <div class="tbl" hidden></div>
+        </figure>
+        <figure class="chart">
+          <figcaption><span class="ct">Client concentration · trailing 90 days</span><button class="lnk" data-tbl>Table</button></figcaption>
+          <div class="plot" data-chart="revClients"></div>
+          <div class="tbl" hidden></div>
+        </figure>
+      </div>
+      <div id="revnote"></div>
+    </div></section>
+
+    <!-- 3 PIPELINE -->
+    <section id="pipeline"><div class="card">
+      <h2><span class="num">03</span>Pipeline</h2>
+      <p class="sub" id="pipesub"></p>
+      <div class="tiles" id="pipetiles"></div>
+      <div class="grid g2">
+        <figure class="chart">
+          <figcaption><span class="ct" id="pipechartt"></span><button class="lnk" data-tbl>Table</button></figcaption>
+          <div class="plot" data-chart="pipeStages"></div>
+          <div class="tbl" hidden></div>
+        </figure>
+        <div id="pipeside"></div>
+      </div>
+    </div></section>
+
+    <!-- 4 COLLECTIONS -->
+    <section id="collections"><div class="card">
+      <h2><span class="num">04</span>Collections</h2>
+      <p class="sub" id="colsub"></p>
+      <div class="tiles" id="coltiles"></div>
+      <div class="grid g2">
+        <figure class="chart">
+          <figcaption><span class="ct">Receivables by age</span><button class="lnk" data-tbl>Table</button></figcaption>
+          <div class="plot" data-chart="aging"></div>
+          <div class="tbl" hidden></div>
+        </figure>
+        <figure class="chart">
+          <figcaption><span class="ct">Days sales outstanding · 12 months</span><button class="lnk" data-tbl>Table</button></figcaption>
+          <div class="plot" data-chart="dso"></div>
+          <div class="tbl" hidden></div>
+        </figure>
+      </div>
+      <div id="colbottom"></div>
+    </div></section>
+
+    <!-- 5 DELIVERY -->
+    <section id="delivery"><div class="card">
+      <h2><span class="num">05</span>Delivery</h2>
+      <p class="sub" id="delsub"></p>
+      <div id="delbody"></div>
+    </div></section>
+
+    <!-- 6 PEOPLE -->
+    <section id="people"><div class="card">
+      <h2><span class="num">06</span>People</h2>
+      <p class="sub" id="peosub"></p>
+      <div id="peobody"></div>
+    </div></section>
+
+    <!-- 7 STRATEGIC -->
+    <section id="strategic"><div class="card">
+      <h2><span class="num">07</span>Strategic projects</h2>
+      <p class="sub" id="strsub"></p>
+      <div id="strbody"></div>
+    </div></section>
+
+    <!-- 8 RISKS -->
+    <section id="risks"><div class="card">
+      <h2><span class="num">08</span>Risks</h2>
+      <p class="sub" id="risksub"></p>
+      <div class="items" id="riskitems"></div>
+      <p class="note">Risks are produced by deterministic rules, not by the model — each one names the threshold it breached. The brief only prioritises and narrates what the rules already found.</p>
+    </div></section>
+
+  </div>
+</div>
+
+<script type="module" src="/ceo/js/main.js"></script>
+</body>
+</html>
