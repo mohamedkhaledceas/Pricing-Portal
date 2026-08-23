@@ -1,0 +1,265 @@
+/* Design tokens and section styling ported near-verbatim from the CEO
+   dashboard prototype (ceas-ceo-dashboard.html) to stay visually faithful
+   to it, per the integration plan. The loginGate/button/skeleton/account-menu
+   boilerplate at the bottom matches the equivalent classes in
+   management/commercial-leads/views/css/commercialLeads.css and
+   employees/views/css/employees.css, translated onto this page's own
+   token names, so the chrome (not the dashboard content) still feels like
+   the rest of the portal. */
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb; --plane:#f9f9f7; --card:#ffffff;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --demph:#c3c2b7;
+  --o1:#86b6ef; --o2:#5598e7; --o3:#2a78d6; --o4:#1c5cab; --o5:#104281;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --good-txt:#006300; --bad-txt:#b02a2a;
+  --track:rgba(11,11,11,0.07);
+  --shadow:0 1px 2px rgba(11,11,11,.04), 0 1px 12px rgba(11,11,11,.03);
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d; --card:#1a1a19;
+    --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+    --demph:#4a4a46;
+    --o1:#b7d3f6; --o2:#86b6ef; --o3:#3987e5; --o4:#256abf; --o5:#184f95;
+    --good-txt:#0ca30c; --bad-txt:#e66767;
+    --track:rgba(255,255,255,0.09);
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --surface-1:#1a1a19; --plane:#0d0d0d; --card:#1a1a19;
+  --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --demph:#4a4a46;
+  --o1:#b7d3f6; --o2:#86b6ef; --o3:#3987e5; --o4:#256abf; --o5:#184f95;
+  --good-txt:#0ca30c; --bad-txt:#e66767;
+  --track:rgba(255,255,255,0.09);
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--plane); color:var(--ink);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit}
+button{font:inherit;color:inherit}
+
+/* ---------- layout ---------- */
+.wrap{max-width:1320px;margin:0 auto;padding:0 20px 80px}
+header.top{
+  position:sticky;top:0;z-index:40;background:var(--plane);
+  border-bottom:1px solid var(--border);
+  padding:12px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;
+}
+.brand{font-weight:650;letter-spacing:-.01em}
+.brand .sub{display:block;font-weight:400;color:var(--muted);font-size:12px;letter-spacing:0}
+.spacer{flex:1}
+.seg{display:flex;background:var(--track);border-radius:9px;padding:2px}
+.seg button{
+  border:0;background:transparent;padding:6px 12px;border-radius:7px;cursor:pointer;
+  color:var(--ink-2);font-size:13px;font-weight:500;white-space:nowrap;
+}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+
+.banner{
+  display:flex;gap:10px;align-items:flex-start;
+  background:var(--card);border:1px solid var(--border);border-left:3px solid var(--warning);
+  border-radius:10px;padding:10px 14px;margin:16px 0;font-size:13px;color:var(--ink-2)
+}
+.banner b{color:var(--ink)}
+
+.sync{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:0 0 18px}
+.sync span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--good);display:inline-block}
+
+section{margin:0 0 14px;scroll-margin-top:70px}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:18px 20px;box-shadow:var(--shadow)
+}
+h2{font-size:13px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 2px}
+h2 .num{color:var(--axis);margin-right:8px}
+.sub{font-size:13px;color:var(--ink-2);margin:0 0 16px}
+h3{font-size:13px;font-weight:600;margin:0 0 10px;color:var(--ink-2)}
+
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g-hero{grid-template-columns:minmax(280px,1fr) 1.35fr}
+@media(max-width:1000px){.g-hero,.g3,.g4,.g2{grid-template-columns:1fr}}
+
+/* ---------- stat tiles ---------- */
+.tiles{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));margin-bottom:16px}
+.tile{border:1px solid var(--border);border-radius:11px;padding:12px 14px;background:var(--surface-1)}
+.tile .lab{font-size:12px;color:var(--muted);margin-bottom:4px}
+.tile .val{font-size:23px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+.tile .sec{font-size:12px;color:var(--muted);margin-top:3px}
+.delta{font-size:12px;font-weight:550;display:inline-flex;align-items:center;gap:3px}
+.delta.up{color:var(--good-txt)} .delta.down{color:var(--bad-txt)} .delta.flat{color:var(--muted)}
+.spark{display:block;margin-top:8px}
+
+/* ---------- hero ---------- */
+.hero{display:flex;flex-direction:column;justify-content:center;gap:4px}
+.hero .score{font-size:76px;font-weight:600;letter-spacing:-.035em;line-height:1}
+.hero .of{font-size:18px;color:var(--muted);font-weight:400}
+.hero .lab{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.hero .deltas{display:flex;gap:14px;margin-top:6px;font-size:13px}
+
+/* ---------- meters ---------- */
+.meterrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--grid)}
+.meterrow:last-child{border-bottom:0}
+.meterrow .mname{width:96px;flex:none;font-size:13px;font-weight:500}
+.meterrow .mw{width:34px;flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.meterbar{flex:1;height:8px;border-radius:4px;background:var(--track);overflow:hidden;position:relative}
+.meterbar i{display:block;height:100%;border-radius:4px}
+.meterrow .mval{width:30px;flex:none;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.meternote{font-size:12px;color:var(--muted);margin:2px 0 0 108px}
+@media(max-width:640px){.meterrow{flex-wrap:wrap}.meternote{margin-left:0}}
+.strow{display:grid;grid-template-columns:minmax(150px,1.3fr) 96px 1fr 44px;gap:12px;align-items:center;padding:11px 0 5px}
+.strow .sname{font-size:13.5px;font-weight:550}
+.strow .spct{text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.strnote{font-size:12px;color:var(--muted);padding-bottom:11px;border-bottom:1px solid var(--grid)}
+@media(max-width:760px){
+  .strow{grid-template-columns:1fr 96px 44px;row-gap:8px}
+  .strow .meterbar{grid-column:1/-1;order:3}
+}
+
+/* ---------- charts ---------- */
+figure.chart{margin:0 0 4px}
+figure.chart figcaption{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+figure.chart .ct{font-size:13px;font-weight:600;color:var(--ink-2)}
+figure.chart .cs{font-size:12px;color:var(--muted)}
+.lnk{margin-left:auto;border:0;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;padding:2px 6px;border-radius:6px}
+.lnk:hover{color:var(--ink);background:var(--track)}
+.plot svg{display:block;width:100%;overflow:visible}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin-top:8px}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
+.tbl{margin-top:10px;max-height:280px;overflow:auto;border:1px solid var(--grid);border-radius:8px}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  text-align:left;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;
+  letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid var(--grid);
+  position:sticky;top:0;background:var(--card)
+}
+td{padding:9px 10px;border-bottom:1px solid var(--grid);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr:hover td{background:var(--track)}
+.rowflag td{background:color-mix(in srgb, var(--critical) 7%, transparent)}
+
+/* ---------- badges ---------- */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+  padding:2px 8px 2px 6px;border-radius:20px;white-space:nowrap;
+  border:1px solid var(--border);color:var(--ink-2);background:var(--surface-1)
+}
+.badge .bd{width:7px;height:7px;border-radius:50%}
+.badge.critical .bd{background:var(--critical)} .badge.serious .bd{background:var(--serious)}
+.badge.warning .bd{background:var(--warning)} .badge.good .bd{background:var(--good)}
+.pill{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:2px 8px}
+
+/* ---------- action / risk lists ---------- */
+.items{display:flex;flex-direction:column;gap:0}
+.item{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--grid);align-items:flex-start}
+.item:last-child{border-bottom:0}
+.item .body{flex:1;min-width:0}
+.item .ti{font-size:14px;font-weight:600;margin-bottom:3px;letter-spacing:-.005em}
+.item .why{font-size:13px;color:var(--ink-2);margin-bottom:6px}
+.item .sg{font-size:13px;color:var(--ink-2)}
+.item .sg b{font-weight:600;color:var(--ink)}
+.item .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.item .acts{display:flex;gap:6px;flex:none}
+.item.done{opacity:.42}
+.item.done .ti{text-decoration:line-through}
+.mini{border:1px solid var(--border);background:var(--surface-1);border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;color:var(--ink-2)}
+.mini:hover{color:var(--ink);border-color:var(--axis)}
+
+/* ---------- misc ---------- */
+.callout{
+  display:flex;gap:10px;background:var(--surface-1);border:1px solid var(--border);
+  border-left:3px solid var(--critical);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--ink-2);margin-top:12px
+}
+.callout b{color:var(--ink)}
+.note{font-size:12px;color:var(--muted);margin-top:10px}
+.empty{font-size:13px;color:var(--muted);padding:22px;text-align:center;border:1px dashed var(--grid);border-radius:10px}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--grid);font-size:13px}
+.kv:last-child{border-bottom:0}
+.kv span:last-child{font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ---------- brief ---------- */
+.brief{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.brief .bh{display:flex;gap:12px;align-items:center;padding:16px 20px;cursor:pointer;user-select:none}
+.brief .bh .tag{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--s1)}
+.brief .bh h1{font-size:17px;font-weight:600;margin:2px 0 0;letter-spacing:-.015em;line-height:1.35}
+@media(max-width:640px){.brief .bh h1{font-size:15px;line-height:1.4}}
+.brief .bb{padding:0 20px 18px;display:grid;gap:18px;grid-template-columns:1fr 1fr}
+@media(max-width:900px){.brief .bb{grid-template-columns:1fr}}
+.bsec h4{font-size:12px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.bsec ul{margin:0;padding-left:18px}
+.bsec li{margin-bottom:7px;font-size:13.5px;color:var(--ink-2);line-height:1.55}
+.bsec li b{color:var(--ink);font-weight:600}
+.bfoot{display:flex;gap:10px;align-items:center;padding:12px 20px;border-top:1px solid var(--grid);font-size:12px;color:var(--muted);flex-wrap:wrap}
+.chev{margin-left:auto;color:var(--muted);transition:transform .18s}
+.brief[data-open="false"] .bb,.brief[data-open="false"] .bfoot{display:none}
+.brief[data-open="false"] .chev{transform:rotate(-90deg)}
+
+/* tooltip */
+#tip{
+  position:fixed;pointer-events:none;z-index:99;display:none;
+  background:var(--card);border:1px solid var(--border);border-radius:9px;
+  box-shadow:0 4px 20px rgba(0,0,0,.14);padding:8px 11px;font-size:12.5px;color:var(--ink);
+  max-width:260px;line-height:1.45
+}
+#tip .tk{color:var(--muted)}
+#tip b{font-variant-numeric:tabular-nums}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+:focus-visible{outline:2px solid var(--s1);outline-offset:2px;border-radius:4px}
+@media print{header.top{position:static}.lnk,.acts,.iconbtn,.seg{display:none}}
+
+/* ============================ portal chrome ============================
+   loginGate / account menu / buttons / skeleton — matches the equivalent
+   classes on every other page in this portal, restyled onto this page's
+   own tokens above rather than pulled in from commercialLeads.css, since
+   the two stylesheets use different token names for the same concepts. */
+button,.btn{
+  font:inherit; font-size:13px; padding:7px 12px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface-1); color:var(--ink);
+  cursor:pointer; transition:filter .15s ease, background-color .15s ease, transform .08s ease;
+}
+button:hover,.btn:hover{filter:brightness(0.93)}
+button:active,.btn:active{filter:brightness(0.86); transform:scale(0.97)}
+button.ghost{background:transparent}
+button.ghost:hover{filter:none; background-color:var(--track)}
+button.ghost:active{filter:none; background-color:var(--track); transform:scale(0.97)}
+button.primary{background:var(--s1); border-color:transparent; color:#fff; font-weight:600}
+@media (prefers-reduced-motion: reduce){
+  button,.btn{transition:background-color .15s ease}
+  button:active,.btn:active,button.ghost:active{transform:none}
+}
+
+.skeleton{ position:relative; overflow:hidden; background:var(--track); border-radius:6px; display:block; }
+.skeleton::after{
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  animation:skeleton-shimmer 1.3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce){ .skeleton::after{ animation:none; } }
+@keyframes skeleton-shimmer{ from{ transform:translateX(-100%); } to{ transform:translateX(100%); } }
+
+#loginGate{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; text-align:center; padding:24px}
+#app{display:none}

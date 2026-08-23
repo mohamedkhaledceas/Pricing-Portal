@@ -86,6 +86,13 @@ app.get('/commercial-lead', (req, res) => {
 });
 app.use('/commercial-lead', express.static(path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views')));
 
+/* CEO dashboard — manager-role-only, see modules/management/ceo-dashboard/. */
+const ceoDashboardHtmlPath = path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views', 'index.html');
+app.get('/ceo', (req, res) => {
+  res.sendFile(ceoDashboardHtmlPath);
+});
+app.use('/ceo', express.static(path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views')));
+
 /* /login — the one place auth (sign in / sign up) lives. Every other page
    redirects here when a silent refresh fails; on success this page's own
    JS redirects to '/' and lets the destination page pull a fresh access

@@ -21,6 +21,9 @@ const LEAVE_REPORT_ROLES = ['manager', 'people_culture'];
 const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
 // Matches commercial-lead's own USER_MANAGER_ROLES gate for the Users menu item.
 const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
+// 'manager' only — see modules/management/ceo-dashboard/routes/index.js's
+// own comment on why this doesn't use USER_MANAGER_ROLES like the others.
+const CEO_DASHBOARD_ROLES = ['manager', 'admin'];
 
 export function switchMainTab(tabId, btn) {
   state.mainTab = tabId;
@@ -52,6 +55,7 @@ function bindUi() {
   });
   document.addEventListener('click', () => { $('#accountMenu').hidden = true; });
   $('#btnThemeToggle').addEventListener('click', (e) => { e.stopPropagation(); cycleTheme(); });
+  $('#btnCeoDashboard').addEventListener('click', () => { window.location.href = '/ceo'; });
   $('#btnMarginPlanner').addEventListener('click', () => { window.location.href = '/planner'; });
   $('#btnUsersView').addEventListener('click', () => { switchMainTab('users'); });
   $('#btnLogout').addEventListener('click', async () => {
@@ -104,6 +108,7 @@ function bindUi() {
   $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
   const canSeeLeaveReport = state.currentUser && LEAVE_REPORT_ROLES.includes(state.currentUser.role);
   $('#maintab-leave-report').style.display = canSeeLeaveReport ? '' : 'none';
+  $('#btnCeoDashboard').hidden = !(state.currentUser && CEO_DASHBOARD_ROLES.includes(state.currentUser.role));
   $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
   const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
   $('#btnUsersView').hidden = !canManageUsers;
