@@ -13,6 +13,20 @@ const correlationId = require('./common/correlationId');
 const errorHandler = require('./common/errorHandler');
 const { ValidationError } = require('./common/errors');
 const { initRealtime } = require('./common/realtime');
+const requireRole = require('./common/middleware/requireRole');
+const { USER_MANAGER_ROLES } = require('./common/permissions');
+
+/* The Margin Planner's own API previously checked authMiddleware only —
+   any authenticated user of any role could read/write salary and cost
+   data. That never matched intent: modules/employees/views/js/main.js
+   already only shows the "Margin Planner" nav link to
+   MARGIN_PLANNER_ROLES = ['manager','operations','admin'], and the
+   Planner's own client-side "Team (BD) view" PIN toggle is explicitly
+   documented in-app as UI-only, not a security boundary. This enforces
+   server-side what was already the intended access list, using the same
+   USER_MANAGER_ROLES set (admin/manager/operations) commercial-leads
+   already gates its own user-management endpoints with. */
+const requirePlannerAccess = requireRole(USER_MANAGER_ROLES);
 
 if (!process.env.JWT_SECRET) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
@@ -123,50 +137,6 @@ app.use('/api', management.router);
 /* /api/employees* — new module, see modules/employees/container.js. */
 app.use('/api', employeesRouter);
 
-function serializeSettings(row) {
-  const rates = row && row.rates_json ? JSON.parse(row.rates_json || '{}') : { EGP: 1 };
-  return {
-    company: row?.company || '',
-    currency: row?.currency || 'EGP',
-    display: row?.display || row?.currency || 'EGP',
-    defaultHours: Number(row?.default_hours ?? 176),
-    defaultUtil: Number(row?.default_util ?? 70),
-    targetMargin: Number(row?.target_margin ?? 35),
-    contingency: Number(row?.contingency ?? 10),
-    basis: row?.basis || 'recovery',
-    floorMargin: Number(row?.floor_margin ?? 15),
-    rates,
-    ratesDate: row?.rates_date || '',
-    logo: row?.logo || null,
-    logoQuote: row?.logo_quote !== 0,
-  };
-}
-
-function serializeTeamMember(row) {
-  return {
-    id: row.id,
-    name: row.name || '',
-    role: row.role || '',
-    salary: Number(row.salary || 0),
-    extras: Number(row.extras || 0),
-    hours: Number(row.hours || 176),
-    util: Number(row.util || 70),
-    override: row.override_value === null || row.override_value === undefined ? null : Number(row.override_value),
-    cur: row.currency || 'EGP',
-  };
-}
-
-function serializeExpense(row) {
-  return {
-    id: row.id,
-    name: row.name || '',
-    cat: row.category || '',
-    amount: Number(row.amount || 0),
-    freq: row.freq || 'month',
-    cur: row.currency || 'EGP',
-  };
-}
-
 function serializeProject(projectRow, lines, directCosts, scenarios, quoteLines, quoteMeta = {}) {
   const q = quoteMeta && typeof quoteMeta === 'object' ? quoteMeta : {};
   return {
@@ -216,11 +186,6 @@ function serializeProject(projectRow, lines, directCosts, scenarios, quoteLines,
   };
 }
 
-function readCompanySettings() {
-  const row = db.prepare('SELECT * FROM company_settings WHERE id = 1').get();
-  return serializeSettings(row);
-}
-
 function readAppState() {
   const row = db.prepare('SELECT * FROM app_state WHERE id = 1').get();
   return {
@@ -230,10 +195,10 @@ function readAppState() {
 }
 
 function readState() {
-  const settings = readCompanySettings();
+  const settings = db.readCompanySettings();
   const security = { pinHash: db.prepare('SELECT security_pin_hash FROM app_state WHERE id = 1').get()?.security_pin_hash || null };
-  const team = db.prepare('SELECT * FROM team_members ORDER BY sort_order ASC, id ASC').all().map(serializeTeamMember);
-  const expenses = db.prepare('SELECT * FROM expenses ORDER BY sort_order ASC, id ASC').all().map(serializeExpense);
+  const team = db.readTeam();
+  const expenses = db.readExpenses();
 
   const projectRows = db.prepare('SELECT * FROM projects ORDER BY sort_order ASC, id ASC').all();
   const projects = projectRows.map((project) => {
@@ -515,24 +480,24 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'pricing-portal-server' });
 });
 
-app.get('/api/settings', authMiddleware, (req, res) => {
-  res.json({ settings: readCompanySettings() });
+app.get('/api/settings', authMiddleware, requirePlannerAccess, (req, res) => {
+  res.json({ settings: db.readCompanySettings() });
 });
 
-app.put('/api/settings', authMiddleware, (req, res) => {
+app.put('/api/settings', authMiddleware, requirePlannerAccess, (req, res) => {
   const settings = req.body || {};
-  const current = readCompanySettings();
+  const current = db.readCompanySettings();
   const next = { ...current, ...settings };
   upsertSettings({ settings: next });
   audit.recordFromRequest(req, 'company_settings.update', 'company_settings', '1', { before: current, after: settings });
-  res.json({ settings: readCompanySettings() });
+  res.json({ settings: db.readCompanySettings() });
 });
 
-app.get('/api/team', authMiddleware, (req, res) => {
+app.get('/api/team', authMiddleware, requirePlannerAccess, (req, res) => {
   res.json({ team: readState().team });
 });
 
-app.post('/api/team', authMiddleware, (req, res) => {
+app.post('/api/team', authMiddleware, requirePlannerAccess, (req, res) => {
   const data = req.body || {};
   const next = readState();
   const newMember = {
@@ -552,7 +517,7 @@ app.post('/api/team', authMiddleware, (req, res) => {
   res.status(201).json({ team: readState().team });
 });
 
-app.put('/api/team/:id', authMiddleware, (req, res) => {
+app.put('/api/team/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const next = readState();
   const index = next.team.findIndex((member) => member.id === req.params.id);
   if (index === -1) {
@@ -565,7 +530,7 @@ app.put('/api/team/:id', authMiddleware, (req, res) => {
   return res.json({ team: readState().team });
 });
 
-app.delete('/api/team/:id', authMiddleware, (req, res) => {
+app.delete('/api/team/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const next = readState();
   const removed = next.team.find((member) => member.id === req.params.id);
   next.team = next.team.filter((member) => member.id !== req.params.id);
@@ -578,11 +543,11 @@ app.delete('/api/team/:id', authMiddleware, (req, res) => {
   return res.json({ team: readState().team });
 });
 
-app.get('/api/expenses', authMiddleware, (req, res) => {
+app.get('/api/expenses', authMiddleware, requirePlannerAccess, (req, res) => {
   res.json({ expenses: readState().expenses });
 });
 
-app.post('/api/expenses', authMiddleware, (req, res) => {
+app.post('/api/expenses', authMiddleware, requirePlannerAccess, (req, res) => {
   const data = req.body || {};
   const next = readState();
   const newExpense = {
@@ -599,7 +564,7 @@ app.post('/api/expenses', authMiddleware, (req, res) => {
   return res.status(201).json({ expenses: readState().expenses });
 });
 
-app.put('/api/expenses/:id', authMiddleware, (req, res) => {
+app.put('/api/expenses/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const next = readState();
   const index = next.expenses.findIndex((item) => item.id === req.params.id);
   if (index === -1) {
@@ -612,7 +577,7 @@ app.put('/api/expenses/:id', authMiddleware, (req, res) => {
   return res.json({ expenses: readState().expenses });
 });
 
-app.delete('/api/expenses/:id', authMiddleware, (req, res) => {
+app.delete('/api/expenses/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const next = readState();
   const removed = next.expenses.find((item) => item.id === req.params.id);
   next.expenses = next.expenses.filter((item) => item.id !== req.params.id);
@@ -621,11 +586,11 @@ app.delete('/api/expenses/:id', authMiddleware, (req, res) => {
   return res.json({ expenses: readState().expenses });
 });
 
-app.get('/api/projects', authMiddleware, (req, res) => {
+app.get('/api/projects', authMiddleware, requirePlannerAccess, (req, res) => {
   res.json({ projects: readState().projects });
 });
 
-app.post('/api/projects', authMiddleware, (req, res) => {
+app.post('/api/projects', authMiddleware, requirePlannerAccess, (req, res) => {
   const payload = req.body || {};
   const next = readState();
   const newProject = {
@@ -651,7 +616,7 @@ app.post('/api/projects', authMiddleware, (req, res) => {
   return res.status(201).json({ project: readState().projects.find((item) => item.id === newProject.id) });
 });
 
-app.put('/api/projects/:id', authMiddleware, (req, res) => {
+app.put('/api/projects/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const next = readState();
   const index = next.projects.findIndex((project) => project.id === req.params.id);
   if (index === -1) {
@@ -664,7 +629,7 @@ app.put('/api/projects/:id', authMiddleware, (req, res) => {
   return res.json({ project: readState().projects.find((project) => project.id === req.params.id) });
 });
 
-app.delete('/api/projects/:id', authMiddleware, (req, res) => {
+app.delete('/api/projects/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const next = readState();
   const removed = next.projects.find((project) => project.id === req.params.id);
   next.projects = next.projects.filter((project) => project.id !== req.params.id);
@@ -680,7 +645,7 @@ app.delete('/api/projects/:id', authMiddleware, (req, res) => {
    carry the parent projectId inside `details`, since their own entityId is
    the line item's id, not the project's — json_extract pulls it back out to
    scope the history to one project without a schema change. */
-app.get('/api/projects/:id/history', authMiddleware, (req, res) => {
+app.get('/api/projects/:id/history', authMiddleware, requirePlannerAccess, (req, res) => {
   const rows = db.prepare(`
     SELECT id, username, action, entity_type, entity_id, details, created_at
     FROM audit_log
@@ -703,7 +668,7 @@ app.get('/api/projects/:id/history', authMiddleware, (req, res) => {
   return res.json({ history });
 });
 
-app.post('/api/projects/:projectId/lines', authMiddleware, (req, res) => {
+app.post('/api/projects/:projectId/lines', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const payload = req.body || {};
   const next = readState();
@@ -721,7 +686,7 @@ app.post('/api/projects/:projectId/lines', authMiddleware, (req, res) => {
   return res.status(201).json({ line: readState().projects.find((item) => item.id === projectId)?.lines.find((entry) => entry.id === line.id) });
 });
 
-app.put('/api/projects/:projectId/lines/:id', authMiddleware, (req, res) => {
+app.put('/api/projects/:projectId/lines/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -735,7 +700,7 @@ app.put('/api/projects/:projectId/lines/:id', authMiddleware, (req, res) => {
   return res.json({ line: readState().projects.find((item) => item.id === projectId)?.lines.find((entry) => entry.id === req.params.id) });
 });
 
-app.delete('/api/projects/:projectId/lines/:id', authMiddleware, (req, res) => {
+app.delete('/api/projects/:projectId/lines/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -747,7 +712,7 @@ app.delete('/api/projects/:projectId/lines/:id', authMiddleware, (req, res) => {
   return res.json({ lines: readState().projects.find((item) => item.id === projectId)?.lines || [] });
 });
 
-app.post('/api/projects/:projectId/direct-costs', authMiddleware, (req, res) => {
+app.post('/api/projects/:projectId/direct-costs', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const payload = req.body || {};
   const next = readState();
@@ -766,7 +731,7 @@ app.post('/api/projects/:projectId/direct-costs', authMiddleware, (req, res) => 
   return res.status(201).json({ direct: readState().projects.find((item) => item.id === projectId)?.direct.find((entry) => entry.id === direct.id) });
 });
 
-app.put('/api/projects/:projectId/direct-costs/:id', authMiddleware, (req, res) => {
+app.put('/api/projects/:projectId/direct-costs/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -780,7 +745,7 @@ app.put('/api/projects/:projectId/direct-costs/:id', authMiddleware, (req, res) 
   return res.json({ direct: readState().projects.find((item) => item.id === projectId)?.direct.find((entry) => entry.id === req.params.id) });
 });
 
-app.delete('/api/projects/:projectId/direct-costs/:id', authMiddleware, (req, res) => {
+app.delete('/api/projects/:projectId/direct-costs/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -792,7 +757,7 @@ app.delete('/api/projects/:projectId/direct-costs/:id', authMiddleware, (req, re
   return res.json({ direct: readState().projects.find((item) => item.id === projectId)?.direct || [] });
 });
 
-app.post('/api/projects/:projectId/scenarios', authMiddleware, (req, res) => {
+app.post('/api/projects/:projectId/scenarios', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const payload = req.body || {};
   const next = readState();
@@ -812,7 +777,7 @@ app.post('/api/projects/:projectId/scenarios', authMiddleware, (req, res) => {
   return res.status(201).json({ scenario: readState().projects.find((item) => item.id === projectId)?.scenarios.find((entry) => entry.id === scenario.id) });
 });
 
-app.put('/api/projects/:projectId/scenarios/:id', authMiddleware, (req, res) => {
+app.put('/api/projects/:projectId/scenarios/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -826,7 +791,7 @@ app.put('/api/projects/:projectId/scenarios/:id', authMiddleware, (req, res) => 
   return res.json({ scenario: readState().projects.find((item) => item.id === projectId)?.scenarios.find((entry) => entry.id === req.params.id) });
 });
 
-app.delete('/api/projects/:projectId/scenarios/:id', authMiddleware, (req, res) => {
+app.delete('/api/projects/:projectId/scenarios/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -838,7 +803,7 @@ app.delete('/api/projects/:projectId/scenarios/:id', authMiddleware, (req, res) 
   return res.json({ scenarios: readState().projects.find((item) => item.id === projectId)?.scenarios || [] });
 });
 
-app.post('/api/projects/:projectId/quote-lines', authMiddleware, (req, res) => {
+app.post('/api/projects/:projectId/quote-lines', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const payload = req.body || {};
   const next = readState();
@@ -868,7 +833,7 @@ app.post('/api/projects/:projectId/quote-lines', authMiddleware, (req, res) => {
   return res.status(201).json({ line: readState().projects.find((item) => item.id === projectId)?.quote?.lines.find((entry) => entry.id === line.id) });
 });
 
-app.put('/api/projects/:projectId/quote-lines/:id', authMiddleware, (req, res) => {
+app.put('/api/projects/:projectId/quote-lines/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -883,7 +848,7 @@ app.put('/api/projects/:projectId/quote-lines/:id', authMiddleware, (req, res) =
   return res.json({ line: readState().projects.find((item) => item.id === projectId)?.quote?.lines.find((entry) => entry.id === req.params.id) });
 });
 
-app.delete('/api/projects/:projectId/quote-lines/:id', authMiddleware, (req, res) => {
+app.delete('/api/projects/:projectId/quote-lines/:id', authMiddleware, requirePlannerAccess, (req, res) => {
   const projectId = req.params.projectId;
   const next = readState();
   const project = next.projects.find((item) => item.id === projectId);
@@ -896,11 +861,11 @@ app.delete('/api/projects/:projectId/quote-lines/:id', authMiddleware, (req, res
   return res.json({ lines: readState().projects.find((item) => item.id === projectId)?.quote?.lines || [] });
 });
 
-app.get('/api/state', authMiddleware, (req, res) => {
+app.get('/api/state', authMiddleware, requirePlannerAccess, (req, res) => {
   res.json(buildStateResponse());
 });
 
-app.put('/api/state', authMiddleware, (req, res) => {
+app.put('/api/state', authMiddleware, requirePlannerAccess, (req, res) => {
   return res.status(405).json({
     error: 'Use granular resource endpoints instead of PUT /api/state. Full-state overwrites are disabled to prevent concurrent-user data loss.'
   });

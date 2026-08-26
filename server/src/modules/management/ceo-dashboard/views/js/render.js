@@ -126,6 +126,36 @@ function renderRevenue() {
   }
   $('#revtiles').innerHTML = tiles.join('');
 
+  const marginCostSec = $('#margincost');
+  if (marginCostSec) {
+    const c = state.entity === 'ceas' ? r.costs : null;
+    marginCostSec.style.display = c ? '' : 'none';
+    if (c) {
+      const catSummary = c.categories.map((x) => `${esc(x.name)} ${egp(x.amount)}`).join(' · ');
+      /* Each href deep-links to the closest editable source of that tile's
+         number (see margin-planner_1.html's ?open= handler). Monthly burn
+         has no single editable tab — it's a rollup of payroll + fixed — so
+         it links to the Planner's own Dashboard tab (the default landing
+         tab), which is where this exact figure and its breakdown are
+         already shown. */
+      $('#margincosttiles').innerHTML = [
+        tile({
+          lab: 'Monthly burn', val: egp(c.burn),
+          sec: `${egp(c.payroll)} payroll · ${egp(c.fixed)} fixed expenses`, href: '/planner',
+        }),
+        tile({
+          lab: 'Team payroll', val: egp(c.payroll),
+          sec: `${c.headcount} people · avg ${egp(Math.round(c.payroll / c.headcount))}/mo fully loaded`, href: '/planner?open=team',
+        }),
+        tile({ lab: 'Fixed expenses', val: egp(c.fixed), sec: catSummary, href: '/planner?open=expenses' }),
+        tile({
+          lab: 'Overhead per hour', val: `${egp(c.ohPerHour, false)} / hr`,
+          sec: `${egp(c.fixed)} fixed ÷ ${num(c.billableHours)} billable hrs booked`, href: '/planner?open=expenses',
+        }),
+      ].join('');
+    }
+  }
+
   CHARTS.revMonths = (m) => chartColumns(m, {
     labels: r.months, values: r.actual, target: r.targetFull, valueFmt: (v) => egp(v), partialLast: true, unit: 'Revenue (EGP)',
   });

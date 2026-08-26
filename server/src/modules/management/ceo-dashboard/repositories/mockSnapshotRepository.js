@@ -1,25 +1,37 @@
-/* Placeholder data source — NOT a real integration. Ported verbatim from
-   the CEO dashboard design-review prototype (ceas-ceo-dashboard.html,
-   supplied 2026-08-09). Every figure below was invented for design review
-   — a plausible mid-size Cairo agency, not Ceas Comm's real numbers — and
-   is not connected to Odoo or ClickUp. See the "Prototype with mocked
-   data" banner in views/index.html, which stays up as long as this file
-   is the data source.
+/* Placeholder data source for everything Odoo/ClickUp-sourced — NOT a real
+   integration. Ported verbatim from the CEO dashboard design-review
+   prototype (ceas-ceo-dashboard.html, supplied 2026-08-09). Every figure
+   below was invented for design review — a plausible mid-size Cairo agency,
+   not Ceas Comm's real numbers. See the "Prototype with mocked data" banner
+   in views/index.html, which stays up as long as most of this file is the
+   data source.
 
-   This is the intended swap point: once there is an Odoo account (and,
-   per the user, possibly ClickUp for parts of this), replace this file
-   with a real repository that queries those systems, keep the same
-   getShell/getEntityKeys/getEntitySnapshot/getBrief shape, and nothing
-   above this layer (service/controller/frontend) needs to change. Trigger:
-   Odoo credentials exist and the user has specified which field comes from
-   where — no ADR yet because that mapping isn't decided.
+   One exception, as of this pass: `revenue.costs` (below, on the `ceas`
+   entity only) is no longer mock — getEntitySnapshot() overwrites it with
+   the Margin Planner's real, live figures (see marginPlannerSummary.js).
+   The Planner has a real, working backend (server/src/index.js + db.js) —
+   it is NOT true, as an earlier version of this comment claimed, that "the
+   planner itself has no backend." The `costs` object below is now only the
+   fallback used if that live read fails.
+
+   Everything else is still the intended swap point: once there is an Odoo
+   account (and, per the user, possibly ClickUp for parts of this), replace
+   the rest of this file with a real repository that queries those systems,
+   keep the same getShell/getEntityKeys/getEntitySnapshot/getBrief shape,
+   and nothing above this layer (service/controller/frontend) needs to
+   change. Trigger: Odoo credentials exist and the user has specified which
+   field comes from where — no ADR yet because that mapping isn't decided.
 
    The 'lwm' (Learn with Marie) and 'all' (Consolidated) entities are kept
    only because the prototype's entity switcher was kept faithfully (see
    implementation plan) — Learn with Marie is not a real, integrated
    business entity anywhere else in this codebase, and CLAUDE.md documents
    this portal as single-company. Both stay permanently on this mock
-   repository until/unless that changes. */
+   repository — including for costs, never live-wired — until/unless that
+   changes. */
+
+const marginPlannerSummary = require('../../../../marginPlannerSummary');
+const logger = require('../../../../common/logger');
 
 const DATA = {
   asOf: '2026-08-09',
@@ -45,6 +57,16 @@ const DATA = {
         series: [73, 72, 72, 71, 71, 70, 70, 70, 69, 68, 67, 66, 62],
         labels: ['-12w', '-11w', '-10w', '-9w', '-8w', '-7w', '-6w', '-5w', '-4w', '-3w', '-2w', '-1w', 'Now'],
       },
+      /* "Revenue" below (ytd/mtd and everything derived from it) has an
+         unconfirmed accounting basis — written before real Odoo access, so
+         it doesn't distinguish booked sales-order value from invoiced
+         revenue from collected cash. Per the Odoo Reconciliation
+         (2026-08-24, Q7), those are three different real numbers in Odoo
+         (Sales orders vs Invoicing vs Accounting P&L vs Payments received)
+         that may not agree, and it isn't established yet which one Finance
+         treats as authoritative "revenue." Don't assume this is invoiced
+         revenue just because that's the most common definition — confirm
+         against real Odoo figures before the real repository is written. */
       revenue: {
         ytd: 50400000, ytdTarget: 51032258, ytdPct: 98.8, mtd: 1980000, mtdTarget: 2032258,
         months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
@@ -78,6 +100,27 @@ const DATA = {
           { name: 'Other (12 clients)', value: 2680000, type: 'Mixed', am: '—', status: 'active', overdue: 0 },
         ],
         trailing90: 20580000, concentration: 27.4,
+        /* FALLBACK ONLY. getEntitySnapshot('ceas') below overwrites this
+           whole object with marginPlannerSummary.getCompanyCostSummary()'s
+           live result — the exact same company()/personCalc()/expMonthly()
+           math the Planner's own client-side JS (margin-planner_1.html)
+           uses, now also run server-side against the real team_members/
+           expenses tables. `categories` there is real: whatever `cat` free
+           text is actually entered in the Planner's Fixed expenses tab, not
+           the illustrative 4-category list below. This object is only what
+           renders if that live read throws (DB unreachable, etc.) — kept
+           deliberately close to real historical figures so a fallback
+           doesn't look broken if it's ever hit. */
+        costs: {
+          burn: 3820000, payroll: 3180000, fixed: 640000, headcount: 33,
+          billableHours: 4056, ohPerHour: 158,
+          categories: [
+            { name: 'Premises', amount: 285000 },
+            { name: 'Software & tools', amount: 168000 },
+            { name: 'Professional services', amount: 112000 },
+            { name: 'Other', amount: 75000 },
+          ],
+        },
       },
       pipeline: {
         total: 31400000, weighted: 11720000, count: 18, q4Target: 8400000, coverage: 1.4, coverageFloor: 2.0,
@@ -117,6 +160,45 @@ const DATA = {
           { name: 'Cleo Retail', value: 340000, days: 63, am: 'Nour Adel', activeProjects: 1 },
           { name: 'Sphinx Pharma', value: 295000, days: 47, am: 'Monica Emad', activeProjects: 2 },
           { name: 'Mansour Auto', value: 262000, days: 38, am: 'Monica George', activeProjects: 1 },
+        ],
+        /* Normalized invoice -> payment lifecycle ledger, added ahead of the
+           real Odoo integration so the future repository has a contract to
+           fill in rather than just pre-aggregated numbers. This is a
+           representative SAMPLE only — the six overdue accounts already
+           listed in `detail` above (same amounts, so the two stay
+           consistent), plus two paid-on-time examples for contrast — not
+           the full receivables population. It does not sum to `receivables`
+           or `aging` above, and nothing in render.js reads it yet.
+
+           `dso` and `collectionRate` above remain flat mock numbers, not
+           computed from these rows. Per the Odoo Reconciliation
+           (2026-08-24): it is NOT confirmed which Odoo object actually
+           reaches "Paid" — an account.move invoice's payment_state, or a
+           linked account.payment/reconciliation record — so do not assume a
+           Sales Order being marked Paid is the revenue-recognition event.
+           dueDate below assumes NET-30 terms for illustration only; real
+           payment-terms data is unconfirmed.
+
+           collectionTimeDays, once implemented, is defined as
+           collectionDate - invoiceDate (not dueDate - invoiceDate) — e.g.
+           the Nile Bank row below: 2026-08-05 minus 2026-07-10 = 26 days.
+
+           Collection Rate MTD's formula is still undefined — three
+           candidates remain live and must not be silently collapsed into
+           one without Finance sign-off:
+             A. collected this period / invoiced this period
+             B. collected this period / amount due this period
+             C. collected against invoices issued this period / total of
+                those invoices */
+        invoices: [
+          { invoiceId: 'INV-2026-0512', clientId: 'cairo-grand', client: 'Cairo Grand Developments', invoiceAmount: 1840000, invoiceDate: '2026-04-27', dueDate: '2026-05-27', collectedAmount: 0, collectionDate: null, outstandingAmount: 1840000, invoiceStatus: 'overdue' },
+          { invoiceId: 'INV-2026-0498', clientId: 'zamalek-hospitality', client: 'Zamalek Hospitality Group', invoiceAmount: 920000, invoiceDate: '2026-04-05', dueDate: '2026-05-05', collectedAmount: 0, collectionDate: null, outstandingAmount: 920000, invoiceStatus: 'overdue' },
+          { invoiceId: 'INV-2026-0531', clientId: 'alexandria-marine', client: 'Alexandria Marine', invoiceAmount: 610000, invoiceDate: '2026-05-03', dueDate: '2026-06-02', collectedAmount: 0, collectionDate: null, outstandingAmount: 610000, invoiceStatus: 'overdue' },
+          { invoiceId: 'INV-2026-0546', clientId: 'cleo-retail', client: 'Cleo Retail', invoiceAmount: 340000, invoiceDate: '2026-05-08', dueDate: '2026-06-07', collectedAmount: 0, collectionDate: null, outstandingAmount: 340000, invoiceStatus: 'overdue' },
+          { invoiceId: 'INV-2026-0559', clientId: 'sphinx-pharma', client: 'Sphinx Pharma', invoiceAmount: 295000, invoiceDate: '2026-05-24', dueDate: '2026-06-23', collectedAmount: 0, collectionDate: null, outstandingAmount: 295000, invoiceStatus: 'overdue' },
+          { invoiceId: 'INV-2026-0587', clientId: 'mansour-auto', client: 'Mansour Auto', invoiceAmount: 262000, invoiceDate: '2026-06-02', dueDate: '2026-07-02', collectedAmount: 0, collectionDate: null, outstandingAmount: 262000, invoiceStatus: 'overdue' },
+          { invoiceId: 'INV-2026-0602', clientId: 'nile-bank', client: 'Nile Bank', invoiceAmount: 470000, invoiceDate: '2026-07-10', dueDate: '2026-08-09', collectedAmount: 470000, collectionDate: '2026-08-05', outstandingAmount: 0, invoiceStatus: 'paid' },
+          { invoiceId: 'INV-2026-0611', clientId: 'horizon-telecom', client: 'Horizon Telecom', invoiceAmount: 143000, invoiceDate: '2026-07-15', dueDate: '2026-08-14', collectedAmount: 143000, collectionDate: '2026-08-02', outstandingAmount: 0, invoiceStatus: 'paid' },
         ],
       },
       delivery: {
@@ -339,8 +421,26 @@ function getEntityKeys() {
   return ENTITY_KEYS;
 }
 
+/* 'ceas' is the only entity live-wired to the Margin Planner — 'lwm' and
+   'all' stay on mock costs permanently (see the file header comment). On
+   any read failure, falls back to the mock costs object already on DATA so
+   the dashboard degrades to (accurate-looking) demo data instead of
+   throwing. */
+function withLiveCosts(entity) {
+  if (!entity || !entity.revenue) return entity;
+  try {
+    const liveCosts = marginPlannerSummary.getCompanyCostSummary();
+    return { ...entity, revenue: { ...entity.revenue, costs: liveCosts } };
+  } catch (error) {
+    logger.warn('Falling back to mock Margin Planner costs — live read failed', { error: error.message });
+    return entity;
+  }
+}
+
 function getEntitySnapshot(entityKey) {
-  return DATA.entities[entityKey] || null;
+  const entity = DATA.entities[entityKey] || null;
+  if (entityKey !== 'ceas') return entity;
+  return withLiveCosts(entity);
 }
 
 function getBrief(entityKey) {
