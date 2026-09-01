@@ -15,7 +15,7 @@ import { renderLeaveReport } from './leaveBreakdown.js';
 const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'manager'];
 // Leave Report is scoped to the two roles that actually review/approve
 // requests — not admin (canManageRoster's superset doesn't apply here).
-const LEAVE_REPORT_ROLES = ['manager', 'people_culture'];
+const LEAVE_REPORT_ROLES = ['manager', 'people_culture', 'admin'];
 // Same gate as margin-planner_1.html's own Commercial Lead button
 // (USER_MANAGER_ROLES) — role only.
 const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
