@@ -141,9 +141,7 @@ async function renderRosterTable() {
     <tr id="roster-row-${e.id}">
       <td>
         <div style="display:flex; align-items:center; gap:8px;">
-          ${e.photoUrl
-            ? `<img src="${escapeHtml(e.photoUrl)}" alt="" style="width:28px; height:28px; border-radius:50%; object-fit:cover;">`
-            : `<span style="width:28px; height:28px; border-radius:50%; background:var(--panel); border:1px solid var(--border); display:inline-block;"></span>`}
+          <div style="width:28px; height:28px; border-radius:50%; overflow:hidden; flex-shrink:0;">${window.AccountMenu.avatarHtml(e.photoUrl, e)}</div>
           <div>
             ${escapeHtml(e.firstName + ' ' + e.lastName)}<div class="small muted">${escapeHtml(e.email)}</div>
             <label class="small muted" style="cursor:pointer;">
