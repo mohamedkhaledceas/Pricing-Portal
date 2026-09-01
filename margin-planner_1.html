@@ -2857,16 +2857,22 @@ $('#fitStart').value = thisMonth();
   const auth = getStoredAuth();
   if (!auth || !auth.token) return;
 
-  /* Lets other pages sharing this backend (e.g. commercial-lead.html) deep-link
-     into Account Settings / Users rather than duplicating those views — visit
-     /?open=accountSettings or /?open=users and, if permitted, that view opens
+  /* Lets other pages sharing this backend (e.g. commercial-lead.html, and
+     now the CEO Dashboard's cost tiles) deep-link into a specific view
+     rather than duplicating it — visit /?open=accountSettings, /?open=users,
+     /?open=team, or /?open=expenses and, if permitted, that view opens
      immediately. Strips the param afterward so a manual refresh doesn't keep
-     reopening it. */
+     reopening it. team/expenses just select the matching tab (selectTab is
+     safe to call before hydrateFromApi() below — applyMode() only overrides
+     the active tab in BD view, and team/expenses are admin-only tabs a BD
+     view can't see anyway). */
   const params = new URLSearchParams(window.location.search);
   const open = params.get('open');
   if (open) {
     if (open === 'accountSettings') openAccountSettings();
     else if (open === 'users' && USER_MANAGER_ROLES.includes(auth.user.role)) openUsersView();
+    else if (open === 'team') selectTab('team');
+    else if (open === 'expenses') selectTab('expenses');
     params.delete('open');
     const query = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);

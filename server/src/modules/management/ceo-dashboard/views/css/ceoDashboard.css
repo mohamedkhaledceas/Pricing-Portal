@@ -106,6 +106,9 @@ h3{font-size:13px;font-weight:600;margin:0 0 10px;color:var(--ink-2)}
 .tile .lab{font-size:12px;color:var(--muted);margin-bottom:4px}
 .tile .val{font-size:23px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
 .tile .sec{font-size:12px;color:var(--muted);margin-top:3px}
+a.tile{display:block;text-decoration:none;color:inherit;cursor:pointer;transition:border-color .15s ease, transform .08s ease}
+a.tile:hover{border-color:var(--axis)}
+a.tile:active{transform:scale(.99)}
 .delta{font-size:12px;font-weight:550;display:inline-flex;align-items:center;gap:3px}
 .delta.up{color:var(--good-txt)} .delta.down{color:var(--bad-txt)} .delta.flat{color:var(--muted)}
 .spark{display:block;margin-top:8px}

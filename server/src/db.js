@@ -422,4 +422,67 @@ if (!refreshTokenColumns.includes('revoked_reason')) {
    (starting with 001_role_user_to_employee) go through this instead. */
 runMigrations(db);
 
+/* Margin Planner read helpers — moved here (out of server/src/index.js,
+   where they were previously private to the legacy Planner route handlers)
+   so a second consumer, the CEO Dashboard's cost summary
+   (server/src/services/marginPlannerSummary.js), can read team/expense/
+   settings data through the exact same query + serialization the Planner's
+   own API uses, rather than a second, driftable copy of the same mapping. */
+function serializeSettings(row) {
+  const rates = row && row.rates_json ? JSON.parse(row.rates_json || '{}') : { EGP: 1 };
+  return {
+    company: row?.company || '',
+    currency: row?.currency || 'EGP',
+    display: row?.display || row?.currency || 'EGP',
+    defaultHours: Number(row?.default_hours ?? 176),
+    defaultUtil: Number(row?.default_util ?? 70),
+    targetMargin: Number(row?.target_margin ?? 35),
+    contingency: Number(row?.contingency ?? 10),
+    basis: row?.basis || 'recovery',
+    floorMargin: Number(row?.floor_margin ?? 15),
+    rates,
+    ratesDate: row?.rates_date || '',
+    logo: row?.logo || null,
+    logoQuote: row?.logo_quote !== 0,
+  };
+}
+
+function serializeTeamMember(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    role: row.role || '',
+    salary: Number(row.salary || 0),
+    extras: Number(row.extras || 0),
+    hours: Number(row.hours || 176),
+    util: Number(row.util || 70),
+    override: row.override_value === null || row.override_value === undefined ? null : Number(row.override_value),
+    cur: row.currency || 'EGP',
+  };
+}
+
+function serializeExpense(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    cat: row.category || '',
+    amount: Number(row.amount || 0),
+    freq: row.freq || 'month',
+    cur: row.currency || 'EGP',
+  };
+}
+
+db.readCompanySettings = function readCompanySettings() {
+  const row = db.prepare('SELECT * FROM company_settings WHERE id = 1').get();
+  return serializeSettings(row);
+};
+
+db.readTeam = function readTeam() {
+  return db.prepare('SELECT * FROM team_members ORDER BY sort_order ASC, id ASC').all().map(serializeTeamMember);
+};
+
+db.readExpenses = function readExpenses() {
+  return db.prepare('SELECT * FROM expenses ORDER BY sort_order ASC, id ASC').all().map(serializeExpense);
+};
+
 module.exports = db;

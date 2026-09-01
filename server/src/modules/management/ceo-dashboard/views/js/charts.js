@@ -285,10 +285,12 @@ export function sparkSVG(values, w = 120, h = 26) {
       stroke="${V('--surface-1')}" stroke-width="2"/></svg>`;
 }
 
-export function tile({ lab, val, sec, delta, spark }) {
-  return `<div class="tile"><div class="lab">${esc(lab)}</div><div class="val">${val}</div>
+export function tile({ lab, val, sec, delta, spark, href }) {
+  const tag = href ? 'a' : 'div';
+  const hrefAttr = href ? ` href="${esc(href)}"` : '';
+  return `<${tag} class="tile"${hrefAttr}><div class="lab">${esc(lab)}</div><div class="val">${val}</div>
     ${sec ? `<div class="sec">${sec}</div>` : ''}${delta ? `<div class="sec">${delta}</div>` : ''}
-    ${spark || ''}</div>`;
+    ${spark || ''}</${tag}>`;
 }
 export function meter(c) {
   const sev = sevOf(c.score);
