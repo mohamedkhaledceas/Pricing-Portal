@@ -1,7 +1,15 @@
 import { $, escapeHtml, toast } from './dom.js';
 import { apiFetch } from './apiClient.js';
+import { state } from './state.js';
 
 const KPI_PROFILES = ['content', 'artdirector', 'aidesigner', 'production', 'am', 'pandc', 'heads', 'design'];
+const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
+const EMPLOYMENT_TYPE_LABELS = { full_time: 'Full-time', part_time: 'Part-time', freelancer: 'Freelancer' };
+// 'on_leave' deliberately excluded — it's computed server-side from
+// approved leave requests, not a settable value (see rosterService).
+const STATUS_OPTIONS = ['active', 'remote'];
+const STATUS_LABELS = { active: 'Active', remote: 'Remote', on_leave: 'On Leave' };
+const STATUS_BADGE_CLASS = { active: 'badge-approved', remote: 'badge-approved', on_leave: 'badge-pending' };
 
 let rosterCache = [];
 let directoryCache = [];
@@ -60,10 +68,21 @@ async function updateEmployee(id) {
     // the row to exactly what's in these fields now", so a cleared input
     // must send an explicit clearing value, not omit the key (which the
     // repository's partial-update now reads as "leave it alone").
+    // .edit-status only exists when the row isn't currently showing the
+    // computed "On Leave" badge (see renderRosterTable) — omit the key
+    // entirely rather than send a bogus value, so the stored status is
+    // left untouched (matches the repository's partial-update semantics).
+    const statusEl = row.querySelector('.edit-status');
     const payload = {
       department: row.querySelector('.edit-department').value,
       kpiProfile: row.querySelector('.edit-kpi-profile').value,
       managerEmployeeId: row.querySelector('.edit-manager').value ? Number(row.querySelector('.edit-manager').value) : null,
+      jobTitle: row.querySelector('.edit-job-title').value,
+      employmentType: row.querySelector('.edit-employment-type').value,
+      joiningDate: row.querySelector('.edit-joining-date').value,
+      workLocation: row.querySelector('.edit-work-location').value,
+      workingHours: row.querySelector('.edit-working-hours').value,
+      ...(statusEl ? { status: statusEl.value } : {}),
     };
     await apiFetch(`/api/employees/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
     toast('Updated', 'info');
@@ -73,6 +92,34 @@ async function updateEmployee(id) {
   }
 }
 window.rosterUpdateEmployee = updateEmployee;
+
+// Deliberately not apiFetch — it hardcodes a JSON Content-Type header,
+// which breaks multipart uploads (the browser needs to set its own
+// Content-Type with the multipart boundary for FormData bodies).
+async function uploadPhoto(id, input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('photo', file);
+  try {
+    const res = await fetch(`/api/employees/${id}/photo`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + state.accessToken },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Upload failed');
+    }
+    toast('Photo updated', 'info');
+    await renderRoster();
+  } catch (err) {
+    toast(err.message, 'danger');
+  } finally {
+    input.value = '';
+  }
+}
+window.rosterUploadPhoto = uploadPhoto;
 
 async function toggleActive(id, active) {
   try {
@@ -92,7 +139,21 @@ async function renderRosterTable() {
 
   const rows = rosterCache.map((e) => `
     <tr id="roster-row-${e.id}">
-      <td>${escapeHtml(e.firstName + ' ' + e.lastName)}<div class="small muted">${escapeHtml(e.email)}</div></td>
+      <td>
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${e.photoUrl
+            ? `<img src="${escapeHtml(e.photoUrl)}" alt="" style="width:28px; height:28px; border-radius:50%; object-fit:cover;">`
+            : `<span style="width:28px; height:28px; border-radius:50%; background:var(--panel); border:1px solid var(--border); display:inline-block;"></span>`}
+          <div>
+            ${escapeHtml(e.firstName + ' ' + e.lastName)}<div class="small muted">${escapeHtml(e.email)}</div>
+            <label class="small muted" style="cursor:pointer;">
+              Change photo
+              <input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" onchange="rosterUploadPhoto(${e.id}, this)">
+            </label>
+          </div>
+        </div>
+      </td>
+      <td><input class="form-control edit-job-title small" value="${escapeHtml(e.jobTitle || '')}" style="min-width:110px;"></td>
       <td><input class="form-control edit-department small" value="${escapeHtml(e.department || '')}" style="min-width:110px;"></td>
       <td>
         <select class="form-control edit-kpi-profile small" style="min-width:120px;">
@@ -101,12 +162,28 @@ async function renderRosterTable() {
         </select>
       </td>
       <td>
+        <select class="form-control edit-employment-type small" style="min-width:110px;">
+          <option value="">—</option>
+          ${EMPLOYMENT_TYPES.map((t) => `<option value="${t}" ${e.employmentType === t ? 'selected' : ''}>${EMPLOYMENT_TYPE_LABELS[t]}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="date" class="form-control edit-joining-date small" value="${escapeHtml(e.joiningDate || '')}" style="min-width:130px;"></td>
+      <td><input class="form-control edit-work-location small" value="${escapeHtml(e.workLocation || '')}" style="min-width:110px;"></td>
+      <td><input class="form-control edit-working-hours small" value="${escapeHtml(e.workingHours || '')}" style="min-width:130px;" placeholder="e.g. Mon–Fri 9–5"></td>
+      <td>
         <select class="form-control edit-manager small" style="min-width:130px;">
           <option value="">— None —</option>
           ${managerOptions(e.id)}
         </select>
       </td>
       <td style="text-align:center;">${e.authRole === 'people_culture' ? '<span class="badge badge-approved">P&amp;C</span>' : ''}</td>
+      <td>
+        ${e.status === 'on_leave'
+          ? `<span class="badge ${STATUS_BADGE_CLASS.on_leave}">${STATUS_LABELS.on_leave}</span><div class="small muted">computed from approved leave</div>`
+          : `<select class="form-control edit-status small" style="min-width:100px;">
+              ${STATUS_OPTIONS.map((s) => `<option value="${s}" ${e.status === s ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`).join('')}
+            </select>`}
+      </td>
       <td>${e.active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
       <td>
         <button class="btn small" onclick="rosterUpdateEmployee(${e.id})">Save</button>
@@ -114,7 +191,7 @@ async function renderRosterTable() {
       </td>
     </tr>`).join('');
 
-  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="7" class="empty-state">No employees in the roster yet</td></tr>';
+  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="13" class="empty-state">No employees in the roster yet</td></tr>';
 
   // Pre-select each row's manager dropdown now that options exist.
   rosterCache.forEach((e) => {
@@ -230,8 +307,8 @@ export async function renderRoster() {
       <div class="card-title">All Employees</div>
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Department</th><th>KPI Profile</th><th>Manager</th><th>P&amp;C</th><th>Status</th><th></th></tr></thead>
-          <tbody id="roster-table-body"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Working Hours</th><th>Manager</th><th>P&amp;C</th><th>Status</th><th>Active</th><th></th></tr></thead>
+          <tbody id="roster-table-body"><tr><td colspan="13" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>
     </div>

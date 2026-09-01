@@ -1,0 +1,90 @@
+/* Styling for the shared account-menu avatar/dropdown and Account Settings
+   modal (accountMenu.js / accountSettings.js). Every value below falls back
+   to a hardcoded default alongside the page's own CSS variable, because the
+   four surfaces' token sets aren't identical — CEO Dashboard in particular
+   has no --brand/--on-accent/--radius of its own. This file has to look
+   right on all four without assuming any one page's full token set. */
+
+.account-avatar-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0; border-radius: 50%; overflow: hidden;
+}
+.account-avatar-img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;
+}
+.account-avatar-initials {
+  width: 100%; height: 100%; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--brand, #042940); color: var(--on-accent, #ffffff);
+  font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+}
+
+.account-menu-dropdown {
+  position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px;
+  background: var(--surface-1, #fff); border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: var(--radius, 10px); box-shadow: 0 14px 34px rgba(0,0,0,0.22);
+  padding: 6px; z-index: 30;
+}
+.account-menu-email {
+  padding: 8px 10px; font-size: 12.5px; color: var(--ink-2, #4a4a4a);
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.12)); margin-bottom: 4px; word-break: break-all;
+}
+.account-menu-item {
+  display: block; width: 100%; text-align: left; border: none;
+  border-radius: 6px; padding: 8px 10px; background: transparent; cursor: pointer;
+}
+.account-menu-item-split { display: flex; justify-content: space-between; align-items: center; }
+.account-menu-item-danger { color: var(--critical, #d03b3b); }
+.account-menu-divider { border-top: 1px solid var(--border, rgba(0,0,0,0.12)); margin: 4px 0; }
+
+.account-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+}
+.account-modal {
+  background: var(--surface-1, #fff); border-radius: var(--radius, 10px);
+  width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+}
+.account-modal-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 18px 20px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.12));
+}
+.account-modal-header h2 { margin: 0; font-size: 17px; }
+.account-modal-sub { font-size: 12.5px; color: var(--ink-2, #4a4a4a); margin-top: 2px; word-break: break-all; }
+.account-modal-body { padding: 4px 20px 20px; }
+.account-modal-section { padding: 16px 0; border-bottom: 1px solid var(--border, rgba(0,0,0,0.12)); }
+.account-modal-section:last-child { border-bottom: none; }
+.account-modal-section h3 { margin: 0 0 10px; font-size: 13.5px; }
+.account-modal-hint { font-size: 12.5px; color: var(--ink-2, #4a4a4a); margin: 0; }
+.account-modal-loading { font-size: 12.5px; color: var(--ink-2, #4a4a4a); }
+
+.account-photo-row { display: flex; align-items: center; gap: 14px; }
+.account-photo-row .account-avatar-img,
+.account-photo-row .account-avatar-initials { width: 56px; height: 56px; font-size: 20px; }
+.account-photo-row #acctPhotoPreview { width: 56px; height: 56px; border-radius: 50%; overflow: hidden; flex-shrink: 0; }
+.account-photo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.account-photo-upload-label { cursor: pointer; display: inline-flex; align-items: center; }
+
+.account-form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.account-field { flex: 1 1 140px; display: flex; flex-direction: column; gap: 4px; }
+.account-field label { font-size: 12px; color: var(--ink-2, #4a4a4a); }
+.account-field input {
+  padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border, rgba(0,0,0,0.15));
+  background: var(--surface-1, #fff); color: inherit; font: inherit;
+}
+/* Not every surface defines a `.small` button-size variant (only the
+   Employees page does globally) — size buttons inside this modal directly
+   rather than depend on that being present everywhere. */
+.account-modal-body .btn, .account-photo-actions .btn {
+  font-size: 12.5px; padding: 6px 10px; border-radius: 6px;
+}
+#acctInfoForm .btn, #acctPasswordForm .btn { margin-top: 10px; }
+
+.account-field-error { color: var(--critical, #d03b3b); font-size: 12.5px; margin: 8px 0; }
+.account-field-success { color: var(--good-text, var(--good-txt, #0ca30c)); font-size: 12.5px; margin: 8px 0; }
+
+.account-btn-primary { background: var(--brand, #042940); color: var(--on-accent, #ffffff); border: none; }
+.account-btn-primary:hover { filter: brightness(1.1); }
+.account-btn-danger { background: transparent; color: var(--critical, #d03b3b); border: 1px solid var(--critical, #d03b3b); }
+.account-btn-danger:disabled { opacity: 0.5; cursor: default; }

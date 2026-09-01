@@ -45,13 +45,22 @@ function existsByUserId(userId) {
   return !!db.prepare('SELECT id FROM employees WHERE user_id = ?').get(userId);
 }
 
-function insert({ userId, clickupUserId, department, kpiProfile, managerEmployeeId }) {
+function insert({
+  userId, clickupUserId, department, kpiProfile, managerEmployeeId,
+  jobTitle, employmentType, joiningDate, workLocation, workingHours, status,
+}) {
   const info = db
     .prepare(
-      `INSERT INTO employees (user_id, clickup_user_id, department, kpi_profile, manager_employee_id)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO employees (
+         user_id, clickup_user_id, department, kpi_profile, manager_employee_id,
+         job_title, employment_type, joining_date, work_location, working_hours, status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(userId, clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null);
+    .run(
+      userId, clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null,
+      jobTitle || null, employmentType || null, joiningDate || null, workLocation || null, workingHours || null,
+      status || 'active'
+    );
   return findById(info.lastInsertRowid);
 }
 
@@ -61,13 +70,22 @@ function insert({ userId, clickupUserId, department, kpiProfile, managerEmployee
 // Callers that mean to fully replace a row's editable fields, like
 // roster.js's Save button, are expected to keep passing all of them every
 // time — this only stops fields nobody mentioned from being wiped.
-function update(id, { clickupUserId, department, kpiProfile, managerEmployeeId }) {
+function update(id, {
+  clickupUserId, department, kpiProfile, managerEmployeeId,
+  jobTitle, employmentType, joiningDate, workLocation, workingHours, status,
+}) {
   const sets = [];
   const values = [];
   if (clickupUserId !== undefined) { sets.push('clickup_user_id = ?'); values.push(clickupUserId || null); }
   if (department !== undefined) { sets.push('department = ?'); values.push(department || null); }
   if (kpiProfile !== undefined) { sets.push('kpi_profile = ?'); values.push(kpiProfile || null); }
   if (managerEmployeeId !== undefined) { sets.push('manager_employee_id = ?'); values.push(managerEmployeeId || null); }
+  if (jobTitle !== undefined) { sets.push('job_title = ?'); values.push(jobTitle || null); }
+  if (employmentType !== undefined) { sets.push('employment_type = ?'); values.push(employmentType || null); }
+  if (joiningDate !== undefined) { sets.push('joining_date = ?'); values.push(joiningDate || null); }
+  if (workLocation !== undefined) { sets.push('work_location = ?'); values.push(workLocation || null); }
+  if (workingHours !== undefined) { sets.push('working_hours = ?'); values.push(workingHours || null); }
+  if (status !== undefined) { sets.push('status = ?'); values.push(status || 'active'); }
   if (sets.length === 0) return findById(id);
 
   sets.push('updated_at = CURRENT_TIMESTAMP');
@@ -77,6 +95,11 @@ function update(id, { clickupUserId, department, kpiProfile, managerEmployeeId }
 
 function setActive(id, active) {
   db.prepare('UPDATE employees SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(active ? 1 : 0, id);
+  return findById(id);
+}
+
+function setPhoto(id, photoUrl) {
+  db.prepare('UPDATE employees SET photo_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(photoUrl || null, id);
   return findById(id);
 }
 
@@ -98,5 +121,6 @@ module.exports = {
   insert,
   update,
   setActive,
+  setPhoto,
   setClickupUserId,
 };

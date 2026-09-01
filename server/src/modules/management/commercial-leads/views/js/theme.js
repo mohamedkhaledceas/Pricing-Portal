@@ -20,8 +20,13 @@ export function themePref() {
 }
 
 export function updateThemeToggleLabel() {
+  // #themeToggleState now lives inside the shared account-menu dropdown
+  // (accountMenu.js), which isn't mounted yet the first time init() calls
+  // this — null until the menu renders, so this must stay a no-op then.
+  const el = $('#themeToggleState');
+  if (!el) return;
   const pref = themePref();
-  $('#themeToggleState').textContent = pref === 'dark' ? 'Dark' : pref === 'light' ? 'Light' : 'System';
+  el.textContent = pref === 'dark' ? 'Dark' : pref === 'light' ? 'Light' : 'System';
 }
 
 export function cycleTheme() {

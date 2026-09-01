@@ -20,7 +20,11 @@ export function themePref() {
 }
 
 export function updateThemeToggleLabel() {
-  $('#themeToggleState').textContent = themePref() === 'dark' ? 'Dark' : themePref() === 'light' ? 'Light' : 'System';
+  // #themeToggleState now lives inside the shared account-menu dropdown
+  // (accountMenu.js), which isn't mounted yet the first time init() calls
+  // this — null until the menu renders, so this must stay a no-op then.
+  const el = $('#themeToggleState');
+  if (el) el.textContent = themePref() === 'dark' ? 'Dark' : themePref() === 'light' ? 'Light' : 'System';
 }
 
 /* Chart colors are read live from CSS custom properties at render time

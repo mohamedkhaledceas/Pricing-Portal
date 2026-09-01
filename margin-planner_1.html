@@ -240,6 +240,9 @@ body[data-mode="admin"] .bd-only{display:none !important}
 #printArea th,#printArea td{border-bottom:1px solid #ddd; padding:7px 6px; text-align:left}
 #printArea th.num,#printArea td.num{text-align:right}
 </style>
+<link rel="stylesheet" href="/shared/accountMenu.css">
+<script src="/shared/accountMenu.js"></script>
+<script src="/shared/accountSettings.js"></script>
 </head>
 <body>
 
@@ -261,26 +264,7 @@ body[data-mode="admin"] .bd-only{display:none !important}
   <button id="btnCommercialLead" class="ghost" hidden>Commercial Lead</button>
   <button id="btnLogin" class="primary">Log in</button>
   <input type="file" id="fileInput" accept="application/json" style="display:none">
-  <div id="accountMenuWrap" style="position:relative;">
-    <button id="btnAccountMenu" class="ghost" hidden aria-haspopup="true" aria-expanded="false" title="Account menu"
-      style="display:flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border-radius:50%;">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="8" r="4"></circle>
-        <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"></path>
-      </svg>
-    </button>
-    <div id="accountMenu" hidden role="menu"
-      style="position:absolute; right:0; top:calc(100% + 8px); min-width:230px; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; box-shadow:0 14px 34px rgba(0,0,0,0.22); padding:6px; z-index:30;">
-      <div id="accountMenuEmail" style="padding:8px 10px; font-size:12.5px; color:var(--ink-2); border-bottom:1px solid var(--border); margin-bottom:4px; word-break:break-all;"></div>
-      <button type="button" id="btnAccountSettings" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Account Settings</button>
-      <button type="button" id="btnThemeToggle" role="menuitem" class="ghost" title="Click to cycle: Light / Dark / System" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; border:none; border-radius:6px; padding:8px 10px;">
-        <span>Theme</span><span id="themeToggleState" class="muted"></span>
-      </button>
-      <button type="button" id="btnUsersView" role="menuitem" class="ghost" hidden style="width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px;">Users</button>
-      <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
-      <button type="button" id="btnLogout" role="menuitem" class="ghost" style="display:block; width:100%; text-align:left; border:none; border-radius:6px; padding:8px 10px; color:var(--critical);">Log out</button>
-    </div>
-  </div>
+  <div id="accountMenuWrap"></div>
 </header>
 
 <nav class="tabs" role="tablist">
@@ -750,44 +734,6 @@ body[data-mode="admin"] .bd-only{display:none !important}
 </div>
 
 <div id="printArea"></div>
-</div>
-
-<div id="accountSettingsView" hidden style="display:none;">
-  <header class="top">
-    <button type="button" id="btnAccountSettingsBack" class="ghost" title="Back to planner">← Back to planner</button>
-    <div>
-      <h1>Account Settings</h1>
-      <div class="sub" id="accountSettingsEmailLabel"></div>
-    </div>
-  </header>
-  <main>
-    <div class="card">
-      <h2>Account info</h2>
-      <p class="hint">Your name as it appears in the Users table.</p>
-      <form id="accountInfoForm">
-        <div class="row">
-          <div class="field"><label>First name</label><input id="aiFirstName" required></div>
-          <div class="field"><label>Last name</label><input id="aiLastName" required></div>
-        </div>
-        <div id="accountInfoError" role="alert" hidden style="color:var(--critical); font-size:12.5px; margin-top:10px;"></div>
-        <div id="accountInfoSuccess" role="status" hidden style="color:var(--good-text); font-size:12.5px; margin-top:10px;">Saved.</div>
-        <button type="submit" class="primary" style="margin-top:14px;">Save</button>
-      </form>
-    </div>
-    <div class="card">
-      <h2>Change password</h2>
-      <form id="accountPasswordForm">
-        <div class="row">
-          <div class="field"><label>Current password</label><input id="apCurrentPassword" type="password" autocomplete="current-password" required></div>
-          <div class="field"><label>New password</label><input id="apNewPassword" type="password" autocomplete="new-password" placeholder="at least 8 characters" minlength="8" required></div>
-          <div class="field"><label>Confirm new password</label><input id="apNewPasswordConfirm" type="password" autocomplete="new-password" required></div>
-        </div>
-        <div id="accountPasswordError" role="alert" hidden style="color:var(--critical); font-size:12.5px; margin-top:10px;"></div>
-        <div id="accountPasswordSuccess" role="status" hidden style="color:var(--good-text); font-size:12.5px; margin-top:10px;">Password changed.</div>
-        <button type="submit" class="primary" style="margin-top:14px;">Save</button>
-      </form>
-    </div>
-  </main>
 </div>
 
 <script>
@@ -2021,6 +1967,12 @@ function bindTables(){
   $('#btnHistory').addEventListener('click', openHistoryPanel);
   $('#btnHistoryClose').addEventListener('click', closeHistoryPanel);
   $('#historyBackdrop').addEventListener('click', closeHistoryPanel);
+  // Was previously part of the account-menu's own Escape handler
+  // (unrelated to the menu itself) — kept here now that the menu's Escape
+  // handling has moved into the shared accountMenu.js module.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#historyPanel').hidden) closeHistoryPanel();
+  });
 }
 function bindSettings(){
   const map = {'#s_company':'company','#s_hours':'defaultHours',
@@ -2115,11 +2067,6 @@ function setStoredAuth(token, user){
 }
 const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
 
-function closeAccountMenu(){
-  $('#accountMenu').hidden = true;
-  $('#btnAccountMenu').setAttribute('aria-expanded', 'false');
-}
-
 /* Auth now lives on its own page (/login) — a visitor with no live session
    is sent there directly rather than shown an embedded form. Every caller
    of this function (boot, session expiry, logout) is fine with that being
@@ -2136,13 +2083,19 @@ function updateLoginUi(){
 
   const appShell = $('#appShell');
   $('#btnLogin').hidden = true;
-  $('#btnAccountMenu').hidden = false;
-  closeAccountMenu();
 
   if (auth.user) {
-    $('#accountMenuEmail').textContent = auth.user.email || '';
-    $('#btnUsersView').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
     $('#btnCommercialLead').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
+    window.AccountMenu.mount($('#accountMenuWrap'), {
+      apiFetch: apiRequest,
+      currentUser: auth.user,
+      getAccessToken: () => getStoredAuth().token,
+      canManageUsers: USER_MANAGER_ROLES.includes(auth.user.role),
+      onUsersClick: openUsersView,
+      onLogout: logoutFromApi,
+      cycleTheme,
+      updateThemeToggleLabel,
+    });
   }
 
   appShell.hidden = false;
@@ -2524,7 +2477,9 @@ async function logoutFromApi(){
 $('#btnLogin').addEventListener('click', () => {
   window.location.href = '/login';
 });
-$('#btnLogout').addEventListener('click', logoutFromApi);
+// btnLogout is inside the shared account-menu dropdown now (mounted from
+// updateLoginUi(), which passes logoutFromApi as onLogout) — no static
+// element to bind here anymore.
 function migrate(d){
   d.settings = Object.assign({company:'',currency:'EGP',display:'EGP',defaultHours:176,defaultUtil:70,
     targetMargin:35,contingency:10,basis:'recovery',floorMargin:15,
@@ -2595,7 +2550,10 @@ function bindTheme(){
     mq.addEventListener ? mq.addEventListener('change', h) : mq.addListener(h);
   }
   updateThemeToggleLabel();
-  $('#btnThemeToggle').addEventListener('click', cycleTheme);
+  // #btnThemeToggle lives inside the shared account-menu dropdown now,
+  // not in the static page markup — accountMenu.js binds its click handler
+  // itself each time the menu is (re-)rendered, mounted from
+  // updateLoginUi(). Nothing to bind here anymore.
   document.addEventListener('input', () => {
     dirty = true;
   }, true);
@@ -2607,11 +2565,9 @@ function bindTheme(){
     e.preventDefault(); e.returnValue = '';
   });
 }
-/* The two mutually-exclusive top-level views once logged in. Users lives
-   inside the planner view as an ordinary tabpanel (like /employees' Users
-   tab) rather than its own top-level view — reached only via the account
-   menu, same as employees, with no dedicated "back" button. */
-const VIEWS = { planner: '#appShell', accountSettings: '#accountSettingsView' };
+/* Account Settings is now the shared modal (accountSettings.js), not a
+   page view — showPlannerView/VIEWS only has one real view left now. */
+const VIEWS = { planner: '#appShell' };
 function showView(name){
   Object.entries(VIEWS).forEach(([key, sel]) => {
     const el = $(sel);
@@ -2628,88 +2584,6 @@ function openUsersView(){
   selectTab('users');
   loadUsersTable();
   window.scrollTo({top:0});
-}
-function openAccountSettings(){
-  showView('accountSettings');
-  loadAccountSettingsView();
-}
-function loadAccountSettingsView(){
-  const auth = getStoredAuth();
-  const user = auth && auth.user ? auth.user : {};
-  $('#accountSettingsEmailLabel').textContent = user.email || '';
-  $('#aiFirstName').value = user.firstName || '';
-  $('#aiLastName').value = user.lastName || '';
-  $('#accountInfoError').hidden = true;
-  $('#accountInfoSuccess').hidden = true;
-  $('#accountPasswordForm').reset();
-  $('#accountPasswordError').hidden = true;
-  $('#accountPasswordSuccess').hidden = true;
-}
-function bindAccountSettingsView(){
-  $('#btnAccountSettingsBack').addEventListener('click', showPlannerView);
-
-  $('#accountInfoForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const firstName = $('#aiFirstName').value.trim();
-    const lastName = $('#aiLastName').value.trim();
-    const errBox = $('#accountInfoError');
-    const okBox = $('#accountInfoSuccess');
-    errBox.hidden = true; okBox.hidden = true;
-    if(!firstName || !lastName){
-      errBox.textContent = 'Please fill in both first and last name.';
-      errBox.hidden = false;
-      return;
-    }
-    try{
-      const result = await apiRequest('/api/me/profile', {
-        method: 'PATCH',
-        body: JSON.stringify({ firstName, lastName })
-      });
-      const auth = getStoredAuth();
-      setStoredAuth(auth.token, result.user);
-      $('#accountSettingsEmailLabel').textContent = result.user.email || '';
-      okBox.hidden = false;
-    }catch(err){
-      errBox.textContent = err.message || 'Could not save changes.';
-      errBox.hidden = false;
-    }
-  });
-
-  $('#accountPasswordForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const currentPassword = $('#apCurrentPassword').value;
-    const newPassword = $('#apNewPassword').value;
-    const newPasswordConfirm = $('#apNewPasswordConfirm').value;
-    const errBox = $('#accountPasswordError');
-    const okBox = $('#accountPasswordSuccess');
-    errBox.hidden = true; okBox.hidden = true;
-    if(!currentPassword || !newPassword || !newPasswordConfirm){
-      errBox.textContent = 'Please fill in every field.';
-      errBox.hidden = false;
-      return;
-    }
-    if(newPassword.length < 8){
-      errBox.textContent = 'New password must be at least 8 characters long.';
-      errBox.hidden = false;
-      return;
-    }
-    if(newPassword !== newPasswordConfirm){
-      errBox.textContent = 'New passwords do not match.';
-      errBox.hidden = false;
-      return;
-    }
-    try{
-      await apiRequest('/api/me/password', {
-        method: 'PATCH',
-        body: JSON.stringify({ currentPassword, newPassword })
-      });
-      okBox.hidden = false;
-      $('#accountPasswordForm').reset();
-    }catch(err){
-      errBox.textContent = err.message || 'Could not change password.';
-      errBox.hidden = false;
-    }
-  });
 }
 const ASSIGNABLE_ROLES = ['employee', 'manager', 'operations', 'finance', 'admin', 'people_culture'];
 const ROLE_LABELS = { employee: 'Employee', manager: 'Manager', operations: 'Operations', finance: 'Finance', admin: 'Admin', people_culture: 'People & Culture' };
@@ -2793,26 +2667,12 @@ function bindUsersView(){
     }
   });
 }
-function bindAccountMenu(){
-  $('#btnAccountMenu').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isOpen = !$('#accountMenu').hidden;
-    if(isOpen){ closeAccountMenu(); return; }
-    $('#accountMenu').hidden = false;
-    $('#btnAccountMenu').setAttribute('aria-expanded', 'true');
-  });
-  document.addEventListener('click', (e) => {
-    const wrap = $('#accountMenuWrap');
-    if(wrap && !wrap.contains(e.target)) closeAccountMenu();
-  });
-  document.addEventListener('keydown', (e) => {
-    if(e.key !== 'Escape') return;
-    closeAccountMenu();
-    if(!$('#accountSettingsView').hidden) showPlannerView();
-    if(!$('#historyPanel').hidden) closeHistoryPanel();
-  });
+// The account-menu dropdown itself (open/close, Theme, Account Settings,
+// Users, Log out) is now owned by the shared accountMenu.js/
+// accountSettings.js modules, mounted from updateLoginUi() — this function
+// only keeps the nav buttons that sit next to it, which stay page-specific.
+function bindNavButtons(){
   $('#brandLogo').addEventListener('click', () => {
-    closeAccountMenu();
     showPlannerView();
   });
   $('#btnEmployees').addEventListener('click', () => {
@@ -2820,14 +2680,6 @@ function bindAccountMenu(){
   });
   $('#btnCommercialLead').addEventListener('click', () => {
     window.location.href = '/commercial-lead';
-  });
-  $('#btnAccountSettings').addEventListener('click', () => {
-    closeAccountMenu();
-    openAccountSettings();
-  });
-  $('#btnUsersView').addEventListener('click', () => {
-    closeAccountMenu();
-    openUsersView();
   });
 }
 
@@ -2838,7 +2690,7 @@ state.projects.forEach(pr => {
   const base = projectCalc(pr).price;
   (pr.scenarios||[]).forEach(s => { if(s._pct){ s.price = Math.round(base * s._pct); delete s._pct; } });
 });
-bindTabs(); bindTables(); bindSettings(); bindFiles(); bindModes(); bindTheme(); bindAccountMenu(); bindAccountSettingsView(); bindUsersView();
+bindTabs(); bindTables(); bindSettings(); bindFiles(); bindModes(); bindTheme(); bindNavButtons(); bindUsersView();
 $('#fitStart').value = thisMonth();
 
 /* No persisted cache to render from instantly — access tokens are memory-
