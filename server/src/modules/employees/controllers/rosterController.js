@@ -1,3 +1,5 @@
+const { EmployeesError } = require('../errors');
+
 /* No local try/catch — EmployeesError extends the shared AppError, so a
    thrown error is auto-forwarded by Express to errorHandler.js, which
    already renders it correctly and now logs it with a correlation ID. */
@@ -33,6 +35,12 @@ function createRosterController({ rosterService }) {
       department: body.department,
       kpiProfile: body.kpiProfile,
       managerEmployeeId: body.managerEmployeeId,
+      jobTitle: body.jobTitle,
+      employmentType: body.employmentType,
+      joiningDate: body.joiningDate,
+      workLocation: body.workLocation,
+      workingHours: body.workingHours,
+      status: body.status,
       actorId: req.user.id,
       ip: req.ip,
     });
@@ -49,6 +57,48 @@ function createRosterController({ rosterService }) {
       department: body.department,
       kpiProfile: body.kpiProfile,
       managerEmployeeId: body.managerEmployeeId,
+      jobTitle: body.jobTitle,
+      employmentType: body.employmentType,
+      joiningDate: body.joiningDate,
+      workLocation: body.workLocation,
+      workingHours: body.workingHours,
+      status: body.status,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ employee });
+  }
+
+  function uploadPhoto(req, res) {
+    if (!req.file) throw new EmployeesError('A photo file is required.');
+    const photoUrl = `/uploads/employees/${req.file.filename}`;
+    const employee = rosterService.setPhoto({
+      actorAuthRole: req.user.role,
+      actorEmployee: req.employee,
+      targetId: Number(req.params.id),
+      photoUrl,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ employee });
+  }
+
+  function uploadMyPhoto(req, res) {
+    if (!req.file) throw new EmployeesError('A photo file is required.');
+    const photoUrl = `/uploads/employees/${req.file.filename}`;
+    const employee = rosterService.setMyPhoto({
+      actorEmployee: req.employee,
+      photoUrl,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ employee });
+  }
+
+  function removeMyPhoto(req, res) {
+    const employee = rosterService.setMyPhoto({
+      actorEmployee: req.employee,
+      photoUrl: null,
       actorId: req.user.id,
       ip: req.ip,
     });
@@ -79,7 +129,7 @@ function createRosterController({ rosterService }) {
     return res.json({ employee });
   }
 
-  return { list, getMine, directory, getDirectReports, create, update, deactivate, reactivate };
+  return { list, getMine, directory, getDirectReports, create, update, deactivate, reactivate, uploadPhoto, uploadMyPhoto, removeMyPhoto };
 }
 
 module.exports = createRosterController;

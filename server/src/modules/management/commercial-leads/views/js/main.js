@@ -57,24 +57,6 @@ function bindUi() {
   // would just fail again with the same session gone, right back to an
   // "Unauthorized" screen instead of anywhere useful.
   $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
-  $('#btnAccountMenu').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const menu = $('#accountMenu');
-    menu.hidden = !menu.hidden;
-    $('#btnAccountMenu').setAttribute('aria-expanded', String(!menu.hidden));
-  });
-  document.addEventListener('click', () => { $('#accountMenu').hidden = true; });
-  $('#btnThemeToggle').addEventListener('click', (e) => { e.stopPropagation(); cycleTheme(); });
-  $('#btnAccountSettings').addEventListener('click', () => { window.location.href = '/?open=accountSettings'; });
-  $('#btnUsersView').addEventListener('click', () => { window.location.href = '/?open=users'; });
-  $('#btnLogout').addEventListener('click', async () => {
-    try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
-    // Not '/' — this page has no logged-out state of its own, so bouncing
-    // back here with no session just re-triggers the loginGate's harsh
-    // "Unauthorized" screen instead of a clean sign-in form.
-    window.location.href = '/login';
-  });
-
   bindDealsUi();
   bindQuarterlyUi();
 }
@@ -93,8 +75,20 @@ function bindUi() {
     $('#loginGateFail').hidden = false;
     return;
   }
-  $('#btnUsersView').hidden = !state.currentUser || !USER_MANAGER_ROLES.includes(state.currentUser.role);
-  $('#accountMenuEmail').textContent = state.currentUser ? state.currentUser.email || '' : '';
+  const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
+  window.AccountMenu.mount($('#accountMenuWrap'), {
+    apiFetch,
+    currentUser: state.currentUser,
+    getAccessToken: () => state.accessToken,
+    canManageUsers,
+    onUsersClick: () => { window.location.href = '/?open=users'; },
+    onLogout: async () => {
+      try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
+      window.location.href = '/login';
+    },
+    cycleTheme,
+    updateThemeToggleLabel,
+  });
   $('#loginGate').style.display = 'none';
   $('#app').style.display = 'block';
   renderDashboardSkeletons();

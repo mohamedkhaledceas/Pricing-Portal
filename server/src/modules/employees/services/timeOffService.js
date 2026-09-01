@@ -155,7 +155,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   // either); pending/manager_approved are "in progress"; cancelled gets its
   // own bucket so every column set sums exactly to `requested`.
   function getLeaveBreakdown({ employeeId, actorAuthRole }) {
-    if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.PEOPLE_CULTURE) {
+    if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.PEOPLE_CULTURE && actorAuthRole !== roles.ADMIN) {
       throw new EmployeesError('You do not have permission to view leave-request history.', 403);
     }
     const byType = {};

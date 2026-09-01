@@ -10,6 +10,8 @@ import { renderAll } from './render.js';
    this page gets the same "Unauthorized" loginGate state as a failed
    login, driven by the 403 the API calls below will actually throw. */
 const CEO_VIEW_ROLES = ['manager', 'admin'];
+// Matches every other surface's own Users-menu-item gate.
+const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
 
 async function loadEntity(entityKey) {
   const [snapRes, briefRes] = await Promise.all([
@@ -34,25 +36,6 @@ async function switchEntity(entityKey) {
 function bindUi() {
   $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
   $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
-  $('#btnAccountMenu').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const menu = $('#accountMenu');
-    menu.hidden = !menu.hidden;
-    $('#btnAccountMenu').setAttribute('aria-expanded', String(!menu.hidden));
-  });
-  document.addEventListener('click', () => { $('#accountMenu').hidden = true; });
-  $('#btnThemeToggle').addEventListener('click', (e) => {
-    e.stopPropagation();
-    cycleTheme();
-    // Chart colors are read live from CSS vars at draw time — redraw so
-    // they pick up the new theme instead of staying stuck on the old one.
-    renderAll();
-  });
-  $('#btnLogout').addEventListener('click', async () => {
-    try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
-    window.location.href = '/login';
-  });
-
   $$('.seg [data-ent]').forEach((b) => b.addEventListener('click', () => { switchEntity(b.dataset.ent); }));
 
   const bh = $('#briefhead');
@@ -81,7 +64,23 @@ function bindUi() {
     $('#loginGateFail').hidden = false;
     return;
   }
-  $('#accountMenuEmail').textContent = state.currentUser.email || '';
+  const canManageUsers = USER_MANAGER_ROLES.includes(state.currentUser.role);
+  window.AccountMenu.mount($('#accountMenuWrap'), {
+    apiFetch,
+    currentUser: state.currentUser,
+    getAccessToken: () => state.accessToken,
+    canManageUsers,
+    onUsersClick: () => { window.location.href = '/?open=users'; },
+    onLogout: async () => {
+      try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
+      window.location.href = '/login';
+    },
+    cycleTheme,
+    updateThemeToggleLabel,
+    // Chart colors are read live from CSS vars at draw time — redraw so
+    // they pick up the new theme instead of staying stuck on the old one.
+    onThemeChange: renderAll,
+  });
   $('#loginGate').style.display = 'none';
   $('#app').style.display = 'block';
 

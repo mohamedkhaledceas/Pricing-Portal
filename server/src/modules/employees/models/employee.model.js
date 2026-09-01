@@ -14,6 +14,16 @@ function toEmployee(row) {
     kpiProfile: row.kpi_profile,
     managerEmployeeId: row.manager_employee_id,
     active: row.active !== 0,
+    jobTitle: row.job_title,
+    employmentType: row.employment_type,
+    joiningDate: row.joining_date,
+    workLocation: row.work_location,
+    workingHours: row.working_hours,
+    photoUrl: row.photo_url,
+    // Raw stored value only — 'active' | 'remote'. The 'on_leave' override
+    // is never stored; it's applied on top of this by rosterService at
+    // read time (see decorateStatus there).
+    status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -30,6 +40,9 @@ function toDirectoryEntry(row) {
     firstName: row.user_first_name,
     lastName: row.user_last_name,
     department: row.department,
+    jobTitle: row.job_title,
+    photoUrl: row.photo_url,
+    status: row.status,
     managerEmployeeId: row.manager_employee_id,
     online: !!row.user_online,
   };

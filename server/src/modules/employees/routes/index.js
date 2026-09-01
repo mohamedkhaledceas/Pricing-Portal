@@ -1,5 +1,6 @@
 const express = require('express');
 const catchAsync = require('../../../common/catchAsync');
+const { upload, verifyImageSignature, scanForMalware } = require('../middleware/photoUpload');
 
 /* Mounted at /api in index.js. authenticate (from modules/auth) +
    attachEmployee (this module's own middleware) run on every route here —
@@ -10,6 +11,8 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.use(authenticate, attachEmployee);
 
   router.get('/employees/me', rosterController.getMine);
+  router.post('/employees/me/photo', upload.single('photo'), verifyImageSignature, scanForMalware, rosterController.uploadMyPhoto);
+  router.delete('/employees/me/photo', rosterController.removeMyPhoto);
   router.get('/employees/directory', rosterController.directory);
   router.get('/employees/team', rosterController.getDirectReports);
   router.get('/employees', rosterController.list);
@@ -17,6 +20,13 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.patch('/employees/:id', rosterController.update);
   router.post('/employees/:id/deactivate', rosterController.deactivate);
   router.post('/employees/:id/reactivate', rosterController.reactivate);
+  router.post(
+    '/employees/:id/photo',
+    upload.single('photo'),
+    verifyImageSignature,
+    scanForMalware,
+    rosterController.uploadPhoto
+  );
 
   // submit/managerDecision/pcConfirm/cancel are async (they await the
   // ClickUp sync — see clickupLeaveSync.js) and need catchAsync so an

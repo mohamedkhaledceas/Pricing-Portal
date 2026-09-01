@@ -19,6 +19,7 @@ const clickupClient = require('../../common/integrations/clickupClient');
 const timeOffRules = require('./services/timeOffRules');
 const kpiFrameworkSeed = require('./services/kpiFrameworkSeed.data');
 const createAttachEmployeeMiddleware = require('./middleware/attachEmployee');
+const { deleteStoredPhoto } = require('./middleware/photoUpload');
 const createRosterService = require('./services/rosterService');
 const createTimeOffService = require('./services/timeOffService');
 const createConflictPairService = require('./services/conflictPairService');
@@ -37,7 +38,7 @@ kpiDefinitionRepository.seedMany(kpiFrameworkSeed);
 
 const attachEmployee = createAttachEmployeeMiddleware({ employeeRepository, employeeModel });
 
-const rosterService = createRosterService({ employeeRepository, employeeModel, audit, roles: ROLES });
+const rosterService = createRosterService({ employeeRepository, employeeModel, leaveRequestRepository, audit, roles: ROLES, deleteStoredPhoto });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, roles: ROLES });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, employeeRepository, roles: ROLES });

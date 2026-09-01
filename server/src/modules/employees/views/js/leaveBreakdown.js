@@ -76,12 +76,13 @@ export async function renderLeaveReport() {
           ${candidates.map((c) => `<option value="${c.id}">${escapeHtml(c.firstName + ' ' + c.lastName)}${c.department ? ' — ' + escapeHtml(c.department) : ''}</option>`).join('')}
         </select>
       </div>
-      <button class="btn primary" id="leave-breakdown-refresh-btn">View</button>
     </div>
     <div id="leave-breakdown-content"></div>
   `;
 
+  // Selecting a person loads their breakdown immediately — no separate
+  // "View" button/click needed.
   const refresh = () => renderBreakdown(Number($('#leave-breakdown-employee-select').value));
-  $('#leave-breakdown-refresh-btn').addEventListener('click', refresh);
+  $('#leave-breakdown-employee-select').addEventListener('change', refresh);
   refresh();
 }

@@ -15,7 +15,7 @@ import { renderLeaveReport } from './leaveBreakdown.js';
 const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'manager'];
 // Leave Report is scoped to the two roles that actually review/approve
 // requests — not admin (canManageRoster's superset doesn't apply here).
-const LEAVE_REPORT_ROLES = ['manager', 'people_culture'];
+const LEAVE_REPORT_ROLES = ['manager', 'people_culture', 'admin'];
 // Same gate as margin-planner_1.html's own Commercial Lead button
 // (USER_MANAGER_ROLES) — role only.
 const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
@@ -45,26 +45,18 @@ export function switchMainTab(tabId, btn) {
 }
 window.switchMainTab = switchMainTab;
 
+// Not '/' — this page has no logged-out state of its own, so bouncing back
+// here with no session just re-triggers the loginGate's harsh
+// "Unauthorized" screen instead of a clean sign-in form.
+async function doLogout() {
+  try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
+  window.location.href = '/login';
+}
+
 function bindUi() {
   $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
-  $('#btnAccountMenu').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const menu = $('#accountMenu');
-    menu.hidden = !menu.hidden;
-    $('#btnAccountMenu').setAttribute('aria-expanded', String(!menu.hidden));
-  });
-  document.addEventListener('click', () => { $('#accountMenu').hidden = true; });
-  $('#btnThemeToggle').addEventListener('click', (e) => { e.stopPropagation(); cycleTheme(); });
   $('#btnCeoDashboard').addEventListener('click', () => { window.location.href = '/ceo'; });
   $('#btnMarginPlanner').addEventListener('click', () => { window.location.href = '/planner'; });
-  $('#btnUsersView').addEventListener('click', () => { switchMainTab('users'); });
-  $('#btnLogout').addEventListener('click', async () => {
-    try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
-    // Not '/' — this page has no logged-out state of its own, so bouncing
-    // back here with no session just re-triggers the loginGate's harsh
-    // "Unauthorized" screen instead of a clean sign-in form.
-    window.location.href = '/login';
-  });
 
   $all('.nav-tab').forEach((btn) => btn.addEventListener('click', () => switchMainTab(btn.dataset.tab, btn)));
   $all('.sub-nav-tab').forEach((btn) => btn.addEventListener('click', () => switchSubTab(btn.dataset.subtab, btn)));
@@ -92,7 +84,6 @@ function bindUi() {
   const meRes = await apiFetch('/api/employees/me');
   state.myEmployee = meRes.employee;
 
-  $('#accountMenuEmail').textContent = state.currentUser ? state.currentUser.email || '' : '';
   const emp = state.myEmployee;
   // "My Team" tab is visible with an employee profile (may manage direct
   // reports) OR for manager/people_culture roles, who need it for their
@@ -111,7 +102,16 @@ function bindUi() {
   $('#btnCeoDashboard').hidden = !(state.currentUser && CEO_DASHBOARD_ROLES.includes(state.currentUser.role));
   $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
   const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
-  $('#btnUsersView').hidden = !canManageUsers;
+  window.AccountMenu.mount($('#accountMenuWrap'), {
+    apiFetch,
+    currentUser: state.currentUser,
+    getAccessToken: () => state.accessToken,
+    canManageUsers,
+    onUsersClick: () => switchMainTab('users'),
+    onLogout: doLogout,
+    cycleTheme,
+    updateThemeToggleLabel,
+  });
 
   $('#loginGate').style.display = 'none';
   $('#app').style.display = 'block';
