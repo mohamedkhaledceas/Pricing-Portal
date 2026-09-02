@@ -36,6 +36,7 @@
       <div id="accountMenu" hidden role="menu" class="account-menu-dropdown">
         <div id="accountMenuEmail" class="account-menu-email">${escapeHtml((opts.currentUser && opts.currentUser.email) || '')}</div>
         <button type="button" id="btnAccountSettings" role="menuitem" class="ghost account-menu-item">Account Settings</button>
+        <button type="button" id="btnTeamsView" role="menuitem" class="ghost account-menu-item">Teams</button>
         <button type="button" id="btnThemeToggle" role="menuitem" class="ghost account-menu-item account-menu-item-split" title="Click to cycle: Light / Dark / System">
           <span>Theme</span><span id="themeToggleState" class="muted"></span>
         </button>
@@ -86,6 +87,10 @@
     document.getElementById('btnAccountSettings').addEventListener('click', () => {
       closeMenu();
       if (window.AccountMenu.openSettings) window.AccountMenu.openSettings(opts);
+    });
+    document.getElementById('btnTeamsView').addEventListener('click', () => {
+      closeMenu();
+      if (window.AccountMenu.openTeams) window.AccountMenu.openTeams(opts);
     });
     const usersBtn = document.getElementById('btnUsersView');
     if (usersBtn) {

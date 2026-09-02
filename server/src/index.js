@@ -4,9 +4,18 @@ const http = require('http');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const db = require('./db');
-const { router: authRouter, authenticate: authMiddleware } = require('./modules/auth');
+const authModule = require('./modules/auth');
 const management = require('./modules/management');
-const { router: employeesRouter } = require('./modules/employees');
+const { router: employeesRouter, provisionSelfRegisteredEmployee } = require('./modules/employees');
+
+/* Wires the signup wizard's employee-profile creation into auth's register
+   flow without either module importing the other's internals — see
+   auth/container.js's setEmployeeProvisioner and employees/container.js's
+   provisionSelfRegisteredEmployee. Must run before the server starts
+   accepting requests (it does, since this whole file runs synchronously
+   before httpServer.listen at the bottom). */
+authModule.setEmployeeProvisioner(provisionSelfRegisteredEmployee);
+const { router: authRouter, authenticate: authMiddleware } = authModule;
 const logger = require('./common/logger');
 const audit = require('./common/audit');
 const correlationId = require('./common/correlationId');

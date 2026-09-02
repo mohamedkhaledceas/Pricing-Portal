@@ -13,6 +13,7 @@
 })();
 </script>
 <link rel="stylesheet" href="/login/css/login.css">
+<script src="/shared/orgConstants.js"></script>
 </head>
 <body>
 
@@ -42,27 +43,104 @@
       <div class="form-group">
         <label class="form-label" for="signupFirstName">First name</label>
         <input id="signupFirstName" class="form-control" name="firstName" type="text" autocomplete="given-name" placeholder="Jane" required>
+        <div class="field-hint field-hint-error" id="hint-signupFirstName" hidden></div>
       </div>
       <div class="form-group">
         <label class="form-label" for="signupLastName">Last name</label>
         <input id="signupLastName" class="form-control" name="lastName" type="text" autocomplete="family-name" placeholder="Doe" required>
+        <div class="field-hint field-hint-error" id="hint-signupLastName" hidden></div>
       </div>
     </div>
     <div class="form-group">
       <label class="form-label" for="signupEmail">Email</label>
       <input id="signupEmail" class="form-control" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
+      <div class="field-hint field-hint-error" id="hint-signupEmail" hidden></div>
     </div>
     <div class="form-group">
       <label class="form-label" for="signupPassword">Password</label>
+      <div class="field-hint" id="hint-signupPassword">At least 8 characters</div>
       <input id="signupPassword" class="form-control" name="password" type="password" autocomplete="new-password" placeholder="at least 8 characters" minlength="8" required>
     </div>
     <div class="form-group">
       <label class="form-label" for="signupPasswordConfirm">Confirm password</label>
       <input id="signupPasswordConfirm" class="form-control" name="passwordConfirm" type="password" autocomplete="new-password" placeholder="re-enter password" minlength="8" required>
+      <div class="field-hint field-hint-error" id="hint-signupPasswordConfirm" hidden></div>
     </div>
-    <button type="submit" class="btn primary login-submit">Sign up</button>
+    <button type="submit" class="btn primary login-submit">Continue</button>
     <div id="signupError" class="alert alert-danger" role="alert" hidden></div>
     <button type="button" id="btnShowLogin" class="btn ghost login-switch">Already have an account? Log in</button>
+  </form>
+
+  <form id="signupStep2Form" class="card login-card" hidden>
+    <h2>Finish Setting Up Your Account</h2>
+    <p class="muted">A few details about your role at CEAS.</p>
+
+    <div class="form-group">
+      <label class="form-label" for="step2JobTitle">Job title</label>
+      <div class="field-hint">e.g. Copywriter, Account Manager</div>
+      <input id="step2JobTitle" class="form-control" type="text" required>
+      <div class="field-hint field-hint-error" id="hint-step2JobTitle" hidden></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="step2Department">Department</label>
+      <div class="field-hint">Which team you're joining</div>
+      <select id="step2Department" class="form-control" required>
+        <option value="">— Select —</option>
+      </select>
+      <div class="field-hint field-hint-error" id="hint-step2Department" hidden></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="step2EmploymentType">Employment type</label>
+      <div class="field-hint">Full-time, part-time, or freelance</div>
+      <select id="step2EmploymentType" class="form-control" required>
+        <option value="">— Select —</option>
+      </select>
+      <div class="field-hint field-hint-error" id="hint-step2EmploymentType" hidden></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="step2JoiningDate">Joining date</label>
+      <div class="field-hint">Your first day</div>
+      <input id="step2JoiningDate" class="form-control" type="date" required>
+      <div class="field-hint field-hint-error" id="hint-step2JoiningDate" hidden></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="step2WorkLocation">Work location</label>
+      <div class="field-hint">Where you'll be working from</div>
+      <select id="step2WorkLocation" class="form-control" required>
+        <option value="">— Select —</option>
+      </select>
+      <div class="field-hint field-hint-error" id="hint-step2WorkLocation" hidden></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="step2WorkingHours">Working hours</label>
+      <div class="field-hint">e.g. 10:00 AM – 6:00 PM</div>
+      <input id="step2WorkingHours" class="form-control" type="text" placeholder="10:00 AM – 6:00 PM" required>
+      <div class="field-hint field-hint-error" id="hint-step2WorkingHours" hidden></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="step2WorkSchedule">Work schedule</label>
+      <div class="field-hint">e.g. Sun – Thu</div>
+      <input id="step2WorkSchedule" class="form-control" type="text" placeholder="Sun – Thu" required>
+      <div class="field-hint field-hint-error" id="hint-step2WorkSchedule" hidden></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="step2Manager">Assigned manager</label>
+      <div class="field-hint" id="hint-step2ManagerInfo">Choose a department first</div>
+      <select id="step2Manager" class="form-control" disabled>
+        <option value="">— Select a department first —</option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn primary login-submit">Create account</button>
+    <div id="signupStep2Error" class="alert alert-danger" role="alert" hidden></div>
+    <button type="button" id="btnBackToStep1" class="btn ghost login-switch">Back</button>
   </form>
 </div>
 

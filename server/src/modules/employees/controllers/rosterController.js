@@ -10,11 +10,25 @@ function createRosterController({ rosterService }) {
   }
 
   function getMine(req, res) {
-    return res.json({ employee: req.employee });
+    // req.employee (from attachEmployee) is undecorated — fine for the
+    // permission checks it's normally used for, but Account Settings needs
+    // the real computed on_leave status, so this refetches through
+    // rosterService.getMine instead (see decorateStatusOne there).
+    const pendingChangeRequest = rosterService.getMyPendingChangeRequest(req.employee);
+    const employee = req.employee ? rosterService.getMine(req.user.id) : null;
+    return res.json({ employee, pendingChangeRequest });
   }
 
   function directory(req, res) {
     return res.json({ employees: rosterService.listDirectory() });
+  }
+
+  // Pre-auth (see routes/index.js — mounted before the authenticate gate) —
+  // powers the signup wizard's Assigned Manager dropdown, filtered to the
+  // department the person is currently choosing.
+  function teamHeadsPublic(req, res) {
+    const department = typeof req.query.department === 'string' ? req.query.department : '';
+    return res.json({ employees: rosterService.listTeamHeadsByDepartment(department) });
   }
 
   function getDirectReports(req, res) {
@@ -40,7 +54,9 @@ function createRosterController({ rosterService }) {
       joiningDate: body.joiningDate,
       workLocation: body.workLocation,
       workingHours: body.workingHours,
+      workSchedule: body.workSchedule,
       status: body.status,
+      isTeamHead: body.isTeamHead,
       actorId: req.user.id,
       ip: req.ip,
     });
@@ -62,7 +78,9 @@ function createRosterController({ rosterService }) {
       joiningDate: body.joiningDate,
       workLocation: body.workLocation,
       workingHours: body.workingHours,
+      workSchedule: body.workSchedule,
       status: body.status,
+      isTeamHead: body.isTeamHead,
       actorId: req.user.id,
       ip: req.ip,
     });
@@ -105,6 +123,50 @@ function createRosterController({ rosterService }) {
     return res.json({ employee });
   }
 
+  function updateMine(req, res) {
+    const body = req.body || {};
+    const result = rosterService.updateMine({
+      actorEmployee: req.employee,
+      department: body.department,
+      jobTitle: body.jobTitle,
+      employmentType: body.employmentType,
+      joiningDate: body.joiningDate,
+      workLocation: body.workLocation,
+      workingHours: body.workingHours,
+      workSchedule: body.workSchedule,
+      managerEmployeeId: body.managerEmployeeId,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json(result);
+  }
+
+  function pendingChangeRequests(req, res) {
+    const requests = rosterService.listPendingChangeRequests({ actorAuthRole: req.user.role });
+    return res.json({ requests });
+  }
+
+  function approveChangeRequest(req, res) {
+    const employee = rosterService.approveChangeRequest({
+      actorAuthRole: req.user.role,
+      requestId: Number(req.params.id),
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ employee });
+  }
+
+  function rejectChangeRequest(req, res) {
+    rosterService.rejectChangeRequest({
+      actorAuthRole: req.user.role,
+      requestId: Number(req.params.id),
+      decisionNote: (req.body || {}).decisionNote,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ ok: true });
+  }
+
   function deactivate(req, res) {
     const employee = rosterService.setActive({
       actorAuthRole: req.user.role,
@@ -129,7 +191,11 @@ function createRosterController({ rosterService }) {
     return res.json({ employee });
   }
 
-  return { list, getMine, directory, getDirectReports, create, update, deactivate, reactivate, uploadPhoto, uploadMyPhoto, removeMyPhoto };
+  return {
+    list, getMine, directory, teamHeadsPublic, getDirectReports, create, update, deactivate, reactivate,
+    uploadPhoto, uploadMyPhoto, removeMyPhoto, updateMine,
+    pendingChangeRequests, approveChangeRequest, rejectChangeRequest,
+  };
 }
 
 module.exports = createRosterController;

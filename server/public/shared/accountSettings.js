@@ -47,7 +47,22 @@
   async function loadMyEmployee(opts) {
     try {
       const res = await opts.apiFetch('/api/employees/me');
-      return res.employee || null;
+      return { employee: res.employee || null, pendingChangeRequest: res.pendingChangeRequest || null };
+    } catch (err) {
+      return { employee: null, pendingChangeRequest: null };
+    }
+  }
+
+  // Only fetched when the employee actually has a manager — directory is a
+  // full company list, so this is a mild over-fetch for just one name, but
+  // reuses the existing authenticated /directory endpoint rather than
+  // adding a new one just for this lookup.
+  async function loadManagerName(opts, managerEmployeeId) {
+    if (!managerEmployeeId) return null;
+    try {
+      const res = await opts.apiFetch('/api/employees/directory');
+      const manager = (res.employees || []).find((e) => e.id === managerEmployeeId);
+      return manager ? `${manager.firstName} ${manager.lastName}` : null;
     } catch (err) {
       return null;
     }
@@ -180,6 +195,117 @@
     });
   }
 
+  const WORK_DETAIL_FIELD_IDS = {
+    jobTitle: 'acctJobTitle',
+    department: 'acctDepartment',
+    employmentType: 'acctEmploymentType',
+    joiningDate: 'acctJoiningDate',
+    workLocation: 'acctWorkLocation',
+    workingHours: 'acctWorkingHours',
+    workSchedule: 'acctWorkSchedule',
+  };
+
+  function renderWorkDetailsSection(employee, pendingChangeRequest, managerName) {
+    if (!employee) {
+      return `
+        <p class="account-modal-hint">
+          You're not on the employee roster yet, so there are no work details to set.
+          Ask People &amp; Culture to add you, then come back here.
+        </p>`;
+    }
+    const oc = window.OrgConstants;
+    const statusLabel = employee.status === 'on_leave' ? 'On Leave' : (employee.status === 'remote' ? 'Remote' : 'Active');
+    const managerText = employee.managerEmployeeId ? escapeHtml(managerName || `Employee #${employee.managerEmployeeId}`) : 'No manager assigned yet';
+
+    if (pendingChangeRequest) {
+      const diffHtml = Object.keys(pendingChangeRequest.changes)
+        .map((field) => `<li>${escapeHtml(WORK_DETAIL_FIELD_IDS[field] ? field.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()) : field)}</li>`)
+        .join('');
+      return `
+        <p class="account-modal-hint">
+          A change you submitted is awaiting approval from your manager, admin, or People &amp; Culture —
+          you can't submit another until it's decided.
+        </p>
+        <ul class="account-pending-changes">${diffHtml}</ul>`;
+    }
+
+    return `
+      <form id="acctWorkDetailsForm">
+        <div class="account-form-row">
+          <div class="account-field"><label>Job title</label><input id="acctJobTitle" value="${escapeHtml(employee.jobTitle || '')}" required></div>
+          <div class="account-field">
+            <label>Department</label>
+            <select id="acctDepartment" required>
+              <option value="">— Select —</option>
+              ${oc.DEPARTMENTS.map((d) => `<option value="${d}" ${employee.department === d ? 'selected' : ''}>${escapeHtml(oc.DEPARTMENT_LABELS[d])}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="account-form-row">
+          <div class="account-field">
+            <label>Employment type</label>
+            <select id="acctEmploymentType" required>
+              <option value="">— Select —</option>
+              ${oc.EMPLOYMENT_TYPES.map((t) => `<option value="${t}" ${employee.employmentType === t ? 'selected' : ''}>${escapeHtml(oc.EMPLOYMENT_TYPE_LABELS[t])}</option>`).join('')}
+            </select>
+          </div>
+          <div class="account-field"><label>Joining date</label><input id="acctJoiningDate" type="date" value="${escapeHtml(employee.joiningDate || '')}" required></div>
+        </div>
+        <div class="account-form-row">
+          <div class="account-field">
+            <label>Work location</label>
+            <select id="acctWorkLocation" required>
+              <option value="">— Select —</option>
+              ${oc.WORK_LOCATIONS.map((l) => `<option value="${l}" ${employee.workLocation === l ? 'selected' : ''}>${escapeHtml(oc.WORK_LOCATION_LABELS[l])}</option>`).join('')}
+            </select>
+          </div>
+          <div class="account-field"><label>Working hours</label><input id="acctWorkingHours" placeholder="e.g. 10:00 AM – 6:00 PM" value="${escapeHtml(employee.workingHours || '')}" required></div>
+        </div>
+        <div class="account-form-row">
+          <div class="account-field"><label>Work schedule</label><input id="acctWorkSchedule" placeholder="e.g. Sun – Thu" value="${escapeHtml(employee.workSchedule || '')}" required></div>
+          <div class="account-field"><label>Manager</label><div class="account-readonly">${managerText}</div></div>
+        </div>
+        <div class="account-form-row">
+          <div class="account-field">
+            <label>Status</label>
+            <div class="account-readonly">${escapeHtml(statusLabel)}${employee.isTeamHead ? ' <span class="badge badge-approved">Team Head</span>' : ''}</div>
+          </div>
+        </div>
+        ${employee.profileLocked ? `<p class="account-modal-hint">Further changes to these fields require approval from your manager, admin, or People &amp; Culture.</p>` : ''}
+        <div id="acctWorkDetailsError" class="account-field-error" role="alert" hidden></div>
+        <div id="acctWorkDetailsSuccess" class="account-field-success" role="status" hidden></div>
+        <button type="submit" class="btn small account-btn-primary">Save</button>
+      </form>`;
+  }
+
+  function bindWorkDetailsForm(opts, employee) {
+    const form = document.getElementById('acctWorkDetailsForm');
+    if (!form || !employee) return;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      fieldError('acctWorkDetailsError', '');
+      fieldError('acctWorkDetailsSuccess', '');
+      const payload = {};
+      Object.keys(WORK_DETAIL_FIELD_IDS).forEach((field) => {
+        payload[field] = document.getElementById(WORK_DETAIL_FIELD_IDS[field]).value;
+      });
+      try {
+        const result = await opts.apiFetch('/api/employees/me', { method: 'PATCH', body: JSON.stringify(payload) });
+        if (result.pending) {
+          const employeeAgain = await loadMyEmployee(opts);
+          const managerName = await loadManagerName(opts, employeeAgain.employee && employeeAgain.employee.managerEmployeeId);
+          const section = document.getElementById('acctWorkDetailsSection');
+          section.outerHTML = `<div id="acctWorkDetailsSection">${renderWorkDetailsSection(employeeAgain.employee, employeeAgain.pendingChangeRequest, managerName)}</div>`;
+          return;
+        }
+        fieldError('acctWorkDetailsSuccess', 'Saved.');
+        document.getElementById('acctWorkDetailsSuccess').hidden = false;
+      } catch (err) {
+        fieldError('acctWorkDetailsError', err.message);
+      }
+    });
+  }
+
   async function openSettings(opts) {
     closeModal(); // in case one is somehow already open
     opts_currentUserRef = opts.currentUser;
@@ -200,6 +326,10 @@
           <section class="account-modal-section">
             <h3>Profile photo</h3>
             <div id="acctPhotoSection" class="account-modal-loading">Loading…</div>
+          </section>
+          <section class="account-modal-section">
+            <h3>Work details</h3>
+            <div id="acctWorkDetailsSection" class="account-modal-loading">Loading…</div>
           </section>
           <section class="account-modal-section">
             <h3>Account info</h3>
@@ -243,11 +373,18 @@
     bindInfoForm(opts);
     bindPasswordForm(opts);
 
-    const employee = await loadMyEmployee(opts);
+    const { employee, pendingChangeRequest } = await loadMyEmployee(opts);
     const photoSection = document.getElementById('acctPhotoSection');
     if (photoSection) {
       photoSection.outerHTML = `<div id="acctPhotoSection">${renderPhotoSection(employee)}</div>`;
       bindPhotoHandlers(opts, employee);
+    }
+
+    const managerName = await loadManagerName(opts, employee && employee.managerEmployeeId);
+    const workDetailsSection = document.getElementById('acctWorkDetailsSection');
+    if (workDetailsSection) {
+      workDetailsSection.outerHTML = `<div id="acctWorkDetailsSection">${renderWorkDetailsSection(employee, pendingChangeRequest, managerName)}</div>`;
+      bindWorkDetailsForm(opts, employee);
     }
   }
 

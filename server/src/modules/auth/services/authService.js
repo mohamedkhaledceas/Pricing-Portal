@@ -22,7 +22,18 @@ function createAuthService({
      deploy, create-user.js through a shell before any admin account exists
      yet). Unchanged behavior from before this module existed — only the
      default role literal changed, 'user' -> 'employee'. */
-  function register({ email, password, firstName, lastName, ip }) {
+  // workDetails/transaction/createEmployeeProfile: the signup wizard's step
+  // 2 (job title, department, etc.) is submitted together with step 1 in a
+  // single request (see modules/auth/views/js/main.js) and must create both
+  // the users row and the employees row atomically — no orphaned account if
+  // the employee-side validation fails (bad department, manager mismatch,
+  // etc.). createEmployeeProfile is injected rather than required directly,
+  // since auth must never import employees' services (module-boundary
+  // rule) — see auth/container.js's setEmployeeProvisioner and
+  // modules/employees/services/rosterService.js's createForSelfRegistration
+  // for the other side of this. transaction follows the exact same
+  // call-time-injected pattern changePassword below already uses.
+  function register({ email, password, firstName, lastName, workDetails, ip, transaction, createEmployeeProfile }) {
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
     const trimmedFirstName = typeof firstName === 'string' ? firstName.trim() : '';
     const trimmedLastName = typeof lastName === 'string' ? lastName.trim() : '';
@@ -40,18 +51,24 @@ function createAuthService({
       throw new AuthError('An account with this email already exists.', 409);
     }
 
-    const user = userRepository.insert({
-      email: normalizedEmail,
-      firstName: trimmedFirstName,
-      lastName: trimmedLastName,
-      passwordHash: hashPassword(password),
-      role: roles.EMPLOYEE,
+    return transaction(() => {
+      const user = userRepository.insert({
+        email: normalizedEmail,
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
+        passwordHash: hashPassword(password),
+        role: roles.EMPLOYEE,
+      });
+
+      if (createEmployeeProfile) {
+        createEmployeeProfile({ userId: user.id, ...(workDetails || {}), actorId: user.id, ip });
+      }
+
+      const refreshToken = refreshTokenRepository.issue(user.id);
+      audit.record({ userId: user.id, username: user.email, action: 'user.signup', entityType: 'user', entityId: String(user.id), ip });
+
+      return { token: signAccessToken(user), user: userModel.toPublicUser(user), refreshToken };
     });
-
-    const refreshToken = refreshTokenRepository.issue(user.id);
-    audit.record({ userId: user.id, username: user.email, action: 'user.signup', entityType: 'user', entityId: String(user.id), ip });
-
-    return { token: signAccessToken(user), user: userModel.toPublicUser(user), refreshToken };
   }
 
   function login({ email, password, ip }) {
