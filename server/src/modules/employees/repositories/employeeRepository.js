@@ -41,25 +41,37 @@ function findByManagerId(managerEmployeeId) {
   return db.prepare(`${SELECT_WITH_USER} WHERE e.manager_employee_id = ? ORDER BY u.first_name, u.last_name`).all(managerEmployeeId);
 }
 
+// Pre-auth lookup (see routes/index.js — mounted before the authenticate
+// gate) for the signup wizard's Assigned Manager dropdown. Deliberately
+// scoped to id/first/last name only at the call site (rosterService), not
+// here — this returns full rows like every other finder, the narrowing to a
+// minimal public shape happens in the model layer.
+function findTeamHeadsByDepartment(department) {
+  return db.prepare(`${SELECT_WITH_USER} WHERE e.department = ? AND e.is_team_head = 1 AND e.active = 1 ORDER BY u.first_name, u.last_name`).all(department);
+}
+
 function existsByUserId(userId) {
   return !!db.prepare('SELECT id FROM employees WHERE user_id = ?').get(userId);
 }
 
 function insert({
   userId, clickupUserId, department, kpiProfile, managerEmployeeId,
-  jobTitle, employmentType, joiningDate, workLocation, workingHours, status,
+  jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, status,
+  isTeamHead, profileLocked,
 }) {
   const info = db
     .prepare(
       `INSERT INTO employees (
          user_id, clickup_user_id, department, kpi_profile, manager_employee_id,
-         job_title, employment_type, joining_date, work_location, working_hours, status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         job_title, employment_type, joining_date, work_location, working_hours, work_schedule, status,
+         is_team_head, profile_locked
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       userId, clickupUserId || null, department || null, kpiProfile || null, managerEmployeeId || null,
       jobTitle || null, employmentType || null, joiningDate || null, workLocation || null, workingHours || null,
-      status || 'active'
+      workSchedule || null, status || 'active',
+      isTeamHead ? 1 : 0, profileLocked ? 1 : 0
     );
   return findById(info.lastInsertRowid);
 }
@@ -72,7 +84,8 @@ function insert({
 // time — this only stops fields nobody mentioned from being wiped.
 function update(id, {
   clickupUserId, department, kpiProfile, managerEmployeeId,
-  jobTitle, employmentType, joiningDate, workLocation, workingHours, status,
+  jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, status,
+  isTeamHead, profileLocked,
 }) {
   const sets = [];
   const values = [];
@@ -85,7 +98,10 @@ function update(id, {
   if (joiningDate !== undefined) { sets.push('joining_date = ?'); values.push(joiningDate || null); }
   if (workLocation !== undefined) { sets.push('work_location = ?'); values.push(workLocation || null); }
   if (workingHours !== undefined) { sets.push('working_hours = ?'); values.push(workingHours || null); }
+  if (workSchedule !== undefined) { sets.push('work_schedule = ?'); values.push(workSchedule || null); }
   if (status !== undefined) { sets.push('status = ?'); values.push(status || 'active'); }
+  if (isTeamHead !== undefined) { sets.push('is_team_head = ?'); values.push(isTeamHead ? 1 : 0); }
+  if (profileLocked !== undefined) { sets.push('profile_locked = ?'); values.push(profileLocked ? 1 : 0); }
   if (sets.length === 0) return findById(id);
 
   sets.push('updated_at = CURRENT_TIMESTAMP');
@@ -117,6 +133,7 @@ module.exports = {
   findById,
   findByUserId,
   findByManagerId,
+  findTeamHeadsByDepartment,
   existsByUserId,
   insert,
   update,

@@ -43,16 +43,32 @@ const accountAdminService = createAccountAdminService({
 
 const authenticate = createAuthenticateMiddleware({ userRepository, verifyAccessToken });
 
+/* Mutable holder, set (once, at boot) by index.js via setEmployeeProvisioner
+   below — NOT a direct require of modules/employees. Auth must never import
+   employees' services (module-boundary rule), and a plain require would be
+   circular anyway (employees already requires modules/auth for
+   `authenticate`). authController.register reads this at request time,
+   after index.js has finished wiring both modules together, so the setter
+   is always populated before any real HTTP request can arrive. See
+   modules/employees/container.js's provisionSelfRegisteredEmployee for the
+   function this ends up holding. */
+const employeeProvisioning = { createEmployeeProfile: null };
+
 const authController = createAuthController({
   authService,
   setRefreshCookie,
   clearRefreshCookie,
   readRefreshCookie,
   transaction,
+  employeeProvisioning,
 });
 
 const accountAdminController = createAccountAdminController({ accountAdminService, transaction });
 
 const router = createAuthRouter({ authController, accountAdminController, authenticate });
 
-module.exports = { router, authenticate };
+module.exports = {
+  router,
+  authenticate,
+  setEmployeeProvisioner(fn) { employeeProvisioning.createEmployeeProfile = fn; },
+};

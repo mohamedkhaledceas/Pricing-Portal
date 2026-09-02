@@ -84,3 +84,19 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .login-row .form-group{flex:1}
 .login-submit{width:100%; margin-top:6px; margin-bottom:14px}
 .login-switch{width:100%; font-size:12.5px}
+
+/* Live per-field hints/errors (signup step 1 & 2) and the password-strength
+   meter — plain informational text above an input by default, switching to
+   red only once it's actually flagging a problem (field-hint-error, or the
+   password hint's own strength state below). */
+.field-hint{font-size:11.5px; color:var(--muted)}
+.field-hint-error{color:var(--critical)}
+.field-hint-weak{color:var(--critical)}
+.field-hint-medium{color:#b8860b}
+.field-hint-strong{color:#1a8a3a}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])) .field-hint-medium{color:#e0b84d}
+  :root:where(:not([data-theme="light"])) .field-hint-strong{color:#5fd97f}
+}
+:root[data-theme="dark"] .field-hint-medium{color:#e0b84d}
+:root[data-theme="dark"] .field-hint-strong{color:#5fd97f}

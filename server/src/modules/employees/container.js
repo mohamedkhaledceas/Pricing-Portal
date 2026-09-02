@@ -7,9 +7,11 @@ const conflictPairRepository = require('./repositories/conflictPairRepository');
 const kpiDefinitionRepository = require('./repositories/kpiDefinitionRepository');
 const kpiScoreRepository = require('./repositories/kpiScoreRepository');
 const pillarAReviewRepository = require('./repositories/pillarAReviewRepository');
+const employeeProfileChangeRequestRepository = require('./repositories/employeeProfileChangeRequestRepository');
 const employeeModel = require('./models/employee.model');
 const leaveRequestModel = require('./models/leaveRequest.model');
 const conflictPairModel = require('./models/conflictPair.model');
+const profileChangeRequestModel = require('./models/profileChangeRequest.model');
 
 const audit = require('../../common/audit');
 const { ROLES } = require('../../common/constants/roles');
@@ -38,7 +40,10 @@ kpiDefinitionRepository.seedMany(kpiFrameworkSeed);
 
 const attachEmployee = createAttachEmployeeMiddleware({ employeeRepository, employeeModel });
 
-const rosterService = createRosterService({ employeeRepository, employeeModel, leaveRequestRepository, audit, roles: ROLES, deleteStoredPhoto });
+const rosterService = createRosterService({
+  employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
+  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto,
+});
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, roles: ROLES });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, employeeRepository, roles: ROLES });
@@ -63,4 +68,10 @@ const router = createEmployeesRouter({
   attachEmployee,
 });
 
-module.exports = { router };
+/* Exposed narrowly for auth's signup flow to call, via the late-bound
+   setter auth/container.js exports (setEmployeeProvisioner) — not a direct
+   cross-module require in either direction, avoiding both the module-
+   boundary rule and a require() cycle (employees already requires
+   modules/auth for `authenticate`; auth requiring employees back would be
+   circular). See index.js for where this actually gets wired together. */
+module.exports = { router, provisionSelfRegisteredEmployee: rosterService.createForSelfRegistration };

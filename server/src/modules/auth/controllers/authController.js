@@ -10,9 +10,14 @@ const { AuthError } = require('../errors');
    already knows how to turn an AppError into the same `{error: message}`
    shape this used to build by hand. The difference: it's actually logged
    now, with a correlation ID, instead of vanishing on the way out. */
-function createAuthController({ authService, setRefreshCookie, clearRefreshCookie, readRefreshCookie, transaction }) {
+function createAuthController({ authService, setRefreshCookie, clearRefreshCookie, readRefreshCookie, transaction, employeeProvisioning }) {
   function register(req, res) {
-    const { token, user, refreshToken } = authService.register({ ...req.body, ip: req.ip });
+    const { token, user, refreshToken } = authService.register({
+      ...req.body,
+      ip: req.ip,
+      transaction,
+      createEmployeeProfile: employeeProvisioning.createEmployeeProfile,
+    });
     setRefreshCookie(res, refreshToken);
     return res.status(201).json({ token, user });
   }

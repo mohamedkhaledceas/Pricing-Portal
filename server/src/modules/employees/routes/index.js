@@ -8,12 +8,23 @@ const { upload, verifyImageSignature, scanForMalware } = require('../middleware/
    and "which employee record, if any, are they". */
 function createEmployeesRouter({ rosterController, timeOffController, conflictPairController, kpiController, authenticate, attachEmployee }) {
   const router = express.Router();
+
+  // Pre-auth: the signup wizard's Assigned Manager dropdown needs this
+  // before any account/token exists — see rosterController.teamHeadsPublic
+  // and employeeModel.toTeamHeadOption for how narrow the returned shape
+  // is (id + name only, nothing else exposed pre-login).
+  router.get('/employees/team-heads', rosterController.teamHeadsPublic);
+
   router.use(authenticate, attachEmployee);
 
   router.get('/employees/me', rosterController.getMine);
+  router.patch('/employees/me', rosterController.updateMine);
   router.post('/employees/me/photo', upload.single('photo'), verifyImageSignature, scanForMalware, rosterController.uploadMyPhoto);
   router.delete('/employees/me/photo', rosterController.removeMyPhoto);
   router.get('/employees/directory', rosterController.directory);
+  router.get('/employees/profile-change-requests', rosterController.pendingChangeRequests);
+  router.patch('/employees/profile-change-requests/:id/approve', rosterController.approveChangeRequest);
+  router.patch('/employees/profile-change-requests/:id/reject', rosterController.rejectChangeRequest);
   router.get('/employees/team', rosterController.getDirectReports);
   router.get('/employees', rosterController.list);
   router.post('/employees', rosterController.create);

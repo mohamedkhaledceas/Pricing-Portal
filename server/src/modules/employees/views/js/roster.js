@@ -3,13 +3,20 @@ import { apiFetch } from './apiClient.js';
 import { state } from './state.js';
 
 const KPI_PROFILES = ['content', 'artdirector', 'aidesigner', 'production', 'am', 'pandc', 'heads', 'design'];
-const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
-const EMPLOYMENT_TYPE_LABELS = { full_time: 'Full-time', part_time: 'Part-time', freelancer: 'Freelancer' };
+// Fixed-value lists live in window.OrgConstants (shared/orgConstants.js) —
+// single source of truth also used by the signup wizard and Account
+// Settings' Work Details section. Server-side enforcement is the real
+// gate (rosterService.validateFixedFields); this is display/dropdown-
+// population only.
+const { DEPARTMENTS, DEPARTMENT_LABELS, WORK_LOCATIONS, WORK_LOCATION_LABELS, EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS } = window.OrgConstants;
 // 'on_leave' deliberately excluded — it's computed server-side from
 // approved leave requests, not a settable value (see rosterService).
 const STATUS_OPTIONS = ['active', 'remote'];
 const STATUS_LABELS = { active: 'Active', remote: 'Remote', on_leave: 'On Leave' };
 const STATUS_BADGE_CLASS = { active: 'badge-approved', remote: 'badge-approved', on_leave: 'badge-pending' };
+// Team Head toggle rendering — matches rosterService.canManageRoster/
+// canAssignTeamHead exactly (same role set, both gates are equivalent).
+const canAssignTeamHead = () => ['admin', 'manager', 'operations', 'people_culture'].includes(state.currentUser && state.currentUser.role);
 
 let rosterCache = [];
 let directoryCache = [];
@@ -64,7 +71,7 @@ window.rosterSubmitCreate = submitCreate;
 async function updateEmployee(id) {
   const row = $('#roster-row-' + id);
   try {
-    // Always send all three, even blank ones — this Save button means "set
+    // Always send all fields, even blank ones — this Save button means "set
     // the row to exactly what's in these fields now", so a cleared input
     // must send an explicit clearing value, not omit the key (which the
     // repository's partial-update now reads as "leave it alone").
@@ -72,7 +79,11 @@ async function updateEmployee(id) {
     // computed "On Leave" badge (see renderRosterTable) — omit the key
     // entirely rather than send a bogus value, so the stored status is
     // left untouched (matches the repository's partial-update semantics).
+    // .edit-team-head only exists for roles canAssignTeamHead() allows
+    // (see renderRosterTable) — omitted entirely otherwise, same reasoning
+    // as .edit-status above.
     const statusEl = row.querySelector('.edit-status');
+    const teamHeadEl = row.querySelector('.edit-team-head');
     const payload = {
       department: row.querySelector('.edit-department').value,
       kpiProfile: row.querySelector('.edit-kpi-profile').value,
@@ -82,7 +93,9 @@ async function updateEmployee(id) {
       joiningDate: row.querySelector('.edit-joining-date').value,
       workLocation: row.querySelector('.edit-work-location').value,
       workingHours: row.querySelector('.edit-working-hours').value,
+      workSchedule: row.querySelector('.edit-work-schedule').value,
       ...(statusEl ? { status: statusEl.value } : {}),
+      ...(teamHeadEl ? { isTeamHead: teamHeadEl.checked } : {}),
     };
     await apiFetch(`/api/employees/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
     toast('Updated', 'info');
@@ -152,7 +165,12 @@ async function renderRosterTable() {
         </div>
       </td>
       <td><input class="form-control edit-job-title small" value="${escapeHtml(e.jobTitle || '')}" style="min-width:110px;"></td>
-      <td><input class="form-control edit-department small" value="${escapeHtml(e.department || '')}" style="min-width:110px;"></td>
+      <td>
+        <select class="form-control edit-department small" style="min-width:150px;">
+          <option value="">—</option>
+          ${DEPARTMENTS.map((d) => `<option value="${d}" ${e.department === d ? 'selected' : ''}>${escapeHtml(DEPARTMENT_LABELS[d])}</option>`).join('')}
+        </select>
+      </td>
       <td>
         <select class="form-control edit-kpi-profile small" style="min-width:120px;">
           <option value="">—</option>
@@ -166,8 +184,14 @@ async function renderRosterTable() {
         </select>
       </td>
       <td><input type="date" class="form-control edit-joining-date small" value="${escapeHtml(e.joiningDate || '')}" style="min-width:130px;"></td>
-      <td><input class="form-control edit-work-location small" value="${escapeHtml(e.workLocation || '')}" style="min-width:110px;"></td>
-      <td><input class="form-control edit-working-hours small" value="${escapeHtml(e.workingHours || '')}" style="min-width:130px;" placeholder="e.g. Mon–Fri 9–5"></td>
+      <td>
+        <select class="form-control edit-work-location small" style="min-width:120px;">
+          <option value="">—</option>
+          ${WORK_LOCATIONS.map((l) => `<option value="${l}" ${e.workLocation === l ? 'selected' : ''}>${escapeHtml(WORK_LOCATION_LABELS[l])}</option>`).join('')}
+        </select>
+      </td>
+      <td><input class="form-control edit-working-hours small" value="${escapeHtml(e.workingHours || '')}" style="min-width:130px;" placeholder="e.g. 10:00 AM – 6:00 PM"></td>
+      <td><input class="form-control edit-work-schedule small" value="${escapeHtml(e.workSchedule || '')}" style="min-width:110px;" placeholder="e.g. Sun – Thu"></td>
       <td>
         <select class="form-control edit-manager small" style="min-width:130px;">
           <option value="">— None —</option>
@@ -175,6 +199,11 @@ async function renderRosterTable() {
         </select>
       </td>
       <td style="text-align:center;">${e.authRole === 'people_culture' ? '<span class="badge badge-approved">P&amp;C</span>' : ''}</td>
+      <td style="text-align:center;">
+        ${canAssignTeamHead()
+          ? `<input type="checkbox" class="edit-team-head" ${e.isTeamHead ? 'checked' : ''} title="Team Head">`
+          : (e.isTeamHead ? '<span class="badge badge-approved">Team Head</span>' : '')}
+      </td>
       <td>
         ${e.status === 'on_leave'
           ? `<span class="badge ${STATUS_BADGE_CLASS.on_leave}">${STATUS_LABELS.on_leave}</span><div class="small muted">computed from approved leave</div>`
@@ -189,7 +218,7 @@ async function renderRosterTable() {
       </td>
     </tr>`).join('');
 
-  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="13" class="empty-state">No employees in the roster yet</td></tr>';
+  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="15" class="empty-state">No employees in the roster yet</td></tr>';
 
   // Pre-select each row's manager dropdown now that options exist.
   rosterCache.forEach((e) => {
@@ -215,7 +244,10 @@ async function renderCreateForm() {
       </div>
       <div class="form-group">
         <label class="form-label">Department</label>
-        <input class="form-control" id="roster-department" placeholder="e.g. Content Writing">
+        <select class="form-control" id="roster-department">
+          <option value="">— None yet —</option>
+          ${DEPARTMENTS.map((d) => `<option value="${d}">${escapeHtml(DEPARTMENT_LABELS[d])}</option>`).join('')}
+        </select>
       </div>
       <div class="form-group">
         <label class="form-label">KPI Profile</label>
@@ -305,8 +337,8 @@ export async function renderRoster() {
       <div class="card-title">All Employees</div>
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Working Hours</th><th>Manager</th><th>P&amp;C</th><th>Status</th><th>Active</th><th></th></tr></thead>
-          <tbody id="roster-table-body"><tr><td colspan="13" class="empty-state">Loading...</td></tr></tbody>
+          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Working Hours</th><th>Work Schedule</th><th>Manager</th><th>P&amp;C</th><th>Team Head</th><th>Status</th><th>Active</th><th></th></tr></thead>
+          <tbody id="roster-table-body"><tr><td colspan="15" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>
     </div>
