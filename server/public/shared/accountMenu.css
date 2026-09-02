@@ -98,7 +98,13 @@
 .team-directory-section { margin-bottom: 22px; }
 .team-directory-section:last-child { margin-bottom: 0; }
 .team-directory-section h3 { margin: 0 0 10px; font-size: 14px; }
-.team-directory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+/* align-items: start (not the grid default of stretch) — without this,
+   expanding one card taller than its row-mates makes the grid row grow to
+   match, and every OTHER card in that row gets stretched to fill the same
+   height with empty space (not its own content), since only the clicked
+   card's [hidden] state actually changed. Each card now sizes to its own
+   content independently. */
+.team-directory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; align-items: start; }
 .team-directory-card {
   border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: var(--radius, 10px);
   padding: 10px; cursor: pointer; background: var(--surface-2, var(--surface-1, #fff));
