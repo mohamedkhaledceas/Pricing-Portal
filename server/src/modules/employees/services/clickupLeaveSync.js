@@ -42,10 +42,7 @@ function createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRule
     };
 
     push(CF.REQUEST_TYPE, REQUEST_TYPE_OPTIONS[leaveRequest.leaveType]);
-    push(
-      CF.EXPECTED_AVAILABILITY,
-      leaveRequest.halfDay ? EXPECTED_AVAILABILITY_OPTIONS[leaveRequest.halfDayPeriod] : EXPECTED_AVAILABILITY_OPTIONS.full_day
-    );
+    push(CF.EXPECTED_AVAILABILITY, EXPECTED_AVAILABILITY_OPTIONS[leaveRequest.availability]);
     const start = new Date(`${leaveRequest.startDate}T00:00:00`);
     const end = new Date(`${leaveRequest.endDate}T00:00:00`);
     push(CF.TOTAL_DAYS, String(timeOffRules.countWorkingDaysInclusive(start, end)));

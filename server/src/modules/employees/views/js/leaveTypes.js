@@ -19,6 +19,21 @@ export function leaveTypeLabel(value) {
   return t ? t.label : value;
 }
 
+// Mirrors server/src/modules/employees/services/timeOffService.js's
+// VALID_AVAILABILITY — replaces the old half-day checkbox+period. Describes
+// how reachable the requester is during their leave, not the leave's
+// duration (that's still just start/end date).
+export const AVAILABILITY_OPTIONS = [
+  { value: 'full_day', label: 'Full Day' },
+  { value: 'partial_day', label: 'Partial Day' },
+  { value: 'unavailable', label: 'Unavailable' },
+];
+
+export function availabilityLabel(value) {
+  const a = AVAILABILITY_OPTIONS.find((x) => x.value === value);
+  return a ? a.label : value;
+}
+
 export const STATUS_LABELS = {
   pending: 'Pending (manager)',
   manager_approved: 'Pending (P&C)',

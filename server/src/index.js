@@ -6,7 +6,7 @@ const cookieParser = require('cookie-parser');
 const db = require('./db');
 const authModule = require('./modules/auth');
 const management = require('./modules/management');
-const { router: employeesRouter, provisionSelfRegisteredEmployee } = require('./modules/employees');
+const { router: employeesRouter, provisionSelfRegisteredEmployee, employeePhotoUploadDir } = require('./modules/employees');
 
 /* Wires the signup wizard's employee-profile creation into auth's register
    flow without either module importing the other's internals — see
@@ -125,6 +125,13 @@ app.get('/login', (req, res) => {
   res.sendFile(loginHtmlPath);
 });
 app.use('/login', express.static(path.join(__dirname, 'modules', 'auth', 'views')));
+
+/* Employee profile photos — served from wherever photoUpload.js actually
+   wrote them (server/public/uploads/employees locally, or under DB_DIR's
+   persistent disk on Render), which is no longer necessarily inside
+   server/public/, so it needs its own mount rather than relying on the
+   generic public static below. */
+app.use('/uploads/employees', express.static(employeePhotoUploadDir));
 
 /* Shared static assets (currently just the two logo variants) — extracted
    from margin-planner_1.html's previously-inline base64 constants so both

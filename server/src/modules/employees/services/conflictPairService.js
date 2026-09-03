@@ -1,11 +1,12 @@
 const { EmployeesError } = require('../errors');
 
-/* Data-layer only this pass — see conflictPairRepository.js and the plan's
-   §8. This service lets P&C maintain the pair list; it is NOT called from
-   timeOffService.submit(), and no enforcement rule (warning, blocking, or
-   otherwise) is implemented here. Adding that later is additive: one new
-   call in timeOffService, no schema change. */
-function createConflictPairService({ conflictPairRepository, conflictPairModel, employeeRepository, roles }) {
+/* conflictPairRepository.js's data was inert until this pass — see the
+   plan's §8. findOverlaps/getMyPartners below are the enforcement this
+   file's own comment used to say wasn't implemented yet: warn-only, never
+   blocking (submission always succeeds regardless of what this returns),
+   surfaced at three read points (submit's response, the live form check,
+   listTeam) rather than a new table or a push/notification system. */
+function createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, roles }) {
   function requireCanManage({ actorAuthRole }) {
     const allowed = actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE;
     if (!allowed) {
@@ -34,7 +35,50 @@ function createConflictPairService({ conflictPairRepository, conflictPairModel, 
     return conflictPairModel.toConflictPair(conflictPairRepository.setActive(id, active));
   }
 
-  return { list, create, setActive };
+  // Active partner *employee ids* for one employee — a pair row doesn't
+  // say which side is "self", so both employee_id_a/_b are checked.
+  function activePartnerIds(employeeId) {
+    return conflictPairRepository
+      .findActiveForEmployee(employeeId)
+      .map((pair) => (pair.employee_id_a === employeeId ? pair.employee_id_b : pair.employee_id_a));
+  }
+
+  // Self-only, no permission gate — same shape as rosterService.getMine:
+  // an employee seeing who their own conflict partner is isn't privileged
+  // data (they already see that colleague in the Teams directory), just
+  // scoped so nobody can ask for anyone else's. Returns [] rather than
+  // erroring when there's no employee profile yet, or no active pair.
+  function getMyPartners(actorEmployee) {
+    if (!actorEmployee) return [];
+    return activePartnerIds(actorEmployee.id)
+      .map((id) => employeeRepository.findById(id))
+      .filter(Boolean)
+      .map((row) => ({ id: row.id, firstName: row.user_first_name, lastName: row.user_last_name }));
+  }
+
+  // For `employeeId`, do any of their active conflict partner(s) already
+  // have a still-relevant (pending/manager_approved/approved) request
+  // overlapping [startDate, endDate]? Used identically by submit's
+  // response, the live pre-submit form check, and listTeam's per-request
+  // labeling — one calculation, three read surfaces, per the plan.
+  function findOverlaps({ employeeId, startDate, endDate }) {
+    const partnerIds = activePartnerIds(employeeId);
+    if (!partnerIds.length) return [];
+    const overlapping = leaveRequestRepository.findActiveOverlappingForEmployees({ employeeIds: partnerIds, startDate, endDate });
+    return overlapping.map((row) => {
+      const partner = employeeRepository.findById(row.employee_id);
+      return {
+        partnerEmployeeId: row.employee_id,
+        partnerName: partner ? `${partner.user_first_name} ${partner.user_last_name}`.trim() : `Employee #${row.employee_id}`,
+        status: row.status,
+        startDate: row.start_date,
+        endDate: row.end_date,
+        leaveType: row.leave_type,
+      };
+    });
+  }
+
+  return { list, create, setActive, getMyPartners, findOverlaps };
 }
 
 module.exports = createConflictPairService;

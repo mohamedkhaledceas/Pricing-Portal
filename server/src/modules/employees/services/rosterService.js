@@ -1,5 +1,6 @@
 const { EmployeesError } = require('../errors');
 const { DEPARTMENTS, WORK_LOCATIONS } = require('../constants');
+const logger = require('../../../common/logger');
 
 const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
 
@@ -12,8 +13,21 @@ const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
    include operations. */
 function createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
-  profileChangeRequestModel, audit, roles, deleteStoredPhoto,
+  profileChangeRequestModel, audit, roles, deleteStoredPhoto, clickupUserSync,
 }) {
+  // Fire-and-forget, same reasoning as clickupUserSync's own boot-time run
+  // (see jobs/clickupUserSyncSchedule.js) — a ClickUp outage must never
+  // block employee creation, and the caller already got their response.
+  // Lets a newly-added employee's clickup_user_id populate immediately
+  // instead of waiting for the next scheduled tick.
+  function triggerClickupUserSync() {
+    // run() already catches/logs its own known failure modes (team fetch
+    // failing) — this only catches something unexpected escaping that,
+    // same reasoning as clickupUserSyncSchedule.js's own runOnce().
+    clickupUserSync.run().catch((error) => {
+      logger.error('ClickUp user sync run failed unexpectedly.', { trigger: 'employee_created', message: error.message, stack: error.stack });
+    });
+  }
   function canManageRoster({ actorAuthRole }) {
     return actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE
       || actorAuthRole === roles.MANAGER || actorAuthRole === roles.OPERATIONS;
@@ -186,6 +200,7 @@ function createRosterService({
       userId, clickupUserId, department, kpiProfile, managerEmployeeId,
       jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, status, isTeamHead,
     });
+    triggerClickupUserSync();
     audit.record({
       userId: actorId,
       action: 'employee.create',
@@ -462,6 +477,7 @@ function createRosterService({
       managerEmployeeId: managerEmployeeId || null,
       profileLocked: true,
     });
+    triggerClickupUserSync();
     audit.record({
       userId: actorId,
       action: 'employee.self_registered',
