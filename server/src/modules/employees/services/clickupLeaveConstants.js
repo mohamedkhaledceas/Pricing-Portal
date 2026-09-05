@@ -55,9 +55,14 @@ const SALARY_DEDUCTION_OPTIONS = {
 };
 
 const EXPECTED_AVAILABILITY_OPTIONS = {
-  morning: '74278f02-f85c-4fa4-ad46-fe7555597c61', // "Partial Day" — ClickUp has no AM/PM-specific option
-  afternoon: '74278f02-f85c-4fa4-ad46-fe7555597c61',
+  partial_day: '74278f02-f85c-4fa4-ad46-fe7555597c61', // "Partial Day"
   full_day: '9579b7bd-174e-4124-a4f3-16ffa293256e',
+  // 'unavailable' has no confirmed ClickUp option id yet — omitted rather
+  // than guessing (same precedent as short_notice/mental_health above);
+  // buildCustomFields' push() already skips a field with no value, so this
+  // just means the task's Expected Availability field stays unset for
+  // unavailable requests until a real option id is confirmed against
+  // GET /list/{LEAVE_REQUEST_LIST_ID}/field and added here.
 };
 
 const LEAVE_STATUS_OPTIONS = {

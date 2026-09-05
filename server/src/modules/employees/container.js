@@ -21,13 +21,13 @@ const clickupClient = require('../../common/integrations/clickupClient');
 const timeOffRules = require('./services/timeOffRules');
 const kpiFrameworkSeed = require('./services/kpiFrameworkSeed.data');
 const createAttachEmployeeMiddleware = require('./middleware/attachEmployee');
-const { deleteStoredPhoto } = require('./middleware/photoUpload');
+const { deleteStoredPhoto, UPLOAD_DIR: employeePhotoUploadDir } = require('./middleware/photoUpload');
 const createRosterService = require('./services/rosterService');
 const createTimeOffService = require('./services/timeOffService');
 const createConflictPairService = require('./services/conflictPairService');
 const createKpiScoringService = require('./services/kpiScoringService');
 const createClickupLeaveSync = require('./services/clickupLeaveSync');
-const createClickupUserSync = require('./services/clickupUserSync');
+const startClickupUserSyncSchedule = require('./jobs/clickupUserSyncSchedule');
 const createRosterController = require('./controllers/rosterController');
 const createTimeOffController = require('./controllers/timeOffController');
 const createConflictPairController = require('./controllers/conflictPairController');
@@ -40,19 +40,22 @@ kpiDefinitionRepository.seedMany(kpiFrameworkSeed);
 
 const attachEmployee = createAttachEmployeeMiddleware({ employeeRepository, employeeModel });
 
+// Schedules the recurring sync (+ runs once immediately, fire-and-forget —
+// a ClickUp outage at boot must never block the app from starting; errors
+// are caught and logged inside clickupUserSync.run() itself) and returns
+// the same sync object so rosterService can also trigger it on demand
+// right after a new employee is created, instead of that employee waiting
+// for the next scheduled tick.
+const clickupUserSync = startClickupUserSyncSchedule({ employeeRepository, clickupClient });
+
 const rosterService = createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
-  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto,
+  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync,
 });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
-const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, roles: ROLES });
-const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, employeeRepository, roles: ROLES });
+const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, roles: ROLES });
+const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES });
 const kpiScoringService = createKpiScoringService({ employeeRepository, kpiDefinitionRepository, kpiScoreRepository, pillarAReviewRepository, roles: ROLES });
-
-// Fire-and-forget, same reasoning as clickupLeaveSync's own methods — a
-// ClickUp outage at boot must never block the app from starting. Errors
-// are caught and logged inside clickupUserSync.run() itself.
-createClickupUserSync({ employeeRepository, clickupClient }).run();
 
 const rosterController = createRosterController({ rosterService });
 const timeOffController = createTimeOffController({ timeOffService });
@@ -74,4 +77,11 @@ const router = createEmployeesRouter({
    boundary rule and a require() cycle (employees already requires
    modules/auth for `authenticate`; auth requiring employees back would be
    circular). See index.js for where this actually gets wired together. */
-module.exports = { router, provisionSelfRegisteredEmployee: rosterService.createForSelfRegistration };
+module.exports = {
+  router,
+  provisionSelfRegisteredEmployee: rosterService.createForSelfRegistration,
+  // Exposed narrowly so index.js can mount a static route for it — the
+  // directory itself is resolved once, in photoUpload.js, not recomputed
+  // here or in index.js.
+  employeePhotoUploadDir,
+};

@@ -3,11 +3,18 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { EmployeesError } = require('../errors');
+const config = require('../../../config');
 
-// Served by index.js's catch-all `app.use(express.static(.../public))` —
-// anything under server/public/ is already served at its own path with no
-// extra mount needed (same as public/logo-*.png today).
-const UPLOAD_DIR = path.join(__dirname, '..', '..', '..', '..', 'public', 'uploads', 'employees');
+// When DB_DIR is set (Render — a persistent disk mounted there, see
+// render.yaml), uploads live under it too, so they survive a redeploy the
+// same way the SQLite file does — the old server/public/uploads/employees
+// path was NOT on that disk and got wiped on every deploy. Falls back to
+// the previous path for local dev, where DB_DIR isn't set (same fallback
+// shape as db.js's own dbDir || default). Since this can now live outside
+// server/public/, it needs its own static mount — see index.js.
+const UPLOAD_DIR = config.dbDir
+  ? path.join(config.dbDir, 'uploads', 'employees')
+  : path.join(__dirname, '..', '..', '..', '..', 'public', 'uploads', 'employees');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const MAX_BYTES = 2 * 1024 * 1024;

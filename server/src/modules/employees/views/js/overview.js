@@ -1,7 +1,7 @@
 import { $, escapeHtml, fmtDate, fmtDateTime, skeletonBlock } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
-import { leaveTypeLabel } from './leaveTypes.js';
+import { leaveTypeLabel, availabilityLabel } from './leaveTypes.js';
 
 function todayIso() {
   const d = new Date();
@@ -42,10 +42,16 @@ function tileGrid(tilesHtml, emptyMessage) {
     : `<div class="empty-state" style="grid-column:1/-1;padding:18px;">${escapeHtml(emptyMessage)}</div>`}</div>`;
 }
 
-function offTodayTile(o) {
-  return `<div class="team-tile">
+// partnerIds: Set of employee ids that are the viewer's own active
+// conflict partner(s) (from GET /employees/conflict-pairs/mine) — passive
+// highlighting only, computed client-side against data already being
+// fetched for this same widget; no per-entry backend flag needed.
+function offTodayTile(o, partnerIds) {
+  const isPartner = partnerIds && partnerIds.has(o.employeeId);
+  return `<div class="team-tile${isPartner ? ' conflict-pair' : ''}">
     <div class="team-tile-name">${escapeHtml(o.name)}</div>
-    <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.halfDay ? ' · half-day' : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
+    <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.availability ? ' · ' + escapeHtml(availabilityLabel(o.availability)) : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
+    ${isPartner ? `<div class="team-tile-conflict-flag">⚠ Your conflict pair</div>` : ''}
   </div>`;
 }
 
@@ -56,14 +62,14 @@ function onlineTile(e) {
   </div>`;
 }
 
-function whosOffTodaySection(offToday) {
+function whosOffTodaySection(offToday, partnerIds) {
   return `
     <div class="card section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div class="card-title" style="margin-bottom:0;">Who's Off Today</div>
         <div class="small muted">${fmtDate(todayIso())}</div>
       </div>
-      ${tileGrid(offToday.map(offTodayTile), "Nobody's off today")}
+      ${tileGrid(offToday.map((o) => offTodayTile(o, partnerIds)), "Nobody's off today")}
     </div>`;
 }
 
@@ -181,10 +187,23 @@ const COMPANY_OVERVIEW_ROLES = { manager: 'Manager (CEO)', admin: 'Admin', peopl
 // always gets it shown (even at 0) the same way P&C's action card always
 // shows. Reuses /api/employees/leave-requests/team, which now returns []
 // instead of 403 when the viewer has no employee profile of their own.
-function pendingMyDecisionCard(teamRequests, role) {
-  const myPending = teamRequests.filter((r) => r.status === 'pending');
+//
+// A decision is always scoped to actual direct reports, for every role
+// including the company-wide `manager` role — see team.js's own
+// isMyDirectReport for the same rule applied to the actionable list itself;
+// this just keeps the count consistent with what My Team will actually let
+// this account act on. directory/myEmployeeId let it compute that without
+// a second fetch (directory is already loaded by both call sites below).
+function pendingMyDecisionCard(teamRequests, role, directory, myEmployeeId) {
+  const directoryById = {};
+  directory.forEach((e) => { directoryById[e.id] = e; });
+  const isMyDirectReport = (r) => {
+    const target = directoryById[r.employeeId];
+    return !!target && !!myEmployeeId && target.managerEmployeeId === myEmployeeId;
+  };
+  const myPending = teamRequests.filter((r) => r.status === 'pending' && isMyDirectReport(r));
   if (!myPending.length && !teamRequests.length && role !== 'manager') return '';
-  const title = role === 'manager' ? 'Pending My Decision (company-wide)' : 'Pending My Decision';
+  const title = 'Pending My Decision';
   return statCard(title, myPending.length
     ? `<div class="stat-row mt-8">
         <span class="stat-num" style="font-size:22px;">${myPending.length}</span><span class="stat-lbl">awaiting your decision</span>
@@ -218,7 +237,10 @@ async function renderManagerOverview(role) {
   const inactive = roster.length - active;
   const directory = directoryRes.employees || [];
   const teamRequests = teamRes.requests || [];
-  const myDecisionCard = pendingMyDecisionCard(teamRequests, role);
+  // No employee profile on this path (renderManagerOverview is only
+  // reached when the viewer has none) — structurally can't be anyone's
+  // direct manager, so this always renders 0 awaiting decision, correctly.
+  const myDecisionCard = pendingMyDecisionCard(teamRequests, role, directory, null);
   // Manager already has every request company-wide via teamRequests
   // (listTeam); P&C needs the dedicated endpoint since listPcPending only
   // ever returns manager_approved rows.
@@ -305,7 +327,7 @@ export async function renderOverview() {
   const role = state.currentUser && state.currentUser.role;
   const isPeopleCulture = role === 'people_culture';
   const isManager = role === 'manager';
-  const [mineRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes] = await Promise.all([
+  const [mineRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes] = await Promise.all([
     apiFetch('/api/employees/leave-requests/mine'),
     apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
@@ -313,7 +335,9 @@ export async function renderOverview() {
     apiFetch('/api/employees/directory'),
     apiFetch('/api/employees/leave-requests/team'),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/auto-rejected') : Promise.resolve(null),
+    apiFetch('/api/employees/conflict-pairs/mine'),
   ]);
+  const myPartnerIds = new Set((myPartnersRes.partners || []).map((p) => p.id));
 
   const requests = mineRes.requests || [];
   const counts = { approved: 0, pending: 0, rejected: 0 };
@@ -325,7 +349,7 @@ export async function renderOverview() {
 
   const directory = directoryRes.employees || [];
   const teamRequests = teamRes.requests || [];
-  const myDecisionCard = pendingMyDecisionCard(teamRequests, role);
+  const myDecisionCard = pendingMyDecisionCard(teamRequests, role, directory, emp.id);
   const roster = rosterRes ? rosterRes.employees || [] : [];
   const autoRejectSource = isManager ? teamRequests : (autoRejectRes ? autoRejectRes.requests || [] : []);
 
@@ -354,7 +378,7 @@ export async function renderOverview() {
 
     ${(isManager || isPeopleCulture) ? departmentBreakdownSection(roster) : ''}
     ${whosOnlineSection(directory)}
-    ${whosOffTodaySection(offTodayRes.offToday || [])}
+    ${whosOffTodaySection(offTodayRes.offToday || [], myPartnerIds)}
 
     <div class="card section">
       <div class="card-title">Recent Requests</div>

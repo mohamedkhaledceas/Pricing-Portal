@@ -1,7 +1,7 @@
 const { EmployeesError } = require('../errors');
 
 const VALID_LEAVE_TYPES = ['planned', 'short_notice', 'sick', 'emergency', 'mental_health', 'public_holiday', 'wfh', 'excuse', 'unpaid'];
-const VALID_HALF_DAY_PERIODS = ['morning', 'afternoon'];
+const VALID_AVAILABILITY = ['full_day', 'partial_day', 'unavailable'];
 
 function parseDateOnly(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -13,8 +13,8 @@ function parseDateOnly(value) {
    -> manager decision -> P&C confirmation. timeOffRules holds the pure
    notice-window math; this service is what actually touches the DB and
    enforces who's allowed to do what. */
-function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, roles }) {
-  async function submit({ employeeId, leaveType, startDate, endDate, halfDay, halfDayPeriod, handoverEmployeeId, reason, actorId, ip }) {
+function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, conflictPairService, roles }) {
+  async function submit({ employeeId, leaveType, startDate, endDate, availability, handoverEmployeeId, reason, actorId, ip }) {
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       throw new EmployeesError(`Leave type must be one of: ${VALID_LEAVE_TYPES.join(', ')}.`);
     }
@@ -26,8 +26,13 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     if (end < start) {
       throw new EmployeesError('End date cannot be before start date.');
     }
-    if (halfDayPeriod && !VALID_HALF_DAY_PERIODS.includes(halfDayPeriod)) {
-      throw new EmployeesError(`halfDayPeriod must be one of: ${VALID_HALF_DAY_PERIODS.join(', ')}.`);
+    // WFH's form hides the Availability field (same carve-out half_day used
+    // to have) — the request is inherently "working, just from home".
+    if (leaveType !== 'wfh' && !VALID_AVAILABILITY.includes(availability)) {
+      throw new EmployeesError(`availability must be one of: ${VALID_AVAILABILITY.join(', ')}.`);
+    }
+    if (!reason || !reason.trim()) {
+      throw new EmployeesError('A reason is required.');
     }
     if (handoverEmployeeId && !employeeRepository.findById(handoverEmployeeId)) {
       throw new EmployeesError('Handover teammate not found.');
@@ -67,8 +72,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       leaveType,
       startDate,
       endDate,
-      halfDay,
-      halfDayPeriod,
+      availability: leaveType === 'wfh' ? null : availability,
       handoverEmployeeId,
       reason,
       status,
@@ -89,7 +93,13 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     if (clickupTaskId) leaveRequestRepository.setClickupTaskId(created.id, clickupTaskId);
 
     const requiresDoctorNote = leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({ startDate: start, endDate: end });
-    return { ...leaveRequestModel.toLeaveRequest(created), requiresDoctorNote };
+    // Warn-only, response-time-only — never blocks submission (see
+    // conflictPairService.findOverlaps' own comment). Also echoed here in
+    // addition to the live pre-submit form check so the confirmation the
+    // requester actually sees always reflects the same computation, even
+    // if the live check was skipped or is stale by the time they submit.
+    const conflictWarnings = conflictPairService.findOverlaps({ employeeId, startDate, endDate });
+    return { ...leaveRequestModel.toLeaveRequest(created), requiresDoctorNote, conflictWarnings };
   }
 
   function listMine(employeeId) {
@@ -103,13 +113,21 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   // flagged for confirmation. Anyone else (e.g. a department lead with
   // role 'employee' who has their own direct reports) still only sees
   // their own reports' requests.
+  // Attaches the same warn-only conflict-pair check submit() echoes, so a
+  // manager reviewing My Team sees it labeled on the card without a
+  // separate fetch. Per-request (not per-employee) since it's the
+  // request's own date range that matters for the overlap.
+  function withConflictWarnings(request) {
+    return { ...request, conflictWarnings: conflictPairService.findOverlaps({ employeeId: request.employeeId, startDate: request.startDate, endDate: request.endDate }) };
+  }
+
   function listTeam({ actorEmployee, actorAuthRole }) {
     if (actorAuthRole === roles.MANAGER) {
-      return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest);
+      return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings);
     }
     if (!actorEmployee) return [];
     const reportIds = employeeRepository.findByManagerId(actorEmployee.id).map((row) => row.id);
-    return leaveRequestRepository.findByEmployeeIds(reportIds).map(leaveRequestModel.toLeaveRequest);
+    return leaveRequestRepository.findByEmployeeIds(reportIds).map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings);
   }
 
   // Non-sensitive operational info — visible to any authenticated employee,
@@ -124,8 +142,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       leaveType: row.leave_type,
       startDate: row.start_date,
       endDate: row.end_date,
-      halfDay: row.half_day !== 0,
-      halfDayPeriod: row.half_day_period,
+      availability: row.availability,
     }));
   }
 
@@ -174,9 +191,12 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return VALID_LEAVE_TYPES.map((type) => byType[type]);
   }
 
-  async function managerDecision({ requestId, actorEmployee, actorAuthRole, decision, actorId, ip }) {
+  async function managerDecision({ requestId, actorEmployee, actorAuthRole, decision, decisionNote, actorId, ip }) {
     if (!['approved', 'rejected'].includes(decision)) {
       throw new EmployeesError('Decision must be "approved" or "rejected".');
+    }
+    if (decision === 'rejected' && (!decisionNote || !decisionNote.trim())) {
+      throw new EmployeesError('A comment is required when rejecting a request.');
     }
     const request = leaveRequestRepository.findById(requestId);
     if (!request) throw new EmployeesError('Leave request not found.', 404);
@@ -184,19 +204,22 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       throw new EmployeesError('This request is no longer awaiting a manager decision.');
     }
 
-    // Manager role bypasses the direct-manager check — same company-wide
-    // scope as listTeam above, and works even for a manager account with
-    // no employee profile of its own (managerDecisionBy just stays null,
-    // same as any other nullable FK on this table).
-    if (actorAuthRole !== roles.MANAGER) {
-      const employee = employeeRepository.findById(request.employee_id);
-      if (!employee || !actorEmployee || employee.manager_employee_id !== actorEmployee.id) {
-        throw new EmployeesError("You are not this employee's manager.", 403);
-      }
+    // No auth-role bypass here, including for the company-wide `manager`
+    // role — a decision always requires being this specific employee's
+    // direct manager. listTeam above keeps its company-wide *visibility*
+    // bypass; this is action, not visibility, and stays scoped to the
+    // actual reporting line for every role.
+    const employee = employeeRepository.findById(request.employee_id);
+    if (!employee || !actorEmployee || employee.manager_employee_id !== actorEmployee.id) {
+      throw new EmployeesError("You are not this employee's manager.", 403);
     }
 
     const newStatus = decision === 'approved' ? 'manager_approved' : 'rejected';
-    const updated = leaveRequestRepository.updateManagerDecision(requestId, { status: newStatus, managerDecisionBy: actorEmployee ? actorEmployee.id : null });
+    const updated = leaveRequestRepository.updateManagerDecision(requestId, {
+      status: newStatus,
+      managerDecisionBy: actorEmployee.id,
+      decisionNote: decision === 'rejected' ? decisionNote.trim() : null,
+    });
 
     audit.record({
       userId: actorId,
@@ -216,12 +239,15 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
      non-automatic rows — everything except the same-day short-notice/
      mental-health case, which is already applied automatically at
      submission time and isn't meant to be overwritten by this step). */
-  async function pcConfirm({ requestId, actorEmployee, actorAuthRole, decision, salaryDeduction, unpaidDaysCount, actorId, ip }) {
+  async function pcConfirm({ requestId, actorEmployee, actorAuthRole, decision, decisionNote, salaryDeduction, unpaidDaysCount, actorId, ip }) {
     if (!actorEmployee || actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to confirm leave requests.', 403);
     }
     if (!['approved', 'rejected'].includes(decision)) {
       throw new EmployeesError('Decision must be "approved" or "rejected".');
+    }
+    if (decision === 'rejected' && (!decisionNote || !decisionNote.trim())) {
+      throw new EmployeesError('A comment is required when rejecting a request.');
     }
     const request = leaveRequestRepository.findById(requestId);
     if (!request) throw new EmployeesError('Leave request not found.', 404);
@@ -238,6 +264,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       pcConfirmedBy: actorEmployee.id,
       salaryDeduction: deduction,
       unpaidDaysCount: deduction === 'unpaid' ? unpaidDaysCount || null : null,
+      decisionNote: decision === 'rejected' ? decisionNote.trim() : null,
     });
 
     audit.record({

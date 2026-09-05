@@ -54,6 +54,12 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.patch('/employees/leave-requests/:id/pc-confirm', catchAsync(timeOffController.pcConfirm));
   router.post('/employees/leave-requests/:id/cancel', catchAsync(timeOffController.cancel));
 
+  // Self-scoped, no admin/P&C gate — an employee checking who their own
+  // conflict partner is, or whether that partner already overlaps a
+  // candidate date range, isn't the management CRUD below.
+  router.get('/employees/conflict-pairs/mine', conflictPairController.mine);
+  router.get('/employees/conflict-pairs/mine/overlap', conflictPairController.mineOverlap);
+
   router.get('/employees/conflict-pairs', conflictPairController.list);
   router.post('/employees/conflict-pairs', conflictPairController.create);
   router.post('/employees/conflict-pairs/:id/deactivate', conflictPairController.deactivate);

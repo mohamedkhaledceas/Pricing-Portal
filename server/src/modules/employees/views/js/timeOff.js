@@ -1,7 +1,19 @@
 import { $, $all, escapeHtml, fmtDate, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
-import { LEAVE_TYPES, leaveTypeLabel } from './leaveTypes.js';
+import { LEAVE_TYPES, leaveTypeLabel, AVAILABILITY_OPTIONS, availabilityLabel, STATUS_LABELS } from './leaveTypes.js';
+
+let directoryById = {};
+async function loadDirectoryIndex() {
+  const res = await apiFetch('/api/employees/directory');
+  directoryById = {};
+  (res.employees || []).forEach((e) => { directoryById[e.id] = e; });
+  return directoryById;
+}
+function nameFor(employeeId) {
+  const e = directoryById[employeeId];
+  return e ? `${e.firstName} ${e.lastName}` : `Employee #${employeeId}`;
+}
 
 async function getDirectory() {
   const res = await apiFetch('/api/employees/directory');
@@ -30,16 +42,49 @@ function onTypeChange() {
 
   const isWfh = type === 'wfh';
   $('#group-end').style.display = isWfh ? 'none' : '';
-  $('#group-half-day').style.display = isWfh ? 'none' : '';
+  $('#group-availability').style.display = isWfh ? 'none' : '';
   $('#group-handover').style.display = isWfh ? 'none' : '';
   $('#label-start').textContent = isWfh ? 'WFH Date *' : 'Start Date *';
 
   if (isWfh) $('#req-end').value = $('#req-start').value;
 }
 
+// Shared with team.js's own conflict-warning rendering (same shape, same
+// warn-only conflictPairService.findOverlaps result) — kept as a small
+// local duplicate rather than a shared module, same as directoryById/
+// nameFor above (each view file already keeps its own tiny copy of this
+// kind of helper).
+function conflictWarningsHtml(conflicts) {
+  if (!conflicts || !conflicts.length) return '';
+  return `<div class="alert alert-warn">${conflicts.map((w) => `
+    <div>⚠ Your conflict pair <strong>${escapeHtml(w.partnerName)}</strong> already has ${escapeHtml((STATUS_LABELS[w.status] || w.status).toLowerCase())}
+    ${escapeHtml(leaveTypeLabel(w.leaveType))} on ${fmtDate(w.startDate)}${w.endDate !== w.startDate ? ' → ' + fmtDate(w.endDate) : ''}.</div>`).join('')}</div>`;
+}
+
+// Live, non-blocking check as the requester picks dates — before they've
+// even submitted, per the user's request that both sides see the conflict
+// "before requesting and when filling the form". Re-checked on every
+// start/end/type change; harmless to call with an incomplete form (the
+// controller requires both dates, so an empty one just no-ops here).
+async function checkConflictsLive() {
+  const el = $('#form-conflict-warning');
+  if (!el) return;
+  const type = $('#req-type').value;
+  const startDate = $('#req-start').value;
+  const endDate = type === 'wfh' ? startDate : $('#req-end').value;
+  if (!startDate || !endDate) { el.innerHTML = ''; return; }
+  try {
+    const res = await apiFetch(`/api/employees/conflict-pairs/mine/overlap?startDate=${startDate}&endDate=${endDate}`);
+    el.innerHTML = conflictWarningsHtml(res.conflicts);
+  } catch (err) {
+    el.innerHTML = ''; // best-effort — never block filling out the form over this check itself failing
+  }
+}
+
 function onStartChange() {
   if ($('#req-type').value === 'wfh') $('#req-end').value = $('#req-start').value;
   if (!$('#req-end').value || $('#req-end').value < $('#req-start').value) $('#req-end').value = $('#req-start').value;
+  checkConflictsLive();
 }
 
 async function populateHandoverSelect() {
@@ -58,15 +103,20 @@ async function submitRequest() {
   btn.disabled = true;
   try {
     const type = $('#req-type').value;
-    const halfDay = !$('#group-half-day').style.display && $('#req-half-day').checked;
+    const isWfh = type === 'wfh';
+    const reason = $('#req-reason').value.trim();
+    if (!reason) {
+      resultEl.innerHTML = `<div class="alert alert-danger"><div>A reason is required.</div></div>`;
+      btn.disabled = false;
+      return;
+    }
     const payload = {
       leaveType: type,
       startDate: $('#req-start').value,
-      endDate: type === 'wfh' ? $('#req-start').value : $('#req-end').value,
-      halfDay,
-      halfDayPeriod: halfDay ? $('#req-half-day-period').value : undefined,
+      endDate: isWfh ? $('#req-start').value : $('#req-end').value,
+      availability: isWfh ? undefined : $('#req-availability').value,
       handoverEmployeeId: $('#req-handover').value ? Number($('#req-handover').value) : undefined,
-      reason: $('#req-reason').value || undefined,
+      reason,
     };
     const res = await apiFetch('/api/employees/leave-requests', { method: 'POST', body: JSON.stringify(payload) });
     const req = res.request;
@@ -77,11 +127,16 @@ async function submitRequest() {
       banner += `<div><strong>Submitted.</strong> Awaiting your manager's decision.${req.requiresDoctorNote ? ' A doctor\'s note will be required (sick leave over 2 days).' : ''}</div>`;
     }
     banner += '</div>';
+    // Echoes the same warn-only check the live pre-submit banner already
+    // showed — belt-and-suspenders in case that check was skipped or is
+    // stale by submit time (see timeOffService.submit's own comment).
+    banner += conflictWarningsHtml(req.conflictWarnings);
     resultEl.innerHTML = banner;
     toast('Request submitted', 'info');
     $('#req-type').value = '';
     onTypeChange();
     $('#req-reason').value = '';
+    $('#form-conflict-warning').innerHTML = '';
   } catch (err) {
     resultEl.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
   } finally {
@@ -122,15 +177,12 @@ export function renderNewRequestForm() {
             <input type="date" class="form-control" id="req-end">
           </div>
 
-          <div class="form-group" id="group-half-day">
-            <label class="form-label">Half Day?</label>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="req-half-day">
-              <select class="form-control" id="req-half-day-period" style="width:auto;">
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-              </select>
-            </div>
+          <div class="form-group" id="group-availability">
+            <label class="form-label">Availability *</label>
+            <select class="form-control" id="req-availability">
+              ${AVAILABILITY_OPTIONS.map((a) => `<option value="${a.value}">${escapeHtml(a.label)}</option>`).join('')}
+            </select>
+            <div class="form-hint">How reachable will you be while you're off?</div>
           </div>
 
           <div class="form-group full" id="group-handover">
@@ -138,9 +190,11 @@ export function renderNewRequestForm() {
             <select class="form-control" id="req-handover"><option value="">— Select teammate —</option></select>
           </div>
 
+          <div class="form-group full" id="form-conflict-warning"></div>
+
           <div class="form-group full">
-            <label class="form-label">Reason / Notes</label>
-            <textarea class="form-control" id="req-reason" placeholder="Any details you want to share..." rows="3"></textarea>
+            <label class="form-label">Reason / Notes *</label>
+            <textarea class="form-control" id="req-reason" placeholder="Required — tell your manager why you're requesting this" rows="3" required></textarea>
           </div>
 
           <div class="form-group full">
@@ -155,8 +209,10 @@ export function renderNewRequestForm() {
     const t = LEAVE_TYPES.find((x) => x.value === $('#req-type').value);
     $('#req-type-notice').textContent = t ? 'Notice required: ' + t.notice : '';
     onTypeChange();
+    checkConflictsLive();
   });
   $('#req-start').addEventListener('change', onStartChange);
+  $('#req-end').addEventListener('change', checkConflictsLive);
   $('#submit-btn').addEventListener('click', submitRequest);
   populateHandoverSelect();
 }
@@ -170,15 +226,23 @@ function todayIso() {
 async function renderToday() {
   const container = $('#today-content');
   container.innerHTML = `<div class="empty-state">Loading team data...</div>`;
-  const res = await apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso());
+  const [res, partnersRes] = await Promise.all([
+    apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
+    apiFetch('/api/employees/conflict-pairs/mine'),
+  ]);
   const offToday = res.offToday || [];
+  const myPartnerIds = new Set((partnersRes.partners || []).map((p) => p.id));
   $('#today-date-label').textContent = fmtDate(todayIso());
   container.innerHTML = offToday.length
-    ? `<div class="team-grid">${offToday.map((o) => `
-      <div class="team-tile">
+    ? `<div class="team-grid">${offToday.map((o) => {
+      const isPartner = myPartnerIds.has(o.employeeId);
+      return `
+      <div class="team-tile${isPartner ? ' conflict-pair' : ''}">
         <div class="team-tile-name">${escapeHtml(o.name)}</div>
-        <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.halfDay ? ' · half-day (' + escapeHtml(o.halfDayPeriod || '') + ')' : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
-      </div>`).join('')}</div>`
+        <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.availability ? ' · ' + escapeHtml(availabilityLabel(o.availability)) : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
+        ${isPartner ? `<div class="team-tile-conflict-flag">⚠ Your conflict pair</div>` : ''}
+      </div>`;
+    }).join('')}</div>`
     : `<div class="empty-state">Nobody's off today</div>`;
 }
 
@@ -212,12 +276,28 @@ function cancelCancelRequest() {
 }
 window.cancelCancelRequest = cancelCancelRequest;
 
+// A human rejection can happen at either stage (manager or P&C, never
+// both — pcConfirm only runs once a request is manager_approved, so a
+// pc_decision_note only ever exists alongside a prior manager approval,
+// not a manager rejection). auto_rejected has no rejecter at all — that's
+// autoRejectReason, already shown separately.
+function rejectionDetail(r) {
+  if (r.status !== 'rejected') return '';
+  if (r.pcDecisionNote) {
+    return `<div class="small muted mt-8">Rejected by ${escapeHtml(nameFor(r.pcConfirmedBy))} (People &amp; Culture): ${escapeHtml(r.pcDecisionNote)}</div>`;
+  }
+  if (r.managerDecisionNote) {
+    return `<div class="small muted mt-8">Rejected by ${escapeHtml(nameFor(r.managerDecisionBy))}: ${escapeHtml(r.managerDecisionNote)}</div>`;
+  }
+  return '';
+}
+
 async function renderHistory() {
   const container = $('#history-content');
   container.innerHTML = `<div class="empty-state">Loading history...</div>`;
   let res;
   try {
-    res = await apiFetch('/api/employees/leave-requests/mine');
+    [res] = await Promise.all([apiFetch('/api/employees/leave-requests/mine'), loadDirectoryIndex()]);
   } catch (err) {
     container.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
     return;
@@ -234,10 +314,11 @@ async function renderHistory() {
         <tbody>
           ${requests.map((r) => `<tr>
             <td>${escapeHtml(leaveTypeLabel(r.leaveType))}</td>
-            <td>${fmtDate(r.startDate)}${r.endDate !== r.startDate ? ' → ' + fmtDate(r.endDate) : ''}${r.halfDay ? ' (half-day)' : ''}</td>
+            <td>${fmtDate(r.startDate)}${r.endDate !== r.startDate ? ' → ' + fmtDate(r.endDate) : ''}${r.availability ? ' (' + escapeHtml(availabilityLabel(r.availability)) + ')' : (r.halfDay ? ' (half-day)' : '')}</td>
             <td>
               <span class="badge badge-${r.status}">${escapeHtml(r.status.replace('_', ' '))}</span>
               ${r.autoRejectReason ? `<div class="small muted mt-8">${escapeHtml(r.autoRejectReason)}</div>` : ''}
+              ${rejectionDetail(r)}
             </td>
             <td>${r.salaryDeduction && r.salaryDeduction !== 'none'
               ? `<span class="badge badge-rejected">${escapeHtml(r.salaryDeduction.replace('_', ' '))}</span>${r.salaryDeduction === 'unpaid' && r.unpaidDaysCount ? ` <span class="small muted">(${r.unpaidDaysCount} day${r.unpaidDaysCount === 1 ? '' : 's'})</span>` : ''}`
