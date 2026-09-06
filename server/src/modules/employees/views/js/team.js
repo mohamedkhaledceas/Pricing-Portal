@@ -6,12 +6,90 @@ import { leaveTypeLabel, availabilityLabel, STATUS_LABELS } from './leaveTypes.j
 let directoryById = {};
 async function loadDirectoryIndex() {
   const res = await apiFetch('/api/employees/directory');
+  const employees = res.employees || [];
   directoryById = {};
-  (res.employees || []).forEach((e) => { directoryById[e.id] = e; });
+  employees.forEach((e) => { directoryById[e.id] = e; });
+  return employees;
 }
 function nameFor(employeeId) {
   const e = directoryById[employeeId];
   return e ? `${e.firstName} ${e.lastName}` : `Employee #${employeeId}`;
+}
+
+// Same clickable-card look and click-to-expand behavior as the Teams
+// directory modal (see /shared/teamsDirectory.js's cardHtml/toggleCard) —
+// reuses its CSS (already loaded globally via accountMenu.css) so a card
+// here looks and behaves identically to one in that modal. Kept as its own
+// markup/toggle (my-team-* ids) rather than calling into that module,
+// since both can be on screen at once (this tab + the Teams modal opened
+// over it) and would otherwise collide on the same #team-directory-card-N
+// DOM ids.
+function myTeamCardHtml(e, roleLabel) {
+  const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
+  const dept = e.department ? (window.OrgConstants.DEPARTMENT_LABELS[e.department] || e.department) : null;
+  return `
+    <div class="team-directory-card" id="my-team-card-${e.id}" role="button" tabindex="0" onclick="myTeamToggleCard(${e.id})">
+      <div class="team-directory-card-summary">
+        <div class="team-directory-card-avatar">${avatarHtml}</div>
+        <div>
+          <div class="team-directory-card-name">${escapeHtml(e.firstName + ' ' + e.lastName)}${roleLabel ? ` <span class="badge badge-approved">${escapeHtml(roleLabel)}</span>` : ''}</div>
+          <div class="team-directory-card-title small muted">${escapeHtml(e.jobTitle || '')}</div>
+        </div>
+      </div>
+      <div class="team-directory-card-detail" id="my-team-detail-${e.id}" hidden>
+        <div><strong>Department:</strong> ${escapeHtml(dept || '—')}</div>
+        <div><strong>Email:</strong> ${e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'}</div>
+        <div><strong>Manager:</strong> ${e.managerName
+          ? `${escapeHtml(e.managerName)}${e.managerEmail ? ` (<a href="mailto:${escapeHtml(e.managerEmail)}">${escapeHtml(e.managerEmail)}</a>)` : ''}`
+          : 'No manager assigned yet'}</div>
+      </div>
+    </div>`;
+}
+// Accordion, not independent toggles — opening a card closes whichever
+// other one was open, so at most one is ever expanded at a time.
+window.myTeamToggleCard = function (id) {
+  const detail = document.getElementById('my-team-detail-' + id);
+  if (!detail) return;
+  const wasHidden = detail.hidden;
+  document.querySelectorAll('[id^="my-team-detail-"]').forEach((d) => { d.hidden = true; });
+  detail.hidden = !wasHidden;
+};
+
+// Everyone has this context regardless of whether they manage anyone —
+// their own manager, plus anyone who either shares that same manager or
+// shares their department (either condition is enough — a same-department
+// colleague under a different manager is still "my team" day to day).
+// Computed client-side off the already-loaded, already-broadly-visible
+// directory (see toDirectoryEntry's own comment — this endpoint is
+// already served to every authenticated role for the Teams directory
+// modal and the handover picker) rather than a new backend endpoint.
+function myTeamSectionHtml(directory) {
+  const myEmployeeId = state.myEmployee && state.myEmployee.id;
+  if (!myEmployeeId) return '';
+  const myManagerId = state.myEmployee.managerEmployeeId;
+  const myDepartment = state.myEmployee.department;
+  const manager = myManagerId ? directoryById[myManagerId] : null;
+  const teammates = directory.filter((e) =>
+    e.id !== myEmployeeId && e.id !== myManagerId &&
+    ((myManagerId && e.managerEmployeeId === myManagerId) || (myDepartment && e.department === myDepartment))
+  );
+
+  let body;
+  if (manager || teammates.length) {
+    body = `<div class="team-directory-grid">
+      ${manager ? myTeamCardHtml(manager, 'Manager') : ''}
+      ${teammates.map((t) => myTeamCardHtml(t)).join('')}
+    </div>`;
+  } else if (myManagerId || myDepartment) {
+    body = `<div class="empty-state">No other teammates found yet.</div>`;
+  } else {
+    body = `<div class="empty-state">You haven't been assigned a direct manager or department yet — once you are, your team will show up here.</div>`;
+  }
+
+  return `<div class="card section">
+    <div class="card-title">My Team</div>
+    ${body}
+  </div>`;
 }
 
 // r.conflictWarnings comes attached from the backend (timeOffService's
@@ -224,14 +302,14 @@ export async function renderTeam() {
   // with real network latency). Same shape overview.js's fetches already
   // use correctly: a Promise.resolve(null) placeholder for calls that
   // don't apply to this role, so every branch still destructures cleanly.
-  const [, teamRes, pcRes, changeRes] = await Promise.all([
+  const [directory, teamRes, pcRes, changeRes] = await Promise.all([
     loadDirectoryIndex(),
     apiFetch('/api/employees/leave-requests/team'),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
     canReviewProfileChanges ? apiFetch('/api/employees/profile-change-requests') : Promise.resolve(null),
   ]);
 
-  const sections = [];
+  const sections = [myTeamSectionHtml(directory)].filter(Boolean);
   const teamRequests = teamRes.requests || [];
 
   // A decision (approve/reject) is always scoped to actual direct reports,
@@ -282,5 +360,5 @@ export async function renderTeam() {
       </div>`);
   }
 
-  container.innerHTML = sections.length ? sections.join('') : `<div class="empty-state">You don't manage anyone yet.</div>`;
+  container.innerHTML = sections.length ? sections.join('') : `<div class="empty-state">No team information available for this account.</div>`;
 }
