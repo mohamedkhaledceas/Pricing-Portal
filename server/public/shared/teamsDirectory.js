@@ -76,9 +76,15 @@
       </div>`;
   }
 
+  // Accordion, not independent toggles — opening a card closes whichever
+  // other one was open, so at most one is ever expanded at a time (same
+  // behavior as the employees app's own My Team roster cards).
   function toggleCard(id) {
     const detail = document.getElementById('team-directory-detail-' + id);
-    if (detail) detail.hidden = !detail.hidden;
+    if (!detail) return;
+    const wasHidden = detail.hidden;
+    document.querySelectorAll('[id^="team-directory-detail-"]').forEach((d) => { d.hidden = true; });
+    detail.hidden = !wasHidden;
   }
   window.teamsDirectoryToggle = toggleCard;
 

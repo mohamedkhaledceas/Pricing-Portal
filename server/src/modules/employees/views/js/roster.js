@@ -68,43 +68,30 @@ async function submitCreate() {
 }
 window.rosterSubmitCreate = submitCreate;
 
-async function updateEmployee(id) {
-  const row = $('#roster-row-' + id);
+const ROSTER_BOOLEAN_FIELDS = new Set(['isTeamHead']);
+const ROSTER_MANAGER_FIELD = 'managerEmployeeId';
+
+// Autosave, one field at a time, fired straight off each control's own
+// onchange — no Save button, no full-row payload. Sends only { [field]:
+// value }, relying on employeeRepository.update's partial-update semantics
+// (only keys present in the payload are touched — see its own comment and
+// the fix in 06631b4) so this can never blank out this row's other fields,
+// and the UPDATE itself is always scoped to this one id, never any other
+// row. On failure, re-pulls the table from the server rather than trying
+// to hand-revert the control, so the UI always ends up matching the DB.
+async function rosterFieldChanged(id, field, el) {
+  const value = ROSTER_BOOLEAN_FIELDS.has(field) ? el.checked : field === ROSTER_MANAGER_FIELD ? (el.value ? Number(el.value) : null) : el.value;
   try {
-    // Always send all fields, even blank ones — this Save button means "set
-    // the row to exactly what's in these fields now", so a cleared input
-    // must send an explicit clearing value, not omit the key (which the
-    // repository's partial-update now reads as "leave it alone").
-    // .edit-status only exists when the row isn't currently showing the
-    // computed "On Leave" badge (see renderRosterTable) — omit the key
-    // entirely rather than send a bogus value, so the stored status is
-    // left untouched (matches the repository's partial-update semantics).
-    // .edit-team-head only exists for roles canAssignTeamHead() allows
-    // (see renderRosterTable) — omitted entirely otherwise, same reasoning
-    // as .edit-status above.
-    const statusEl = row.querySelector('.edit-status');
-    const teamHeadEl = row.querySelector('.edit-team-head');
-    const payload = {
-      department: row.querySelector('.edit-department').value,
-      kpiProfile: row.querySelector('.edit-kpi-profile').value,
-      managerEmployeeId: row.querySelector('.edit-manager').value ? Number(row.querySelector('.edit-manager').value) : null,
-      jobTitle: row.querySelector('.edit-job-title').value,
-      employmentType: row.querySelector('.edit-employment-type').value,
-      joiningDate: row.querySelector('.edit-joining-date').value,
-      workLocation: row.querySelector('.edit-work-location').value,
-      workingHours: row.querySelector('.edit-working-hours').value,
-      workSchedule: row.querySelector('.edit-work-schedule').value,
-      ...(statusEl ? { status: statusEl.value } : {}),
-      ...(teamHeadEl ? { isTeamHead: teamHeadEl.checked } : {}),
-    };
-    await apiFetch(`/api/employees/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
-    toast('Updated', 'info');
-    await renderRoster();
+    await apiFetch(`/api/employees/${id}`, { method: 'PATCH', body: JSON.stringify({ [field]: value }) });
+    const cached = rosterCache.find((e) => e.id === id);
+    if (cached) cached[field] = value;
+    toast('Saved', 'info');
   } catch (err) {
     toast(err.message, 'danger');
+    await renderRosterTable();
   }
 }
-window.rosterUpdateEmployee = updateEmployee;
+window.rosterFieldChanged = rosterFieldChanged;
 
 // Deliberately not apiFetch — it hardcodes a JSON Content-Type header,
 // which breaks multipart uploads (the browser needs to set its own
@@ -164,36 +151,36 @@ async function renderRosterTable() {
           </div>
         </div>
       </td>
-      <td><input class="form-control edit-job-title small" value="${escapeHtml(e.jobTitle || '')}" style="min-width:110px;"></td>
+      <td><input class="form-control edit-job-title small" value="${escapeHtml(e.jobTitle || '')}" style="min-width:110px;" onchange="rosterFieldChanged(${e.id}, 'jobTitle', this)"></td>
       <td>
-        <select class="form-control edit-department small" style="min-width:150px;">
+        <select class="form-control edit-department small" style="min-width:150px;" onchange="rosterFieldChanged(${e.id}, 'department', this)">
           <option value="">—</option>
           ${DEPARTMENTS.map((d) => `<option value="${d}" ${e.department === d ? 'selected' : ''}>${escapeHtml(DEPARTMENT_LABELS[d])}</option>`).join('')}
         </select>
       </td>
       <td>
-        <select class="form-control edit-kpi-profile small" style="min-width:120px;">
+        <select class="form-control edit-kpi-profile small" style="min-width:120px;" onchange="rosterFieldChanged(${e.id}, 'kpiProfile', this)">
           <option value="">—</option>
           ${KPI_PROFILES.map((p) => `<option value="${p}" ${e.kpiProfile === p ? 'selected' : ''}>${p}</option>`).join('')}
         </select>
       </td>
       <td>
-        <select class="form-control edit-employment-type small" style="min-width:110px;">
+        <select class="form-control edit-employment-type small" style="min-width:110px;" onchange="rosterFieldChanged(${e.id}, 'employmentType', this)">
           <option value="">—</option>
           ${EMPLOYMENT_TYPES.map((t) => `<option value="${t}" ${e.employmentType === t ? 'selected' : ''}>${EMPLOYMENT_TYPE_LABELS[t]}</option>`).join('')}
         </select>
       </td>
-      <td><input type="date" class="form-control edit-joining-date small" value="${escapeHtml(e.joiningDate || '')}" style="min-width:130px;"></td>
+      <td><input type="date" class="form-control edit-joining-date small" value="${escapeHtml(e.joiningDate || '')}" style="min-width:130px;" onchange="rosterFieldChanged(${e.id}, 'joiningDate', this)"></td>
       <td>
-        <select class="form-control edit-work-location small" style="min-width:120px;">
+        <select class="form-control edit-work-location small" style="min-width:120px;" onchange="rosterFieldChanged(${e.id}, 'workLocation', this)">
           <option value="">—</option>
           ${WORK_LOCATIONS.map((l) => `<option value="${l}" ${e.workLocation === l ? 'selected' : ''}>${escapeHtml(WORK_LOCATION_LABELS[l])}</option>`).join('')}
         </select>
       </td>
-      <td><input class="form-control edit-working-hours small" value="${escapeHtml(e.workingHours || '')}" style="min-width:130px;" placeholder="e.g. 10:00 AM – 6:00 PM"></td>
-      <td><input class="form-control edit-work-schedule small" value="${escapeHtml(e.workSchedule || '')}" style="min-width:110px;" placeholder="e.g. Sun – Thu"></td>
+      <td><input class="form-control edit-working-hours small" value="${escapeHtml(e.workingHours || '')}" style="min-width:130px;" placeholder="e.g. 10:00 AM – 6:00 PM" onchange="rosterFieldChanged(${e.id}, 'workingHours', this)"></td>
+      <td><input class="form-control edit-work-schedule small" value="${escapeHtml(e.workSchedule || '')}" style="min-width:110px;" placeholder="e.g. Sun – Thu" onchange="rosterFieldChanged(${e.id}, 'workSchedule', this)"></td>
       <td>
-        <select class="form-control edit-manager small" style="min-width:130px;">
+        <select class="form-control edit-manager small" style="min-width:130px;" onchange="rosterFieldChanged(${e.id}, 'managerEmployeeId', this)">
           <option value="">— None —</option>
           ${managerOptions(e.id)}
         </select>
@@ -201,19 +188,18 @@ async function renderRosterTable() {
       <td style="text-align:center;">${e.authRole === 'people_culture' ? '<span class="badge badge-approved">P&amp;C</span>' : ''}</td>
       <td style="text-align:center;">
         ${canAssignTeamHead()
-          ? `<input type="checkbox" class="edit-team-head" ${e.isTeamHead ? 'checked' : ''} title="Team Head">`
+          ? `<input type="checkbox" class="edit-team-head" ${e.isTeamHead ? 'checked' : ''} title="Team Head" onchange="rosterFieldChanged(${e.id}, 'isTeamHead', this)">`
           : (e.isTeamHead ? '<span class="badge badge-approved">Team Head</span>' : '')}
       </td>
       <td>
         ${e.status === 'on_leave'
           ? `<span class="badge ${STATUS_BADGE_CLASS.on_leave}">${STATUS_LABELS.on_leave}</span><div class="small muted">computed from approved leave</div>`
-          : `<select class="form-control edit-status small" style="min-width:100px;">
+          : `<select class="form-control edit-status small" style="min-width:100px;" onchange="rosterFieldChanged(${e.id}, 'status', this)">
               ${STATUS_OPTIONS.map((s) => `<option value="${s}" ${e.status === s ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`).join('')}
             </select>`}
       </td>
       <td>${e.active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
       <td>
-        <button class="btn small" onclick="rosterUpdateEmployee(${e.id})">Save</button>
         <button class="btn small ${e.active ? 'danger' : ''}" onclick="rosterToggleActive(${e.id}, ${!e.active})">${e.active ? 'Deactivate' : 'Reactivate'}</button>
       </td>
     </tr>`).join('');
