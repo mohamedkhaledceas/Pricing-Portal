@@ -87,20 +87,6 @@ function createRosterController({ rosterService }) {
     return res.json({ employee });
   }
 
-  function uploadPhoto(req, res) {
-    if (!req.file) throw new EmployeesError('A photo file is required.');
-    const photoUrl = `/uploads/employees/${req.file.filename}`;
-    const employee = rosterService.setPhoto({
-      actorAuthRole: req.user.role,
-      actorEmployee: req.employee,
-      targetId: Number(req.params.id),
-      photoUrl,
-      actorId: req.user.id,
-      ip: req.ip,
-    });
-    return res.json({ employee });
-  }
-
   function uploadMyPhoto(req, res) {
     if (!req.file) throw new EmployeesError('A photo file is required.');
     const photoUrl = `/uploads/employees/${req.file.filename}`;
@@ -193,7 +179,7 @@ function createRosterController({ rosterService }) {
 
   return {
     list, getMine, directory, teamHeadsPublic, getDirectReports, create, update, deactivate, reactivate,
-    uploadPhoto, uploadMyPhoto, removeMyPhoto, updateMine,
+    uploadMyPhoto, removeMyPhoto, updateMine,
     pendingChangeRequests, approveChangeRequest, rejectChangeRequest,
   };
 }
