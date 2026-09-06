@@ -67,7 +67,19 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       }
     }
 
-    const created = leaveRequestRepository.insert({
+    // An employee with no manager_employee_id has nobody who could ever
+    // pass managerDecision's exact-match check (see that function's own
+    // comment — there's deliberately no auth-role bypass there), so a
+    // request that stayed 'pending' would sit unactionable forever. Route
+    // it straight to the P&C queue instead: skip the manager stage the
+    // same way an already-manager_approved request would land there.
+    const requestingEmployee = employeeRepository.findById(employeeId);
+    const skippedManagerStage = status === 'pending' && !(requestingEmployee && requestingEmployee.manager_employee_id);
+    if (skippedManagerStage) {
+      status = 'manager_approved';
+    }
+
+    let created = leaveRequestRepository.insert({
       employeeId,
       leaveType,
       startDate,
@@ -80,12 +92,24 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       salaryDeduction,
     });
 
+    if (skippedManagerStage) {
+      created = leaveRequestRepository.updateManagerDecision(created.id, {
+        status: 'manager_approved',
+        managerDecisionBy: null,
+        decisionNote: 'No manager assigned — routed directly to People & Culture for review.',
+      });
+    }
+
     audit.record({
       userId: actorId,
-      action: status === 'auto_rejected' ? 'leave_request.auto_reject' : 'leave_request.submit',
+      action: skippedManagerStage
+        ? 'leave_request.auto_route_no_manager'
+        : status === 'auto_rejected'
+          ? 'leave_request.auto_reject'
+          : 'leave_request.submit',
       entityType: 'leave_request',
       entityId: String(created.id),
-      details: { leaveType, startDate, endDate, status, autoRejectReason },
+      details: { leaveType, startDate, endDate, status, autoRejectReason, skippedManagerStage },
       ip,
     });
 

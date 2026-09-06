@@ -27,6 +27,16 @@ function conflictWarningHtml(r) {
     </div>`).join('');
 }
 
+// A skip-the-manager-stage auto-route (see timeOffService.submit) is a
+// manager_approved request with no human approver — the only case where
+// that status pairs a null managerDecisionBy with a note. Flags it for
+// P&C so "why is this already at my queue with no manager decision" is
+// answered on the card itself, not left implicit.
+function noManagerFlagHtml(r) {
+  if (r.status !== 'manager_approved' || r.managerDecisionBy || !r.managerDecisionNote) return '';
+  return `<div class="request-card-conflict">⚠ ${escapeHtml(r.managerDecisionNote)}</div>`;
+}
+
 function requestCard(r, actionsHtml) {
   return `<div class="request-card" id="team-card-${r.id}">
     <div class="request-card-top">
@@ -38,6 +48,7 @@ function requestCard(r, actionsHtml) {
     </div>
     ${r.reason ? `<div class="request-card-reason">${escapeHtml(r.reason)}</div>` : ''}
     ${conflictWarningHtml(r)}
+    ${noManagerFlagHtml(r)}
     ${actionsHtml || ''}
   </div>`;
 }
