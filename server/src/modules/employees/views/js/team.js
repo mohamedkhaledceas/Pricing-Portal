@@ -26,7 +26,7 @@ function nameFor(employeeId) {
 // DOM ids.
 function myTeamCardHtml(e, roleLabel) {
   const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
-  const dept = e.department ? (window.OrgConstants.DEPARTMENT_LABELS[e.department] || e.department) : null;
+  const dept = e.department ? window.Departments.labelFor(e.department) : null;
   return `
     <div class="team-directory-card" id="my-team-card-${e.id}" role="button" tabindex="0" onclick="myTeamToggleCard(${e.id})">
       <div class="team-directory-card-summary">
@@ -230,7 +230,7 @@ const CHANGE_FIELD_LABELS = {
 };
 
 function formatChangeValue(field, value) {
-  if (field === 'department') return (window.OrgConstants.DEPARTMENT_LABELS[value] || value);
+  if (field === 'department') return window.Departments.labelFor(value);
   if (field === 'workLocation') return (window.OrgConstants.WORK_LOCATION_LABELS[value] || value);
   if (field === 'employmentType') return (window.OrgConstants.EMPLOYMENT_TYPE_LABELS[value] || value);
   if (field === 'managerEmployeeId') return nameFor(value);
@@ -307,6 +307,7 @@ export async function renderTeam() {
     apiFetch('/api/employees/leave-requests/team'),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
     canReviewProfileChanges ? apiFetch('/api/employees/profile-change-requests') : Promise.resolve(null),
+    window.Departments.load(apiFetch),
   ]);
 
   const sections = [myTeamSectionHtml(directory)].filter(Boolean);

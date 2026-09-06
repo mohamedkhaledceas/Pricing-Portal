@@ -4,6 +4,7 @@
 const employeeRepository = require('./repositories/employeeRepository');
 const leaveRequestRepository = require('./repositories/leaveRequestRepository');
 const conflictPairRepository = require('./repositories/conflictPairRepository');
+const departmentRepository = require('./repositories/departmentRepository');
 const kpiDefinitionRepository = require('./repositories/kpiDefinitionRepository');
 const kpiScoreRepository = require('./repositories/kpiScoreRepository');
 const pillarAReviewRepository = require('./repositories/pillarAReviewRepository');
@@ -11,6 +12,7 @@ const employeeProfileChangeRequestRepository = require('./repositories/employeeP
 const employeeModel = require('./models/employee.model');
 const leaveRequestModel = require('./models/leaveRequest.model');
 const conflictPairModel = require('./models/conflictPair.model');
+const departmentModel = require('./models/department.model');
 const profileChangeRequestModel = require('./models/profileChangeRequest.model');
 
 const audit = require('../../common/audit');
@@ -25,12 +27,14 @@ const { deleteStoredPhoto, UPLOAD_DIR: employeePhotoUploadDir } = require('./mid
 const createRosterService = require('./services/rosterService');
 const createTimeOffService = require('./services/timeOffService');
 const createConflictPairService = require('./services/conflictPairService');
+const createDepartmentService = require('./services/departmentService');
 const createKpiScoringService = require('./services/kpiScoringService');
 const createClickupLeaveSync = require('./services/clickupLeaveSync');
 const startClickupUserSyncSchedule = require('./jobs/clickupUserSyncSchedule');
 const createRosterController = require('./controllers/rosterController');
 const createTimeOffController = require('./controllers/timeOffController');
 const createConflictPairController = require('./controllers/conflictPairController');
+const createDepartmentController = require('./controllers/departmentController');
 const createKpiController = require('./controllers/kpiController');
 const createEmployeesRouter = require('./routes/index');
 
@@ -50,23 +54,26 @@ const clickupUserSync = startClickupUserSyncSchedule({ employeeRepository, click
 
 const rosterService = createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
-  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync,
+  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync, departmentRepository,
 });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
-const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, roles: ROLES });
+const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, audit, roles: ROLES });
 const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES });
 const kpiScoringService = createKpiScoringService({ employeeRepository, kpiDefinitionRepository, kpiScoreRepository, pillarAReviewRepository, roles: ROLES });
+const departmentService = createDepartmentService({ departmentRepository, departmentModel, audit, roles: ROLES });
 
 const rosterController = createRosterController({ rosterService });
 const timeOffController = createTimeOffController({ timeOffService });
 const conflictPairController = createConflictPairController({ conflictPairService });
 const kpiController = createKpiController({ kpiScoringService, pillarAReviewRepository, employeeRepository, employeeModel, roles: ROLES });
+const departmentController = createDepartmentController({ departmentService });
 
 const router = createEmployeesRouter({
   rosterController,
   timeOffController,
   conflictPairController,
   kpiController,
+  departmentController,
   authenticate,
   attachEmployee,
 });

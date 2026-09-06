@@ -19,16 +19,38 @@ function findAll() {
   return db.prepare('SELECT * FROM conflict_pairs ORDER BY id').all();
 }
 
+function findById(id) {
+  return db.prepare('SELECT * FROM conflict_pairs WHERE id = ?').get(id);
+}
+
+// (A,B) and (B,A) are the same pair — order isn't meaningful, so duplicate
+// detection (create/update) has to check both orderings.
+function findByEmployees(employeeIdA, employeeIdB) {
+  return db
+    .prepare(
+      `SELECT * FROM conflict_pairs
+       WHERE (employee_id_a = ? AND employee_id_b = ?) OR (employee_id_a = ? AND employee_id_b = ?)`
+    )
+    .get(employeeIdA, employeeIdB, employeeIdB, employeeIdA);
+}
+
 function insert({ employeeIdA, employeeIdB }) {
   const info = db
     .prepare('INSERT INTO conflict_pairs (employee_id_a, employee_id_b) VALUES (?, ?)')
     .run(employeeIdA, employeeIdB);
-  return db.prepare('SELECT * FROM conflict_pairs WHERE id = ?').get(info.lastInsertRowid);
+  return findById(info.lastInsertRowid);
 }
 
-function setActive(id, active) {
-  db.prepare('UPDATE conflict_pairs SET active = ? WHERE id = ?').run(active ? 1 : 0, id);
-  return db.prepare('SELECT * FROM conflict_pairs WHERE id = ?').get(id);
+function update(id, { employeeIdA, employeeIdB }) {
+  db.prepare('UPDATE conflict_pairs SET employee_id_a = ?, employee_id_b = ? WHERE id = ?').run(employeeIdA, employeeIdB, id);
+  return findById(id);
 }
 
-module.exports = { findActiveForEmployee, findAll, insert, setActive };
+// Hard delete — unlike employees/departments, no other table has a FK
+// pointing at conflict_pairs.id, so removing a row can't orphan anything.
+// This is just a preference/config row, not retained history.
+function remove(id) {
+  db.prepare('DELETE FROM conflict_pairs WHERE id = ?').run(id);
+}
+
+module.exports = { findActiveForEmployee, findAll, findById, findByEmployees, insert, update, remove };

@@ -7,8 +7,26 @@ const KPI_PROFILES = ['content', 'artdirector', 'aidesigner', 'production', 'am'
 // single source of truth also used by the signup wizard and Account
 // Settings' Work Details section. Server-side enforcement is the real
 // gate (rosterService.validateFixedFields); this is display/dropdown-
-// population only.
-const { DEPARTMENTS, DEPARTMENT_LABELS, WORK_LOCATIONS, WORK_LOCATION_LABELS, EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS } = window.OrgConstants;
+// population only. Department is no longer one of these — it's a real,
+// role-manageable table now (window.Departments, departments.js).
+const { WORK_LOCATIONS, WORK_LOCATION_LABELS, EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS } = window.OrgConstants;
+
+// Options for a department <select> — active departments, plus (only for
+// an already-assigned employee) their current department even if it's now
+// deactivated or doesn't match any known code at all, so editing never
+// silently blanks a mismatched value. This is also the direct fix for the
+// bug that motivated this feature: an admin can now see exactly what raw
+// value is stored (via window.Departments.labelFor's raw-code fallback)
+// and pick a real department instead.
+function departmentOptionsHtml(currentCode) {
+  const all = window.Departments.list();
+  const active = all.filter((d) => d.active);
+  const options = active.map((d) => `<option value="${d.code}" ${d.code === currentCode ? 'selected' : ''}>${escapeHtml(d.label)}</option>`);
+  if (currentCode && !active.some((d) => d.code === currentCode)) {
+    options.push(`<option value="${escapeHtml(currentCode)}" selected>${escapeHtml(window.Departments.labelFor(currentCode))} (inactive/unmatched)</option>`);
+  }
+  return options.join('');
+}
 // 'on_leave' deliberately excluded — it's computed server-side from
 // approved leave requests, not a settable value (see rosterService).
 const STATUS_OPTIONS = ['active', 'remote'];
@@ -133,7 +151,7 @@ async function toggleActive(id, active) {
 window.rosterToggleActive = toggleActive;
 
 async function renderRosterTable() {
-  const res = await apiFetch('/api/employees');
+  const [res] = await Promise.all([apiFetch('/api/employees'), window.Departments.load(apiFetch)]);
   rosterCache = res.employees || [];
   directoryCache = rosterCache.map((e) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName }));
 
@@ -155,7 +173,7 @@ async function renderRosterTable() {
       <td>
         <select class="form-control edit-department small" style="min-width:150px;" onchange="rosterFieldChanged(${e.id}, 'department', this)">
           <option value="">—</option>
-          ${DEPARTMENTS.map((d) => `<option value="${d}" ${e.department === d ? 'selected' : ''}>${escapeHtml(DEPARTMENT_LABELS[d])}</option>`).join('')}
+          ${departmentOptionsHtml(e.department)}
         </select>
       </td>
       <td>
@@ -232,7 +250,7 @@ async function renderCreateForm() {
         <label class="form-label">Department</label>
         <select class="form-control" id="roster-department">
           <option value="">— None yet —</option>
-          ${DEPARTMENTS.map((d) => `<option value="${d}">${escapeHtml(DEPARTMENT_LABELS[d])}</option>`).join('')}
+          ${window.Departments.list().filter((d) => d.active).map((d) => `<option value="${d.code}">${escapeHtml(d.label)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -252,8 +270,91 @@ async function renderCreateForm() {
   $('#roster-create-btn').addEventListener('click', submitCreate);
 }
 
-/* ── Conflict pairs (inert extension point — see docs/adr for the
-   unresolved-enforcement decision; this is data management only). */
+/* ── Departments (manager/people_culture/operations/admin — the same
+   canManageRoster role set that already gates this whole page — can add
+   one, and rename an existing one in place; see docs/adr/0011). Editing
+   only ever changes the display label, never `code` (the FK target every
+   employee row's department actually points to), so a rename can never
+   orphan an existing assignment. Same list+inline-add-form shape as Team
+   Conflict Pairs below; editing reuses the same reveal-a-form-inline
+   pattern as timeOff.js's cancel-confirm and team.js's reject-note. */
+async function addDepartment() {
+  const input = $('#dept-add-input');
+  const label = input.value.trim();
+  if (!label) { toast('Enter a department name', 'danger'); return; }
+  try {
+    await apiFetch('/api/employees/departments', { method: 'POST', body: JSON.stringify({ label }) });
+    toast('Department added', 'info');
+    await window.Departments.refresh(apiFetch);
+    await renderRoster();
+  } catch (err) {
+    toast(err.message, 'danger');
+  }
+}
+window.deptAdd = addDepartment;
+
+let editingDepartmentId = null;
+
+function askEditDepartment(id) {
+  editingDepartmentId = id;
+  renderDepartmentsSection();
+}
+window.deptAskEdit = askEditDepartment;
+
+function cancelEditDepartment() {
+  editingDepartmentId = null;
+  renderDepartmentsSection();
+}
+window.deptCancelEdit = cancelEditDepartment;
+
+async function saveEditDepartment(id) {
+  const input = $('#dept-edit-input-' + id);
+  const label = input.value.trim();
+  if (!label) { toast('Enter a department name', 'danger'); return; }
+  try {
+    await apiFetch(`/api/employees/departments/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) });
+    toast('Department updated', 'info');
+    editingDepartmentId = null;
+    await window.Departments.refresh(apiFetch);
+    await renderRoster();
+  } catch (err) {
+    toast(err.message, 'danger');
+  }
+}
+window.deptSaveEdit = saveEditDepartment;
+
+function renderDepartmentsSection() {
+  const departments = window.Departments.list();
+  $('#departments-list').innerHTML = departments.length
+    ? departments.map((d) => `<div class="request-card" style="margin-bottom:6px;">
+        ${editingDepartmentId === d.id
+          ? `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
+              <input class="form-control" id="dept-edit-input-${d.id}" value="${escapeHtml(d.label)}" style="flex:1; min-width:200px;">
+              <button class="btn small primary" onclick="deptSaveEdit(${d.id})">Save</button>
+              <button class="btn small" onclick="deptCancelEdit()">Cancel</button>
+            </div>`
+          : `<div class="request-card-top">
+              <div>${escapeHtml(d.label)} <span class="small muted">${escapeHtml(d.code)}</span></div>
+              <button class="btn small" onclick="deptAskEdit(${d.id})">Edit</button>
+            </div>`}
+      </div>`).join('')
+    : `<div class="empty-state small">No departments yet</div>`;
+
+  $('#departments-form').innerHTML = `
+    <div class="form-grid">
+      <div class="form-group full">
+        <input class="form-control" id="dept-add-input" placeholder="Department name (e.g. AI &amp; Innovation)">
+      </div>
+      <div class="form-group full"><button class="btn small" id="dept-add-btn">Add Department</button></div>
+    </div>`;
+  $('#dept-add-btn').addEventListener('click', addDepartment);
+}
+
+/* ── Conflict pairs — manager/people_culture/operations/admin (same
+   canManageRoster role set gating this whole page) can add one, edit which
+   two employees it covers in place, or delete it outright. Delete is a
+   real removal (not a revoke/deactivate) — see conflictPairRepository.
+   remove's own comment on why that's safe for this table specifically. */
 async function loadConflictPairs() {
   const res = await apiFetch('/api/employees/conflict-pairs');
   return res.conflictPairs || [];
@@ -262,6 +363,12 @@ async function loadConflictPairs() {
 function directoryName(id) {
   const e = directoryCache.find((d) => d.id === id);
   return e ? `${e.firstName} ${e.lastName}` : `#${id}`;
+}
+
+function employeeOptionsHtml(selectedId) {
+  return directoryCache
+    .map((e) => `<option value="${e.id}" ${e.id === selectedId ? 'selected' : ''}>${escapeHtml(e.firstName + ' ' + e.lastName)}</option>`)
+    .join('');
 }
 
 async function addConflictPair() {
@@ -278,25 +385,93 @@ async function addConflictPair() {
 }
 window.cpAdd = addConflictPair;
 
-async function deactivateConflictPair(id) {
+let editingConflictPairId = null;
+let confirmingDeleteConflictPairId = null;
+
+function askEditConflictPair(id) {
+  editingConflictPairId = id;
+  confirmingDeleteConflictPairId = null;
+  renderConflictPairs();
+}
+window.cpAskEdit = askEditConflictPair;
+
+function cancelEditConflictPair() {
+  editingConflictPairId = null;
+  renderConflictPairs();
+}
+window.cpCancelEdit = cancelEditConflictPair;
+
+async function saveEditConflictPair(id) {
+  const a = Number($(`#cp-edit-a-${id}`).value);
+  const b = Number($(`#cp-edit-b-${id}`).value);
+  if (!a || !b || a === b) { toast('Pick two different employees', 'danger'); return; }
   try {
-    await apiFetch(`/api/employees/conflict-pairs/${id}/deactivate`, { method: 'POST' });
+    await apiFetch(`/api/employees/conflict-pairs/${id}`, { method: 'PATCH', body: JSON.stringify({ employeeIdA: a, employeeIdB: b }) });
+    toast('Conflict pair updated', 'info');
+    editingConflictPairId = null;
     await renderConflictPairs();
   } catch (err) {
     toast(err.message, 'danger');
   }
 }
-window.cpDeactivate = deactivateConflictPair;
+window.cpSaveEdit = saveEditConflictPair;
+
+function askDeleteConflictPair(id) {
+  confirmingDeleteConflictPairId = id;
+  editingConflictPairId = null;
+  renderConflictPairs();
+}
+window.cpAskDelete = askDeleteConflictPair;
+
+function cancelDeleteConflictPair() {
+  confirmingDeleteConflictPairId = null;
+  renderConflictPairs();
+}
+window.cpCancelDelete = cancelDeleteConflictPair;
+
+async function deleteConflictPair(id) {
+  try {
+    await apiFetch(`/api/employees/conflict-pairs/${id}`, { method: 'DELETE' });
+    toast('Conflict pair deleted', 'info');
+    confirmingDeleteConflictPairId = null;
+    await renderConflictPairs();
+  } catch (err) {
+    toast(err.message, 'danger');
+  }
+}
+window.cpDelete = deleteConflictPair;
+
+function conflictPairRowHtml(p) {
+  if (editingConflictPairId === p.id) {
+    return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
+      <select class="form-control" id="cp-edit-a-${p.id}" style="flex:1; min-width:160px;">${employeeOptionsHtml(p.employeeIdA)}</select>
+      <select class="form-control" id="cp-edit-b-${p.id}" style="flex:1; min-width:160px;">${employeeOptionsHtml(p.employeeIdB)}</select>
+      <button class="btn small primary" onclick="cpSaveEdit(${p.id})">Save</button>
+      <button class="btn small" onclick="cpCancelEdit()">Cancel</button>
+    </div>`;
+  }
+  if (confirmingDeleteConflictPairId === p.id) {
+    return `<div class="request-card-top">
+      <span class="small">Delete this pair? </span>
+      <span>
+        <button class="btn small danger" onclick="cpDelete(${p.id})">Yes</button>
+        <button class="btn small" onclick="cpCancelDelete()">No</button>
+      </span>
+    </div>`;
+  }
+  return `<div class="request-card-top">
+    <div>${escapeHtml(directoryName(p.employeeIdA))} ↔ ${escapeHtml(directoryName(p.employeeIdB))}</div>
+    <span>
+      <button class="btn small" onclick="cpAskEdit(${p.id})">Edit</button>
+      <button class="btn small danger" onclick="cpAskDelete(${p.id})">Delete</button>
+    </span>
+  </div>`;
+}
 
 async function renderConflictPairs() {
   const pairs = await loadConflictPairs();
   $('#conflict-pairs-list').innerHTML = pairs.length
-    ? pairs.map((p) => `<div class="request-card" style="margin-bottom:6px;">
-        <div class="request-card-top">
-          <div>${escapeHtml(directoryName(p.employeeIdA))} ↔ ${escapeHtml(directoryName(p.employeeIdB))}</div>
-          ${p.active ? `<button class="btn small danger" onclick="cpDeactivate(${p.id})">Deactivate</button>` : '<span class="badge badge-neutral">Inactive</span>'}
-        </div>
-      </div>`).join('')
+    ? pairs.map((p) => `<div class="request-card" style="margin-bottom:6px;">${conflictPairRowHtml(p)}</div>`).join('')
     : `<div class="empty-state small">No conflict pairs recorded</div>`;
 
   $('#conflict-pairs-form').innerHTML = `
@@ -320,6 +495,11 @@ export async function renderRoster() {
       <div id="roster-create-panel"><div class="empty-state small">Loading...</div></div>
     </div>
     <div class="card section">
+      <div class="card-title">Departments</div>
+      <div id="departments-list" class="mt-8"></div>
+      <div id="departments-form" class="mt-16"></div>
+    </div>
+    <div class="card section">
       <div class="card-title">All Employees</div>
       <div class="table-scroll">
         <table class="data-table">
@@ -335,6 +515,7 @@ export async function renderRoster() {
     </div>
   `;
   await renderRosterTable();
+  renderDepartmentsSection();
   await renderCreateForm();
   await renderConflictPairs();
 }
