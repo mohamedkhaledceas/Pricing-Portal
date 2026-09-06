@@ -120,9 +120,12 @@ async function submitRequest() {
     };
     const res = await apiFetch('/api/employees/leave-requests', { method: 'POST', body: JSON.stringify(payload) });
     const req = res.request;
+    const noManager = !(state.myEmployee && state.myEmployee.managerEmployeeId);
     let banner = `<div class="alert alert-${req.status === 'auto_rejected' ? 'danger' : 'info'}">`;
     if (req.status === 'auto_rejected') {
       banner += `<div><strong>Auto-rejected.</strong> ${escapeHtml(req.autoRejectReason || '')}</div>`;
+    } else if (noManager) {
+      banner += `<div><strong>Submitted.</strong> You don't have a manager assigned, so this went straight to People &amp; Culture for review.${req.requiresDoctorNote ? ' A doctor\'s note will be required (sick leave over 2 days).' : ''}</div>`;
     } else {
       banner += `<div><strong>Submitted.</strong> Awaiting your manager's decision.${req.requiresDoctorNote ? ' A doctor\'s note will be required (sick leave over 2 days).' : ''}</div>`;
     }
@@ -147,11 +150,15 @@ window.submitRequest = submitRequest;
 
 export function renderNewRequestForm() {
   const container = $('#subtab-panel-new-request');
+  const noManager = !(state.myEmployee && state.myEmployee.managerEmployeeId);
   container.innerHTML = `
     <div class="page-header">
       <div class="page-title">New Time Off Request</div>
       <div class="page-subtitle">Fields shown depend on the request type. Your manager and P&amp;C confirm in two steps.</div>
     </div>
+    ${noManager ? `<div class="section alert alert-warn">
+      <div>⚠ <strong>You haven't been assigned a direct manager yet.</strong> Requests you submit will skip the manager-approval step and go straight to People &amp; Culture for review. Contact People &amp; Culture if you believe this is a mistake. Please update your account to specify who you report directly to.</div>
+    </div>` : ''}
     <div id="form-banner" class="section"></div>
     <div class="card">
       <div class="form-grid">
@@ -292,6 +299,15 @@ function rejectionDetail(r) {
   return '';
 }
 
+// The one case where managerDecisionNote exists without a managerDecisionBy
+// (see timeOffService.submit's skippedManagerStage) — surfaced here too so
+// "why did this jump straight to Pending (P&C)" stays visible on the
+// employee's own history, not just in the one-time submit banner.
+function noManagerDetail(r) {
+  if (r.managerDecisionBy || !r.managerDecisionNote) return '';
+  return `<div class="small muted mt-8">${escapeHtml(r.managerDecisionNote)}</div>`;
+}
+
 async function renderHistory() {
   const container = $('#history-content');
   container.innerHTML = `<div class="empty-state">Loading history...</div>`;
@@ -319,6 +335,7 @@ async function renderHistory() {
               <span class="badge badge-${r.status}">${escapeHtml(r.status.replace('_', ' '))}</span>
               ${r.autoRejectReason ? `<div class="small muted mt-8">${escapeHtml(r.autoRejectReason)}</div>` : ''}
               ${rejectionDetail(r)}
+              ${noManagerDetail(r)}
             </td>
             <td>${r.salaryDeduction && r.salaryDeduction !== 'none'
               ? `<span class="badge badge-rejected">${escapeHtml(r.salaryDeduction.replace('_', ' '))}</span>${r.salaryDeduction === 'unpaid' && r.unpaidDaysCount ? ` <span class="small muted">(${r.unpaidDaysCount} day${r.unpaidDaysCount === 1 ? '' : 's'})</span>` : ''}`
@@ -370,6 +387,9 @@ export function renderRules() {
           </tbody>
         </table>
       </div>
+    </div>
+    <div class="section alert alert-warn">
+      <div>If you don't have a direct manager assigned, your requests skip the manager-approval step entirely and go straight to People &amp; Culture's queue as <strong>Pending (P&amp;C)</strong>.</div>
     </div>
   `;
 }
