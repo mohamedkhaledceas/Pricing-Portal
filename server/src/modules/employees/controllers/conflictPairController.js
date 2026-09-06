@@ -30,21 +30,36 @@ function createConflictPairController({ conflictPairService }) {
       actorEmployee: req.employee,
       employeeIdA: body.employeeIdA,
       employeeIdB: body.employeeIdB,
+      actorId: req.user.id,
+      ip: req.ip,
     });
     return res.status(201).json({ conflictPair: pair });
   }
 
-  function deactivate(req, res) {
-    const pair = conflictPairService.setActive({
+  function update(req, res) {
+    const body = req.body || {};
+    const pair = conflictPairService.update({
       actorAuthRole: req.user.role,
-      actorEmployee: req.employee,
       id: Number(req.params.id),
-      active: false,
+      employeeIdA: body.employeeIdA,
+      employeeIdB: body.employeeIdB,
+      actorId: req.user.id,
+      ip: req.ip,
     });
     return res.json({ conflictPair: pair });
   }
 
-  return { mine, mineOverlap, list, create, deactivate };
+  function remove(req, res) {
+    conflictPairService.remove({
+      actorAuthRole: req.user.role,
+      id: Number(req.params.id),
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.status(204).send();
+  }
+
+  return { mine, mineOverlap, list, create, update, remove };
 }
 
 module.exports = createConflictPairController;

@@ -6,7 +6,7 @@ const { upload, verifyImageSignature, scanForMalware } = require('../middleware/
    attachEmployee (this module's own middleware) run on every route here —
    every employees-domain endpoint needs to know both "who is logged in"
    and "which employee record, if any, are they". */
-function createEmployeesRouter({ rosterController, timeOffController, conflictPairController, kpiController, authenticate, attachEmployee }) {
+function createEmployeesRouter({ rosterController, timeOffController, conflictPairController, kpiController, departmentController, authenticate, attachEmployee }) {
   const router = express.Router();
 
   // Pre-auth: the signup wizard's Assigned Manager dropdown needs this
@@ -14,6 +14,11 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   // and employeeModel.toTeamHeadOption for how narrow the returned shape
   // is (id + name only, nothing else exposed pre-login).
   router.get('/employees/team-heads', rosterController.teamHeadsPublic);
+
+  // Also pre-auth, same reasoning — the signup wizard's own department
+  // dropdown needs this before any account/token exists. Department names
+  // aren't sensitive; see departmentService.list's own comment.
+  router.get('/employees/departments', departmentController.list);
 
   router.use(authenticate, attachEmployee);
 
@@ -62,7 +67,15 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
 
   router.get('/employees/conflict-pairs', conflictPairController.list);
   router.post('/employees/conflict-pairs', conflictPairController.create);
-  router.post('/employees/conflict-pairs/:id/deactivate', conflictPairController.deactivate);
+  router.patch('/employees/conflict-pairs/:id', conflictPairController.update);
+  router.delete('/employees/conflict-pairs/:id', conflictPairController.remove);
+
+  // Create/update are gated server-side to manager/people_culture/
+  // operations/admin inside departmentService.requireCanManage — the list
+  // route above is the only pre-auth/no-gate one. update renames the
+  // label only — code (the FK target) never changes.
+  router.post('/employees/departments', departmentController.create);
+  router.patch('/employees/departments/:id', departmentController.update);
 
   router.get('/employees/kpi/frameworks/:kpiProfile', kpiController.getFramework);
   router.get('/employees/kpi/:employeeId/breakdown', kpiController.getBreakdown);

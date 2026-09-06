@@ -28,10 +28,13 @@
     }
   }
 
+  // Seeded from every known department, active or not — an employee on a
+  // deactivated department still gets its own real section (with its real
+  // label) instead of falling into "Other". Only a genuinely unmatched
+  // code (no departments row at all) lands there.
   function groupByDepartment(entries) {
-    const oc = window.OrgConstants;
     const groups = new Map();
-    oc.DEPARTMENTS.forEach((d) => groups.set(d, []));
+    window.Departments.list().forEach((d) => groups.set(d.code, []));
     const other = [];
     entries.forEach((e) => {
       if (e.department && groups.has(e.department)) {
@@ -46,7 +49,7 @@
 
   function departmentLabel(dept) {
     if (!dept) return 'Other';
-    return window.OrgConstants.DEPARTMENT_LABELS[dept] || dept;
+    return window.Departments.labelFor(dept);
   }
 
   function statusLabel(status) {
@@ -128,7 +131,7 @@
       document.removeEventListener('keydown', escHandler);
     });
 
-    const entries = await loadDirectory(opts);
+    const [entries] = await Promise.all([loadDirectory(opts), window.Departments.load(opts.apiFetch)]);
     const body = document.getElementById('teamsDirectoryBody');
     if (body) body.innerHTML = sectionsHtml(entries);
   }

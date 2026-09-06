@@ -187,13 +187,14 @@ const STEP2_REQUIRED_FIELDS = [
   'step2JoiningDate', 'step2WorkLocation', 'step2WorkingHours', 'step2WorkSchedule',
 ];
 
-function populateStep2Dropdowns() {
+async function populateStep2Dropdowns() {
   const oc = window.OrgConstants;
+  const departments = await window.Departments.load(apiGet);
   const deptSelect = $('#step2Department');
-  oc.DEPARTMENTS.forEach((d) => {
+  departments.filter((d) => d.active).forEach((d) => {
     const opt = document.createElement('option');
-    opt.value = d;
-    opt.textContent = oc.DEPARTMENT_LABELS[d];
+    opt.value = d.code;
+    opt.textContent = d.label;
     deptSelect.appendChild(opt);
   });
   const empSelect = $('#step2EmploymentType');
@@ -312,7 +313,7 @@ $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; })
 
 (async function init() {
   paintLogo();
-  populateStep2Dropdowns();
+  await populateStep2Dropdowns();
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
   }

@@ -12,7 +12,11 @@ import { renderLeaveReport } from './leaveBreakdown.js';
 
 // 'manager' is the CEO's role in this org — full company-wide roster
 // access, same as people_culture (see rosterService.canManageRoster).
-const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'manager'];
+// Must match that function's role set exactly — it previously omitted
+// 'operations', which the backend already granted full roster access to;
+// that mismatch meant an operations-role user could call the roster APIs
+// directly but never see the tab that reaches them.
+const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'manager', 'operations'];
 // Leave Report is scoped to the two roles that actually review/approve
 // requests — not admin (canManageRoster's superset doesn't apply here).
 const LEAVE_REPORT_ROLES = ['manager', 'people_culture', 'admin'];

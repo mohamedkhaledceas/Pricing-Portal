@@ -7,32 +7,13 @@
 
    Mirrors server/src/modules/employees/constants.js — kept in sync by hand;
    the actual enforcement lives server-side (rosterService), this is display/
-   dropdown-population only. */
+   dropdown-population only.
+
+   Department used to live here too as a frozen array — it's now a real,
+   role-manageable table instead (see docs/adr/0011 and window.Departments
+   in departments.js), since a hardcoded list meant adding a department
+   required a code change and a deploy. */
 (function () {
-  const DEPARTMENTS = [
-    'account_managers',
-    'content',
-    'designers',
-    'operations',
-    'public_relations',
-    'performance',
-    'production',
-    'sales_business_development',
-    'social_media_specialists',
-  ];
-
-  const DEPARTMENT_LABELS = {
-    account_managers: 'Account Managers',
-    content: 'Content',
-    designers: 'Designers',
-    operations: 'Operations',
-    public_relations: 'Public Relations',
-    performance: 'Performance',
-    production: 'Production',
-    sales_business_development: 'Sales & Business Development',
-    social_media_specialists: 'Social Media Specialists',
-  };
-
   const WORK_LOCATIONS = ['remote', 'cairo_office', 'alex_office', 'hybrid_cairo', 'hybrid_alex'];
 
   const WORK_LOCATION_LABELS = {
@@ -52,8 +33,6 @@
   };
 
   window.OrgConstants = {
-    DEPARTMENTS,
-    DEPARTMENT_LABELS,
     WORK_LOCATIONS,
     WORK_LOCATION_LABELS,
     EMPLOYMENT_TYPES,

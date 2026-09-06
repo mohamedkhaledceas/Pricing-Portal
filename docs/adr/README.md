@@ -14,3 +14,4 @@ Each ADR captures one significant decision: the problem, the decision, alternati
 | [0008](0008-defer-domain-events.md) | Defer a Domain Event System | Accepted |
 | [0009](0009-response-envelope-no-versioning.md) | Standard Response Envelope, No API Versioning | Accepted |
 | [0010](0010-commercial-lead-quarterly-kpis.md) | Cohort-Based Quarterly KPI Tracking for the Commercial Lead Funnel | Proposed |
+| [0011](0011-dynamic-department-list.md) | Department List as a Table, Not a Fixed Array | Accepted |

@@ -1,5 +1,5 @@
 const { EmployeesError } = require('../errors');
-const { DEPARTMENTS, WORK_LOCATIONS } = require('../constants');
+const { WORK_LOCATIONS } = require('../constants');
 const logger = require('../../../common/logger');
 
 const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
@@ -13,8 +13,17 @@ const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
    include operations. */
 function createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
-  profileChangeRequestModel, audit, roles, deleteStoredPhoto, clickupUserSync,
+  profileChangeRequestModel, audit, roles, deleteStoredPhoto, clickupUserSync, departmentRepository,
 }) {
+  // Must exist and be active — departments is now a real table (see
+  // docs/adr/0011) instead of a frozen array; the DB-level FK on
+  // employees.department only guarantees the code *exists*, not that it's
+  // still an assignable (active) one, so that half stays a service check.
+  function isAssignableDepartment(department) {
+    const found = departmentRepository.findByCode(department);
+    return !!found && found.active;
+  }
+
   // Fire-and-forget, same reasoning as clickupUserSync's own boot-time run
   // (see jobs/clickupUserSyncSchedule.js) — a ClickUp outage must never
   // block employee creation, and the caller already got their response.
@@ -68,8 +77,8 @@ function createRosterService({
   // here too, for a consistent error message and so every fixed-value field
   // fails the same way.
   function validateFixedFields({ department, workLocation, employmentType }) {
-    if (department !== undefined && department !== null && department !== '' && !DEPARTMENTS.includes(department)) {
-      throw new EmployeesError('Department must be one of the fixed team options.');
+    if (department !== undefined && department !== null && department !== '' && !isAssignableDepartment(department)) {
+      throw new EmployeesError('Department must be one of the active team options.');
     }
     if (workLocation !== undefined && workLocation !== null && workLocation !== '' && !WORK_LOCATIONS.includes(workLocation)) {
       throw new EmployeesError('Work location must be one of the fixed options.');
@@ -158,7 +167,7 @@ function createRosterService({
   // only, via employeeModel.toTeamHeadOption) since this is reachable
   // without a token.
   function listTeamHeadsByDepartment(department) {
-    if (!department || !DEPARTMENTS.includes(department)) return [];
+    if (!department || !isAssignableDepartment(department)) return [];
     return employeeRepository.findTeamHeadsByDepartment(department).map(employeeModel.toTeamHeadOption);
   }
 
@@ -459,7 +468,7 @@ function createRosterService({
     if (!jobTitle || !joiningDate || !workingHours || !workSchedule) {
       throw new EmployeesError('All work details are required.');
     }
-    if (!department || !DEPARTMENTS.includes(department)) {
+    if (!department || !isAssignableDepartment(department)) {
       throw new EmployeesError('Please choose a valid department.');
     }
     if (!employmentType || !EMPLOYMENT_TYPES.includes(employmentType)) {

@@ -237,7 +237,14 @@
             <label>Department</label>
             <select id="acctDepartment" required>
               <option value="">— Select —</option>
-              ${oc.DEPARTMENTS.map((d) => `<option value="${d}" ${employee.department === d ? 'selected' : ''}>${escapeHtml(oc.DEPARTMENT_LABELS[d])}</option>`).join('')}
+              ${(() => {
+                const activeDepts = window.Departments.list().filter((d) => d.active);
+                const options = activeDepts.map((d) => `<option value="${d.code}" ${employee.department === d.code ? 'selected' : ''}>${escapeHtml(d.label)}</option>`);
+                if (employee.department && !activeDepts.some((d) => d.code === employee.department)) {
+                  options.push(`<option value="${escapeHtml(employee.department)}" selected>${escapeHtml(window.Departments.labelFor(employee.department))} (inactive/unmatched)</option>`);
+                }
+                return options.join('');
+              })()}
             </select>
           </div>
         </div>
@@ -380,7 +387,10 @@
       bindPhotoHandlers(opts, employee);
     }
 
-    const managerName = await loadManagerName(opts, employee && employee.managerEmployeeId);
+    const [managerName] = await Promise.all([
+      loadManagerName(opts, employee && employee.managerEmployeeId),
+      window.Departments.load(opts.apiFetch),
+    ]);
     const workDetailsSection = document.getElementById('acctWorkDetailsSection');
     if (workDetailsSection) {
       workDetailsSection.outerHTML = `<div id="acctWorkDetailsSection">${renderWorkDetailsSection(employee, pendingChangeRequest, managerName)}</div>`;
