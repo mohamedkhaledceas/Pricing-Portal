@@ -278,31 +278,12 @@ function createRosterService({
     return decorateStatusOne(employeeModel.toEmployee(updated));
   }
 
-  function setPhoto({ actorAuthRole, targetId, photoUrl, actorId, ip }) {
-    requireCanManageRoster({ actorAuthRole });
-    const target = employeeRepository.findById(targetId);
-    if (!target) throw new EmployeesError('Employee not found.', 404);
-
-    const before = employeeModel.toEmployee(target);
-    const updated = employeeRepository.setPhoto(targetId, photoUrl);
-    if (before.photoUrl && before.photoUrl !== photoUrl) deleteStoredPhoto(before.photoUrl);
-    audit.record({
-      userId: actorId,
-      action: 'employee.photo_update',
-      entityType: 'employee',
-      entityId: String(targetId),
-      details: { before: { photoUrl: before.photoUrl }, after: { photoUrl } },
-      ip,
-    });
-    return decorateStatusOne(employeeModel.toEmployee(updated));
-  }
-
-  // Self-service — deliberately never takes a targetId. actorEmployee comes
-  // from attachEmployee (req.employee), so there is structurally no way to
-  // reach anyone else's row through this path, the same shape as
-  // auth's /me/profile (see docs referenced in the plan for this feature).
-  // photoUrl: null is the "remove my photo" case — same function handles
-  // both, same as setPhoto above.
+  // Self-service ONLY — deliberately never takes a targetId, and there is no
+  // admin/manager/P&C equivalent for another employee's photo. actorEmployee
+  // comes from attachEmployee (req.employee), so there is structurally no
+  // way to reach anyone else's row through this path, the same shape as
+  // auth's /me/profile. photoUrl: null is the "remove my photo" case — same
+  // function handles both.
   function setMyPhoto({ actorEmployee, photoUrl, actorId, ip }) {
     if (!actorEmployee) {
       throw new EmployeesError('You need a completed employee profile before you can set a profile photo. Contact People & Culture.', 403);
@@ -500,7 +481,7 @@ function createRosterService({
 
   return {
     canManageRoster, listAll, listDirectory, listTeamHeadsByDepartment, getMine, getDirectReports,
-    create, update, setActive, setPhoto, setMyPhoto, updateMine, getMyPendingChangeRequest,
+    create, update, setActive, setMyPhoto, updateMine, getMyPendingChangeRequest,
     listPendingChangeRequests, approveChangeRequest, rejectChangeRequest,
     createForSelfRegistration,
   };

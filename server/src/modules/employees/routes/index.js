@@ -36,13 +36,6 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.patch('/employees/:id', rosterController.update);
   router.post('/employees/:id/deactivate', rosterController.deactivate);
   router.post('/employees/:id/reactivate', rosterController.reactivate);
-  router.post(
-    '/employees/:id/photo',
-    upload.single('photo'),
-    verifyImageSignature,
-    scanForMalware,
-    rosterController.uploadPhoto
-  );
 
   // submit/managerDecision/pcConfirm/cancel are async (they await the
   // ClickUp sync — see clickupLeaveSync.js) and need catchAsync so an

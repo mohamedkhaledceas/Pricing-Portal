@@ -19,11 +19,19 @@
     return (f + l).toUpperCase() || '?';
   }
 
+  function initialsHtml(user) {
+    return `<span class="account-avatar-initials">${escapeHtml(initials(user))}</span>`;
+  }
+
   function avatarHtml(photoUrl, user) {
     if (photoUrl) {
-      return `<img src="${escapeHtml(photoUrl)}" alt="" class="account-avatar-img">`;
+      // onerror falls back to initials if the file is missing (e.g. a
+      // photo_url left over from before uploads moved onto the persistent
+      // disk) — otherwise a dead reference renders as a broken-image icon
+      // forever instead of degrading gracefully.
+      return `<img src="${escapeHtml(photoUrl)}" alt="" class="account-avatar-img" data-fallback="${escapeHtml(initialsHtml(user))}" onerror="this.outerHTML=this.dataset.fallback">`;
     }
-    return `<span class="account-avatar-initials">${escapeHtml(initials(user))}</span>`;
+    return initialsHtml(user);
   }
 
   let state = { photoUrl: null, opts: null, containerEl: null };

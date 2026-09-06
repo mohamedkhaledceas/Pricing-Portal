@@ -111,34 +111,6 @@ async function rosterFieldChanged(id, field, el) {
 }
 window.rosterFieldChanged = rosterFieldChanged;
 
-// Deliberately not apiFetch — it hardcodes a JSON Content-Type header,
-// which breaks multipart uploads (the browser needs to set its own
-// Content-Type with the multipart boundary for FormData bodies).
-async function uploadPhoto(id, input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append('photo', file);
-  try {
-    const res = await fetch(`/api/employees/${id}/photo`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + state.accessToken },
-      body: formData,
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'Upload failed');
-    }
-    toast('Photo updated', 'info');
-    await renderRoster();
-  } catch (err) {
-    toast(err.message, 'danger');
-  } finally {
-    input.value = '';
-  }
-}
-window.rosterUploadPhoto = uploadPhoto;
-
 async function toggleActive(id, active) {
   try {
     await apiFetch(`/api/employees/${id}/${active ? 'reactivate' : 'deactivate'}`, { method: 'POST' });
@@ -162,10 +134,6 @@ async function renderRosterTable() {
           <div style="width:28px; height:28px; border-radius:50%; overflow:hidden; flex-shrink:0;">${window.AccountMenu.avatarHtml(e.photoUrl, e)}</div>
           <div>
             ${escapeHtml(e.firstName + ' ' + e.lastName)}<div class="small muted">${escapeHtml(e.email)}</div>
-            <label class="small muted" style="cursor:pointer;">
-              Change photo
-              <input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" onchange="rosterUploadPhoto(${e.id}, this)">
-            </label>
           </div>
         </div>
       </td>
