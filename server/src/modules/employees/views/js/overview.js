@@ -327,7 +327,7 @@ export async function renderOverview() {
   const role = state.currentUser && state.currentUser.role;
   const isPeopleCulture = role === 'people_culture';
   const isManager = role === 'manager';
-  const [mineRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes] = await Promise.all([
+  const [mineRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes, peerReviewStatusRes] = await Promise.all([
     apiFetch('/api/employees/leave-requests/mine'),
     apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
@@ -336,6 +336,7 @@ export async function renderOverview() {
     apiFetch('/api/employees/leave-requests/team'),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/auto-rejected') : Promise.resolve(null),
     apiFetch('/api/employees/conflict-pairs/mine'),
+    apiFetch('/api/employees/kpi/peer-review/my-status').catch(() => null),
   ]);
   const myPartnerIds = new Set((myPartnersRes.partners || []).map((p) => p.id));
 
@@ -352,8 +353,20 @@ export async function renderOverview() {
   const myDecisionCard = pendingMyDecisionCard(teamRequests, role, directory, emp.id);
   const roster = rosterRes ? rosterRes.employees || [] : [];
   const autoRejectSource = isManager ? teamRequests : (autoRejectRes ? autoRejectRes.requests || [] : []);
+  const peerReview = peerReviewStatusRes;
+  const peerReviewPending = peerReview && peerReview.open && peerReview.submitted < peerReview.expected;
 
   container.innerHTML = `
+    ${peerReviewPending ? `
+      <div class="alert alert-warn section">
+        <div>
+          <strong>Team reviews are open</strong> — you've submitted ${peerReview.submitted} of ${peerReview.expected}.
+          <button onclick="switchMainTab('kpi', document.getElementById('maintab-kpi'))"
+            style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-left:8px;">
+            Go to Team Reviews →
+          </button>
+        </div>
+      </div>` : ''}
     <div class="cards-row section">
       ${statCard('My Requests', `
         <div class="stat-row mt-8">

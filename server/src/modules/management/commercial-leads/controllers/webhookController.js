@@ -1,18 +1,11 @@
 /* Authenticity is verified via the HMAC-SHA256 signature ClickUp sends in
    X-Signature, computed over the exact raw request bytes with the secret
    returned when the webhook was registered (scripts/clickup/register-webhook.js).
-   Extracted unchanged from clickupWebhook.js. */
-const crypto = require('crypto');
+   verifySignature itself now lives in common/integrations/clickupWebhookAuth.js
+   — promoted there once the employees module's KPI webhook needed the
+   identical, commercial-leads-agnostic logic. */
 const logger = require('../../../../common/logger');
-
-function verifySignature(rawBody, signatureHeader, secret) {
-  if (!signatureHeader || !secret) return false;
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-  const expectedBuf = Buffer.from(expected, 'hex');
-  const signatureBuf = Buffer.from(signatureHeader, 'hex');
-  if (expectedBuf.length !== signatureBuf.length) return false;
-  return crypto.timingSafeEqual(expectedBuf, signatureBuf);
-}
+const { verifyClickupSignature } = require('../../../../common/integrations/clickupWebhookAuth');
 
 function createWebhookController({ clickupSyncService }) {
   function receive(req, res) {
@@ -25,7 +18,7 @@ function createWebhookController({ clickupSyncService }) {
     }
 
     const signature = req.headers['x-signature'];
-    if (!verifySignature(req.body, signature, secret)) {
+    if (!verifyClickupSignature(req.body, signature, secret)) {
       logger.warn('Rejected ClickUp webhook with invalid/missing signature.', {
         correlationId: req.correlationId,
       });
@@ -60,4 +53,4 @@ function createWebhookController({ clickupSyncService }) {
   return { receive };
 }
 
-module.exports = { createWebhookController, verifySignature };
+module.exports = { createWebhookController };

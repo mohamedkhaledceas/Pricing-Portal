@@ -38,11 +38,12 @@ function deduction(base, perViolationPct) {
 }
 // For the handful of metrics whose target genuinely varies per person
 // (Production's D1/D4 — see target_text) and can't be expressed as one
-// formula: whoever enters the score compares the actual against that
-// person's own target and enters the resulting 0–100 score directly,
-// rather than kpiScoringService computing it from a raw actual value.
-function manualScore() {
-  return { kind: 'manual_score' };
+// static formula: score = actual/target×100, same math as ratio(), but
+// `target` is resolved per (employee, quarter) from kpi_employee_targets
+// (set by that employee's manager or an admin — see
+// kpiScoringService.setEmployeeTarget) instead of being fixed here.
+function ratioEmployeeTarget() {
+  return { kind: 'ratio_employee_target' };
 }
 
 const GROWTH_TEMPLATE = (skillLabel, tkLabel) => [
@@ -86,10 +87,10 @@ const DEFINITIONS = [
   { kpiProfile: 'production', pillar: 'quality', metricId: 'Q1', name: 'Client revision rounds per reel', weightPct: 5, targetText: '≤2 / reel avg', sourceType: 'auto', formulaConfig: bands([{ max: 2, score: 100 }, { min: 2.001, max: 3, score: 50 }, { min: 3.001, score: 0 }]) },
   { kpiProfile: 'production', pillar: 'quality', metricId: 'Q2', name: 'Quality rejection rate', weightPct: 5, targetText: '<8%', sourceType: 'semi', formulaConfig: bands([{ max: 7.999, score: 100 }, { min: 8, max: 15, score: 50 }, { min: 15.001, score: 0 }]) },
   { kpiProfile: 'production', pillar: 'quality', metricId: 'Q3', name: 'Internal revision rounds (QC + Internal loops)', weightPct: 5, targetText: '≤1 avg', sourceType: 'auto', formulaConfig: bands([{ max: 1, score: 100 }, { min: 1.001, max: 2, score: 70 }, { min: 2.001, score: 40 }]) },
-  { kpiProfile: 'production', pillar: 'delivery', metricId: 'D1', name: 'Reels / videos delivered (Scheduled)', weightPct: 5, targetText: 'Per-person target: Omar 30–40/mo · Kareem 15–20/mo · Rodaina UGC count/Q', sourceType: 'auto', formulaConfig: manualScore() },
+  { kpiProfile: 'production', pillar: 'delivery', metricId: 'D1', name: 'Reels / videos delivered (Scheduled)', weightPct: 5, targetText: 'Per-person target: Omar 30–40/mo · Kareem 15–20/mo · Rodaina UGC count/Q', sourceType: 'auto', formulaConfig: ratioEmployeeTarget() },
   { kpiProfile: 'production', pillar: 'delivery', metricId: 'D2', name: 'On-time completion rate', weightPct: 4, targetText: '≥95%', sourceType: 'auto', formulaConfig: bands([{ min: 95, score: 100 }, { min: 85, max: 94.999, score: 70 }, { max: 84.999, score: 0 }]) },
   { kpiProfile: 'production', pillar: 'delivery', metricId: 'D3', name: 'ClickUp updated + response time', weightPct: 3, targetText: '≥95% updated · ≤15 min response avg', sourceType: 'auto', formulaConfig: bands([{ min: 2, score: 100 }, { min: 1, max: 1.999, score: 50 }, { max: 0.999, score: 0 }]) },
-  { kpiProfile: 'production', pillar: 'delivery', metricId: 'D4', name: 'Quarterly role deliverables met', weightPct: 3, targetText: 'Per-person target (see role-specific list)', sourceType: 'auto', formulaConfig: manualScore() },
+  { kpiProfile: 'production', pillar: 'delivery', metricId: 'D4', name: 'Quarterly role deliverables met', weightPct: 3, targetText: 'Per-person target (see role-specific list)', sourceType: 'auto', formulaConfig: ratioEmployeeTarget() },
   ...GROWTH_TEMPLATE(null, 'AI project or SOP/framework delivered').map((r) => ({ kpiProfile: 'production', ...r })),
 
   // ---- Account Manager (AM) ----
@@ -119,4 +120,15 @@ const DEFINITIONS = [
   { kpiProfile: 'pandc', pillar: 'people_retention', metricId: 'P3', name: 'Employee retention rate (Odoo)', weightPct: 4, targetText: '≤10% turnover', sourceType: 'odoo', formulaConfig: bands([{ max: 10, score: 100 }, { min: 10.001, max: 15, score: 70 }, { min: 15.001, score: 0 }]) },
 ];
 
-module.exports = DEFINITIONS.map((row) => ({ ...row, effectiveQuarter: QUARTER }));
+// The quarter this transcription was authored against — kept as a
+// historical record (see container.js, which also seeds the *live*
+// current quarter every boot so the framework rolls forward automatically
+// instead of silently going undefined once BASELINE_QUARTER is in the
+// past).
+const BASELINE_QUARTER = QUARTER;
+
+function forQuarter(quarter) {
+  return DEFINITIONS.map((row) => ({ ...row, effectiveQuarter: quarter }));
+}
+
+module.exports = { BASELINE_QUARTER, forQuarter };

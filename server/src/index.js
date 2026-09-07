@@ -6,7 +6,7 @@ const cookieParser = require('cookie-parser');
 const db = require('./db');
 const authModule = require('./modules/auth');
 const management = require('./modules/management');
-const { router: employeesRouter, provisionSelfRegisteredEmployee, employeePhotoUploadDir } = require('./modules/employees');
+const { router: employeesRouter, provisionSelfRegisteredEmployee, employeePhotoUploadDir, kpiClickupWebhookRouter } = require('./modules/employees');
 
 /* Wires the signup wizard's employee-profile creation into auth's register
    flow without either module importing the other's internals — see
@@ -66,6 +66,11 @@ app.use(correlationId);
    available for HMAC signature verification. By the time a request reaches
    express.json(), the raw body is gone. */
 app.use('/api/clickup/webhook', management.webhookRouter);
+
+/* Same reasoning, a separate registration — see kpiClickupWebhookController
+   and docs/adr/0012 addendum for why this is its own team-wide webhook
+   rather than reusing commercial-leads' folder-scoped one. */
+app.use('/api/employees/kpi/clickup-webhook', kpiClickupWebhookRouter);
 
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());

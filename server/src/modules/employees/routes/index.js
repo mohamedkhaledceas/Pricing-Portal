@@ -78,9 +78,31 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.patch('/employees/departments/:id', departmentController.update);
 
   router.get('/employees/kpi/frameworks/:kpiProfile', kpiController.getFramework);
+  router.get('/employees/kpi/current-quarter', kpiController.getCurrentQuarter);
+  router.get('/employees/kpi/available-quarters', kpiController.getAvailableQuarters);
+  router.get('/employees/kpi/required-actions', kpiController.getRequiredActions);
+  router.get('/employees/kpi/team-summary', kpiController.getTeamSummary);
+  router.get('/employees/kpi/notifications', kpiController.listNotifications);
+  router.patch('/employees/kpi/notifications/:id/read', kpiController.markNotificationRead);
   router.get('/employees/kpi/:employeeId/breakdown', kpiController.getBreakdown);
+  router.get('/employees/kpi/:employeeId/history', kpiController.getHistory);
+  router.get('/employees/kpi/:employeeId/history/export', kpiController.exportHistory);
   router.post('/employees/kpi/:employeeId/manual-entry', kpiController.enterManualScore);
-  router.post('/employees/kpi/:employeeId/pillar-a', kpiController.enterPillarA);
+  router.get('/employees/kpi/:employeeId/targets', kpiController.getTargets);
+  router.post('/employees/kpi/:employeeId/targets', kpiController.setTarget);
+  router.get('/employees/kpi/auto-mappings', kpiController.listAutoMetricMappings);
+  router.post('/employees/kpi/auto-mappings', kpiController.setAutoMetricMapping);
+  router.delete('/employees/kpi/auto-mappings/:kpiProfile/:metricId', kpiController.removeAutoMetricMapping);
+  router.get('/employees/kpi/clickup-lists', kpiController.listClickupLists);
+  router.post('/employees/kpi/compute-auto-scores', catchAsync(kpiController.runComputeAutoScores));
+  router.get('/employees/kpi/peer-review/window', kpiController.getReviewWindow);
+  router.post('/employees/kpi/peer-review/window', kpiController.setReviewWindow);
+  router.get('/employees/kpi/peer-review/roster', kpiController.getPeerReviewRoster);
+  router.get('/employees/kpi/peer-review/completion', kpiController.getPeerReviewCompletion);
+  router.get('/employees/kpi/peer-review/counter', kpiController.getPeerReviewCounter);
+  router.get('/employees/kpi/peer-review/my-status', kpiController.getMyPeerReviewStatus);
+  router.post('/employees/kpi/peer-review/:revieweeId', kpiController.submitPeerReview);
+  router.post('/employees/kpi/:employeeId/self-evaluation', kpiController.enterSelfEvaluation);
 
   return router;
 }
