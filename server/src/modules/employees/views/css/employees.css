@@ -190,6 +190,33 @@ table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
 .kpi-section-title:first-child{margin-top:0}
 .kpi-entry-row{display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap}
 .kpi-entry-row input{width:120px}
+.kpi-metric-comment{font-size:12px; font-style:italic; color:var(--ink-2); margin-top:6px; padding:6px 8px; background:var(--panel); border-radius:6px}
+
+.kpi-required-actions-card{border-color:#fab21966}
+.kpi-action-row{font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--border)}
+.kpi-action-row:last-child{border-bottom:none}
+
+.kpi-notif-badge{background:var(--critical); color:#fff; border-radius:20px; font-size:10px; font-weight:700; padding:1px 6px; margin-left:4px}
+.kpi-notif-panel{
+  position:absolute; right:0; margin-top:8px; width:320px; max-height:360px; overflow-y:auto;
+  background:var(--surface-1); border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 12px 30px rgba(0,0,0,0.18); z-index:40;
+}
+#kpi-notif-holder{position:relative}
+.kpi-notif-item{padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer}
+.kpi-notif-item:last-child{border-bottom:none}
+.kpi-notif-item.unread{background:rgba(66,140,255,0.08)}
+.kpi-notif-title{font-size:12.5px; font-weight:650}
+.kpi-notif-body{font-size:12px; color:var(--ink-2); margin-top:2px}
+
+.kpi-peer-review-row.kpi-peer-review-done{border-color:var(--good)}
+.kpi-peer-review-row.kpi-peer-review-incomplete{border-color:var(--critical)}
+.kpi-peer-review-fields[hidden]{display:none}
+
+.kpi-trend-row{display:flex; align-items:flex-end; gap:8px; height:120px; padding-top:8px}
+.kpi-trend-bar{display:flex; flex-direction:column; align-items:center; justify-content:flex-end; flex:1; height:100%}
+.kpi-trend-bar-fill{width:100%; max-width:28px; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px}
+.kpi-trend-bar-label{font-size:10px; color:var(--muted); margin-top:4px}
 
 .alert{border-radius:8px; padding:10px 12px; font-size:12.5px; display:flex; gap:8px; align-items:flex-start}
 .alert-info{background:rgba(66,140,255,0.10); color:var(--ink)}

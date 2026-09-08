@@ -41,6 +41,10 @@ function findByManagerId(managerEmployeeId) {
   return db.prepare(`${SELECT_WITH_USER} WHERE e.manager_employee_id = ? ORDER BY u.first_name, u.last_name`).all(managerEmployeeId);
 }
 
+function findByClickupUserId(clickupUserId) {
+  return db.prepare(`${SELECT_WITH_USER} WHERE e.clickup_user_id = ?`).get(String(clickupUserId));
+}
+
 // Pre-auth lookup (see routes/index.js — mounted before the authenticate
 // gate) for the signup wizard's Assigned Manager dropdown. Deliberately
 // scoped to id/first/last name only at the call site (rosterService), not
@@ -133,6 +137,7 @@ module.exports = {
   findById,
   findByUserId,
   findByManagerId,
+  findByClickupUserId,
   findTeamHeadsByDepartment,
   existsByUserId,
   insert,
