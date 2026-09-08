@@ -9,7 +9,18 @@ const KPI_PROFILES = ['content', 'artdirector', 'aidesigner', 'production', 'am'
 // gate (rosterService.validateFixedFields); this is display/dropdown-
 // population only. Department is no longer one of these — it's a real,
 // role-manageable table now (window.Departments, departments.js).
-const { WORK_LOCATIONS, WORK_LOCATION_LABELS, EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS } = window.OrgConstants;
+const { WORK_LOCATIONS, WORK_LOCATION_LABELS, EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS, JOB_TITLES } = window.OrgConstants;
+
+// Same "current value survives even if unmatched" fallback as
+// departmentOptionsHtml below — job title used to be free text, so an
+// existing employee's stored value may predate the fixed list.
+function jobTitleOptionsHtml(currentTitle) {
+  const options = JOB_TITLES.map((t) => `<option value="${escapeHtml(t)}" ${t === currentTitle ? 'selected' : ''}>${escapeHtml(t)}</option>`);
+  if (currentTitle && !JOB_TITLES.includes(currentTitle)) {
+    options.push(`<option value="${escapeHtml(currentTitle)}" selected>${escapeHtml(currentTitle)} (unmatched)</option>`);
+  }
+  return options.join('');
+}
 
 // Options for a department <select> — active departments, plus (only for
 // an already-assigned employee) their current department even if it's now
@@ -169,7 +180,12 @@ async function renderRosterTable() {
           </div>
         </div>
       </td>
-      <td><input class="form-control edit-job-title small" value="${escapeHtml(e.jobTitle || '')}" style="min-width:110px;" onchange="rosterFieldChanged(${e.id}, 'jobTitle', this)"></td>
+      <td>
+        <select class="form-control edit-job-title small" style="min-width:110px;" onchange="rosterFieldChanged(${e.id}, 'jobTitle', this)">
+          <option value="">—</option>
+          ${jobTitleOptionsHtml(e.jobTitle)}
+        </select>
+      </td>
       <td>
         <select class="form-control edit-department small" style="min-width:150px;" onchange="rosterFieldChanged(${e.id}, 'department', this)">
           <option value="">—</option>

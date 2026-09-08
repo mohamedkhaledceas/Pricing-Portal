@@ -1,5 +1,5 @@
 const { EmployeesError } = require('../errors');
-const { WORK_LOCATIONS } = require('../constants');
+const { WORK_LOCATIONS, JOB_TITLES } = require('../constants');
 const logger = require('../../../common/logger');
 
 const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
@@ -76,7 +76,7 @@ function createRosterService({
   // employment_type already has a DB CHECK (migration 007); validated again
   // here too, for a consistent error message and so every fixed-value field
   // fails the same way.
-  function validateFixedFields({ department, workLocation, employmentType }) {
+  function validateFixedFields({ department, workLocation, employmentType, jobTitle }) {
     if (department !== undefined && department !== null && department !== '' && !isAssignableDepartment(department)) {
       throw new EmployeesError('Department must be one of the active team options.');
     }
@@ -85,6 +85,13 @@ function createRosterService({
     }
     if (employmentType !== undefined && employmentType !== null && employmentType !== '' && !EMPLOYMENT_TYPES.includes(employmentType)) {
       throw new EmployeesError('Employment type must be one of the fixed options.');
+    }
+    // Only enforced going forward — existing employees with a pre-dropdown
+    // free-text title aren't retroactively broken (the roster UI's
+    // "current value, even if unmatched" fallback lets an admin see and
+    // fix those without this check blocking the rest of an unrelated edit).
+    if (jobTitle !== undefined && jobTitle !== null && jobTitle !== '' && !JOB_TITLES.includes(jobTitle)) {
+      throw new EmployeesError('Job title must be one of the fixed options.');
     }
   }
 
@@ -199,7 +206,7 @@ function createRosterService({
     if (status !== undefined && status !== null && status !== '' && !['active', 'remote'].includes(status)) {
       throw new EmployeesError("status must be 'active' or 'remote' — 'on_leave' is computed automatically from approved leave, not set directly.");
     }
-    validateFixedFields({ department, workLocation, employmentType });
+    validateFixedFields({ department, workLocation, employmentType, jobTitle });
     // No separate isTeamHead guard here — canAssignTeamHead is the same
     // role set as canManageRoster (checked via requireCanManageRoster
     // above), so a second check would be redundant. Kept as a named
@@ -236,7 +243,7 @@ function createRosterService({
     if (status !== undefined && status !== null && status !== '' && !['active', 'remote'].includes(status)) {
       throw new EmployeesError("status must be 'active' or 'remote' — 'on_leave' is computed automatically from approved leave, not set directly.");
     }
-    validateFixedFields({ department, workLocation, employmentType });
+    validateFixedFields({ department, workLocation, employmentType, jobTitle });
     // No separate isTeamHead guard here — canAssignTeamHead is the same
     // role set as canManageRoster (checked via requireCanManageRoster
     // above), so a second check would be redundant. Kept as a named
@@ -341,7 +348,7 @@ function createRosterService({
     if (!actorEmployee) {
       throw new EmployeesError('You need a completed employee profile before you can edit your work details. Contact People & Culture.', 403);
     }
-    validateFixedFields({ department, workLocation, employmentType });
+    validateFixedFields({ department, workLocation, employmentType, jobTitle });
     if (managerEmployeeId !== undefined && managerEmployeeId !== null) {
       const effectiveDepartment = department !== undefined ? department : actorEmployee.department;
       validateManagerIsTeamHeadInDepartment({ managerEmployeeId, department: effectiveDepartment });
@@ -465,8 +472,11 @@ function createRosterService({
     if (employeeRepository.existsByUserId(userId)) {
       throw new EmployeesError('This account already has an employee record.', 409);
     }
-    if (!jobTitle || !joiningDate || !workingHours || !workSchedule) {
+    if (!joiningDate || !workingHours || !workSchedule) {
       throw new EmployeesError('All work details are required.');
+    }
+    if (!jobTitle || !JOB_TITLES.includes(jobTitle)) {
+      throw new EmployeesError('Please choose a valid job title.');
     }
     if (!department || !isAssignableDepartment(department)) {
       throw new EmployeesError('Please choose a valid department.');

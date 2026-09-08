@@ -32,10 +32,23 @@
     freelancer: 'Freelancer',
   };
 
+  // Mirrors server/src/modules/employees/constants.js's JOB_TITLES —
+  // enforced there for the signup wizard, admin roster edits, and the
+  // self-service work-details change-request flow.
+  const JOB_TITLES = [
+    'Graphic Designer', 'Account Manager', 'Account Executive', 'Art Director', 'Operation Manager',
+    'Traffic Manager', 'Project Manager', 'Media Buyer', 'Video Editor', 'Content Creator',
+    'People & Culture', 'Social Media Executive', 'Reel Creator', 'Photographer/Videographer',
+    'Head of Production', 'Head of Content Creation', 'Creative Director', 'Business Developer',
+    'Freelancer', 'Sales', 'UGC', 'Motion Graphic', 'Marketing Manager', 'Executive Assistant',
+    'Developers', 'Software Engineer',
+  ];
+
   window.OrgConstants = {
     WORK_LOCATIONS,
     WORK_LOCATION_LABELS,
     EMPLOYMENT_TYPES,
     EMPLOYMENT_TYPE_LABELS,
+    JOB_TITLES,
   };
 })();
