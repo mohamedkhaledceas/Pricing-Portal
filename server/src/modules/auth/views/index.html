@@ -20,6 +20,19 @@
 
 <div class="login-wrap">
   <img id="brandLogo" alt="CEAS" class="login-logo">
+  <script>
+  (function(){
+    // Sets the logo src synchronously, before the page finishes parsing —
+    // main.js's paintLogo() does the same thing, but it's a deferred module
+    // script that only runs after the page has already painted, which left
+    // a brief gap where the browser had nothing to show but the alt text.
+    // Mirrors the head's own early data-theme script so both the theme and
+    // the logo are correct on first paint, not corrected a moment later.
+    var t = document.documentElement.getAttribute('data-theme');
+    var dark = t === 'dark' || (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.getElementById('brandLogo').src = dark ? '/logo-dark.png' : '/logo-light.png';
+  })();
+  </script>
 
   <form id="loginForm" class="card login-card">
     <h2>Sign in</h2>

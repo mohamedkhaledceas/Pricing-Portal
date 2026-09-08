@@ -32,6 +32,16 @@
 <div id="app">
   <header class="top">
     <img id="brandLogo" alt="Back to Pricing Portal" title="Back to Pricing Portal" style="height:38px; width:auto; cursor:pointer">
+    <script>
+    (function(){
+      // Same fix as the login page's brandLogo: sets src synchronously so
+      // there's no gap where the browser paints the alt text before the
+      // deferred module script's paintLogo() gets to it.
+      var t = document.documentElement.getAttribute('data-theme');
+      var dark = t === 'dark' || (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.getElementById('brandLogo').src = dark ? '/logo-dark.png' : '/logo-light.png';
+    })();
+    </script>
     <div>
       <h1>Commercial Lead</h1>
       <div class="sub">Live from ClickUp</div>
