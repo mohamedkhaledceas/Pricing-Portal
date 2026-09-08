@@ -248,6 +248,12 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
     return res.json({ quarter, ...kpiPeerReviewService.getSubmissionCounter({ quarter, actorAuthRole: req.user.role }) });
   }
 
+  function getMyTeamPeerReviewCounter(req, res) {
+    const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
+    const counter = kpiPeerReviewService.getMyTeamSubmissionCounter({ actorEmployee: req.employee, quarter });
+    return res.json({ quarter, counter });
+  }
+
   function getMyPeerReviewStatus(req, res) {
     const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
     return res.json({ quarter, ...kpiPeerReviewService.getMyStatus({ actorEmployee: req.employee, quarter }) });
@@ -285,6 +291,7 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
     submitPeerReview,
     getPeerReviewCompletion,
     getPeerReviewCounter,
+    getMyTeamPeerReviewCounter,
     getMyPeerReviewStatus,
     enterSelfEvaluation,
     getRequiredActions,

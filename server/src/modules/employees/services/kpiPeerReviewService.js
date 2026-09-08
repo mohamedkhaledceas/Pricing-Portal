@@ -172,13 +172,13 @@ function createKpiPeerReviewService({
     });
   }
 
-  // Manager-role-only, company-wide participation number — deliberately
+  // Manager/P&C-role, company-wide participation number — deliberately
   // less detailed than getCompletion (P&C's per-employee breakdown): just
   // how many employees have finished their full set of reviews out of
   // how many total, e.g. "27/33". Gated on the auth role itself, not on
   // being a specific employee's manager.
   function getSubmissionCounter({ quarter, actorAuthRole }) {
-    if (actorAuthRole !== roles.MANAGER) {
+    if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to view this.', 403);
     }
     const employees = employeeRepository.findAllActive();
@@ -188,6 +188,25 @@ function createKpiPeerReviewService({
       return submitted >= expectedPerPerson;
     }).length;
     return { completed, total: employees.length };
+  }
+
+  // Any team head (an employee with direct reports) sees this same
+  // participation number scoped to just the people who report to them,
+  // e.g. "4/8" — distinct from getSubmissionCounter's company-wide number
+  // and not gated by auth role, since "manages people" is a fact about the
+  // employee record (manager_employee_id), not the account's role. Returns
+  // null for anyone with no direct reports so the frontend can hide it
+  // rather than showing a meaningless 0/0.
+  function getMyTeamSubmissionCounter({ actorEmployee, quarter }) {
+    if (!actorEmployee) return null;
+    const reports = employeeRepository.findByManagerId(actorEmployee.id).filter((e) => e.active);
+    if (reports.length === 0) return null;
+    const expectedPerPerson = Math.max(0, employeeRepository.findAllActive().length - 1);
+    const completed = expectedPerPerson === 0 ? 0 : reports.filter((e) => {
+      const submitted = kpiPeerReviewRepository.findRevieweeIdsByReviewer(e.id, quarter).length;
+      return submitted >= expectedPerPerson;
+    }).length;
+    return { completed, total: reports.length };
   }
 
   // Any role with an employee profile — "do I still have pending team
@@ -202,7 +221,9 @@ function createKpiPeerReviewService({
     return { open, submitted, expected };
   }
 
-  return { getWindow, setWindow, isWindowOpen, getRoster, submitReview, getCompletion, getSubmissionCounter, getMyStatus };
+  return {
+    getWindow, setWindow, isWindowOpen, getRoster, submitReview, getCompletion, getSubmissionCounter, getMyTeamSubmissionCounter, getMyStatus,
+  };
 }
 
 module.exports = createKpiPeerReviewService;
