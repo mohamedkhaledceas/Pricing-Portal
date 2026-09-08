@@ -137,11 +137,23 @@ function reviewerRowHtml(person, quarter) {
 }
 
 async function loadManagerCounter(quarter) {
-  if (!state.currentUser || state.currentUser.role !== 'manager') return null;
+  if (!state.currentUser || (state.currentUser.role !== 'manager' && state.currentUser.role !== 'people_culture')) return null;
   try {
     return await apiFetch(`/api/employees/kpi/peer-review/counter?quarter=${encodeURIComponent(quarter)}`);
   } catch (err) {
     return null; // not fatal — the rest of the page still works without it
+  }
+}
+
+// Any employee may be a team head (has direct reports) regardless of their
+// account role, so this is always requested — the backend returns
+// counter: null for anyone with no direct reports.
+async function loadTeamCounter(quarter) {
+  try {
+    const res = await apiFetch(`/api/employees/kpi/peer-review/team-counter?quarter=${encodeURIComponent(quarter)}`);
+    return res.counter;
+  } catch (err) {
+    return null;
   }
 }
 
@@ -189,10 +201,11 @@ function completionTableHtml(completion) {
 export async function renderKpiPeerReview(container, quarter) {
   container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
   try {
-    const [window_, rosterRes, counter, completionRes] = await Promise.all([
+    const [window_, rosterRes, counter, teamCounter, completionRes] = await Promise.all([
       apiFetch(`/api/employees/kpi/peer-review/window?quarter=${encodeURIComponent(quarter)}`),
       apiFetch(`/api/employees/kpi/peer-review/roster?quarter=${encodeURIComponent(quarter)}`),
       loadManagerCounter(quarter),
+      loadTeamCounter(quarter),
       loadPcCompletion(quarter),
     ]);
     const roster = rosterRes.roster;
@@ -209,6 +222,7 @@ export async function renderKpiPeerReview(container, quarter) {
         <div class="small muted">Review window: ${fmtDate(window_.opensAt)} – ${fmtDate(window_.closesAt)} ${window_.configured ? '' : '(suggested — not yet confirmed by P&C)'}</div>
         <div class="small ${isOpen ? '' : 'muted'} mt-8">${isOpen ? `Open — you've reviewed ${done} of ${roster.length}` : 'Not currently open'}</div>
         ${counter ? `<div class="small mt-8"><strong>${counter.completed}/${counter.total}</strong> employees company-wide have submitted their team reviews</div>` : ''}
+        ${teamCounter ? `<div class="small mt-8"><strong>${teamCounter.completed}/${teamCounter.total}</strong> people you manage have submitted their team reviews</div>` : ''}
       </div>
       ${completionRes ? completionTableHtml(completionRes.completion) : ''}
       <div id="kpi-peer-review-form-area">
