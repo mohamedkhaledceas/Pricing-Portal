@@ -18,4 +18,18 @@ const WORK_LOCATION_LABELS = Object.freeze({
   hybrid_alex: 'Hybrid (Alex)',
 });
 
-module.exports = { WORK_LOCATIONS, WORK_LOCATION_LABELS };
+/* Job title, same fixed-list treatment as work_location above. Enforced on
+   the signup wizard's self-registration path, the admin roster table, and
+   the self-service work-details change-request flow. Already
+   human-readable, so unlike WORK_LOCATIONS there's no separate code/label
+   split — the string is both the stored value and the display text. */
+const JOB_TITLES = Object.freeze([
+  'Graphic Designer', 'Account Manager', 'Account Executive', 'Art Director', 'Operation Manager',
+  'Traffic Manager', 'Project Manager', 'Media Buyer', 'Video Editor', 'Content Creator',
+  'People & Culture', 'Social Media Executive', 'Reel Creator', 'Photographer/Videographer',
+  'Head of Production', 'Head of Content Creation', 'Creative Director', 'Business Developer',
+  'Freelancer', 'Sales', 'UGC', 'Motion Graphic', 'Marketing Manager', 'Executive Assistant',
+  'Developers', 'Software Engineer',
+]);
+
+module.exports = { WORK_LOCATIONS, WORK_LOCATION_LABELS, JOB_TITLES };

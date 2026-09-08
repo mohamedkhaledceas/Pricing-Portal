@@ -189,6 +189,13 @@ const STEP2_REQUIRED_FIELDS = [
 
 async function populateStep2Dropdowns() {
   const oc = window.OrgConstants;
+  const jobTitleSelect = $('#step2JobTitle');
+  oc.JOB_TITLES.forEach((title) => {
+    const opt = document.createElement('option');
+    opt.value = title;
+    opt.textContent = title;
+    jobTitleSelect.appendChild(opt);
+  });
   const departments = await window.Departments.load(apiGet);
   const deptSelect = $('#step2Department');
   departments.filter((d) => d.active).forEach((d) => {
