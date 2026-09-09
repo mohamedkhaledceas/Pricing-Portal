@@ -224,8 +224,6 @@ const CHANGE_FIELD_LABELS = {
   employmentType: 'Employment Type',
   joiningDate: 'Joining Date',
   workLocation: 'Work Location',
-  workingHours: 'Working Hours',
-  workSchedule: 'Work Schedule',
   managerEmployeeId: 'Manager',
 };
 

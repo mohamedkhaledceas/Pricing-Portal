@@ -201,8 +201,6 @@
     employmentType: 'acctEmploymentType',
     joiningDate: 'acctJoiningDate',
     workLocation: 'acctWorkLocation',
-    workingHours: 'acctWorkingHours',
-    workSchedule: 'acctWorkSchedule',
   };
 
   function renderWorkDetailsSection(employee, pendingChangeRequest, managerName) {
@@ -266,10 +264,6 @@
               ${oc.WORK_LOCATIONS.map((l) => `<option value="${l}" ${employee.workLocation === l ? 'selected' : ''}>${escapeHtml(oc.WORK_LOCATION_LABELS[l])}</option>`).join('')}
             </select>
           </div>
-          <div class="account-field"><label>Working hours</label><input id="acctWorkingHours" placeholder="e.g. 10:00 AM – 6:00 PM" value="${escapeHtml(employee.workingHours || '')}" required></div>
-        </div>
-        <div class="account-form-row">
-          <div class="account-field"><label>Work schedule</label><input id="acctWorkSchedule" placeholder="e.g. Sun – Thu" value="${escapeHtml(employee.workSchedule || '')}" required></div>
           <div class="account-field"><label>Manager</label><div class="account-readonly">${managerText}</div></div>
         </div>
         <div class="account-form-row">

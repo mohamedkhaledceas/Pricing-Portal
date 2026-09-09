@@ -179,8 +179,6 @@ async function renderRosterTable() {
           ${WORK_LOCATIONS.map((l) => `<option value="${l}" ${e.workLocation === l ? 'selected' : ''}>${escapeHtml(WORK_LOCATION_LABELS[l])}</option>`).join('')}
         </select>
       </td>
-      <td><input class="form-control edit-working-hours small" value="${escapeHtml(e.workingHours || '')}" style="min-width:130px;" placeholder="e.g. 10:00 AM – 6:00 PM" onchange="rosterFieldChanged(${e.id}, 'workingHours', this)"></td>
-      <td><input class="form-control edit-work-schedule small" value="${escapeHtml(e.workSchedule || '')}" style="min-width:110px;" placeholder="e.g. Sun – Thu" onchange="rosterFieldChanged(${e.id}, 'workSchedule', this)"></td>
       <td>
         <select class="form-control edit-manager small" style="min-width:130px;" onchange="rosterFieldChanged(${e.id}, 'managerEmployeeId', this)">
           <option value="">— None —</option>
@@ -487,7 +485,7 @@ export async function renderRoster() {
       <div class="card-title">All Employees</div>
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Working Hours</th><th>Work Schedule</th><th>Manager</th><th>P&amp;C</th><th>Team Head</th><th>Status</th><th>Active</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Manager</th><th>P&amp;C</th><th>Team Head</th><th>Status</th><th>Active</th><th></th></tr></thead>
           <tbody id="roster-table-body"><tr><td colspan="15" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>

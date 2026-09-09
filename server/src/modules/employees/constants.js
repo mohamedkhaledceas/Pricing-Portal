@@ -8,14 +8,12 @@
    a real departmentRepository-backed table instead (see docs/adr/0011),
    since a hardcoded list meant adding a department required a code change
    and a deploy. */
-const WORK_LOCATIONS = Object.freeze(['remote', 'cairo_office', 'alex_office', 'hybrid_cairo', 'hybrid_alex']);
+const WORK_LOCATIONS = Object.freeze(['remote', 'cairo_office', 'alex_office']);
 
 const WORK_LOCATION_LABELS = Object.freeze({
   remote: 'Remote',
-  cairo_office: 'Cairo Office',
-  alex_office: 'Alex Office',
-  hybrid_cairo: 'Hybrid (Cairo)',
-  hybrid_alex: 'Hybrid (Alex)',
+  cairo_office: 'Cairo',
+  alex_office: 'Alex',
 });
 
 /* Job title, same fixed-list treatment as work_location above. Enforced on
