@@ -184,7 +184,7 @@ $('#signupForm').addEventListener('submit', (e) => {
 
 const STEP2_REQUIRED_FIELDS = [
   'step2JobTitle', 'step2Department', 'step2EmploymentType',
-  'step2JoiningDate', 'step2WorkLocation', 'step2WorkingHours', 'step2WorkSchedule',
+  'step2JoiningDate', 'step2WorkLocation',
 ];
 
 async function populateStep2Dropdowns() {
@@ -303,8 +303,6 @@ $('#signupStep2Form').addEventListener('submit', async (e) => {
         employmentType: values.step2EmploymentType,
         joiningDate: values.step2JoiningDate,
         workLocation: values.step2WorkLocation,
-        workingHours: values.step2WorkingHours,
-        workSchedule: values.step2WorkSchedule,
         managerEmployeeId,
       },
     });

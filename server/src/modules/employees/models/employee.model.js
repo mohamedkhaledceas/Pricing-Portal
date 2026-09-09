@@ -18,8 +18,6 @@ function toEmployee(row) {
     employmentType: row.employment_type,
     joiningDate: row.joining_date,
     workLocation: row.work_location,
-    workingHours: row.working_hours,
-    workSchedule: row.work_schedule,
     isTeamHead: !!row.is_team_head,
     // Once true, self-service edits (rosterService.updateMine) go through
     // the pending-approval queue instead of applying directly — see

@@ -192,7 +192,7 @@ function createRosterService({
 
   function create({
     actorAuthRole, userId, clickupUserId, department, kpiProfile, managerEmployeeId,
-    jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, status,
+    jobTitle, employmentType, joiningDate, workLocation, status,
     isTeamHead, actorId, ip,
   }) {
     requireCanManageRoster({ actorAuthRole });
@@ -214,7 +214,7 @@ function createRosterService({
 
     const created = employeeRepository.insert({
       userId, clickupUserId, department, kpiProfile, managerEmployeeId,
-      jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, status, isTeamHead,
+      jobTitle, employmentType, joiningDate, workLocation, status, isTeamHead,
     });
     triggerClickupUserSync();
     audit.record({
@@ -230,7 +230,7 @@ function createRosterService({
 
   function update({
     actorAuthRole, targetId, clickupUserId, department, kpiProfile, managerEmployeeId,
-    jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, status,
+    jobTitle, employmentType, joiningDate, workLocation, status,
     isTeamHead, actorId, ip,
   }) {
     requireCanManageRoster({ actorAuthRole });
@@ -252,7 +252,7 @@ function createRosterService({
     const before = employeeModel.toEmployee(target);
     const updated = employeeRepository.update(targetId, {
       clickupUserId, department, kpiProfile, managerEmployeeId,
-      jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, status, isTeamHead,
+      jobTitle, employmentType, joiningDate, workLocation, status, isTeamHead,
     });
     audit.record({
       userId: actorId,
@@ -310,9 +310,9 @@ function createRosterService({
   }
 
   // Self-service work-details update (job title, department, employment
-  // type, joining date, work location, working hours/schedule, manager) —
-  // same structural self-only shape as setMyPhoto: takes actorEmployee, no
-  // targetId, so there's no code path to reach another employee's row.
+  // type, joining date, work location, manager) — same structural
+  // self-only shape as setMyPhoto: takes actorEmployee, no targetId, so
+  // there's no code path to reach another employee's row.
   //
   // The first time an employee's profile fields are edited this way (i.e.
   // signup's own wizard already flipped profile_locked to true — see
@@ -324,7 +324,7 @@ function createRosterService({
   // applies straight to the employees table.
   function updateMine({
     actorEmployee, department, jobTitle, employmentType, joiningDate,
-    workLocation, workingHours, workSchedule, managerEmployeeId, actorId, ip,
+    workLocation, managerEmployeeId, actorId, ip,
   }) {
     if (!actorEmployee) {
       throw new EmployeesError('You need a completed employee profile before you can edit your work details. Contact People & Culture.', 403);
@@ -335,7 +335,7 @@ function createRosterService({
       validateManagerIsTeamHeadInDepartment({ managerEmployeeId, department: effectiveDepartment });
     }
 
-    const proposed = { department, jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule, managerEmployeeId };
+    const proposed = { department, jobTitle, employmentType, joiningDate, workLocation, managerEmployeeId };
     Object.keys(proposed).forEach((key) => { if (proposed[key] === undefined) delete proposed[key]; });
 
     if (!actorEmployee.profileLocked) {
@@ -361,7 +361,7 @@ function createRosterService({
     // send-everything convention as the admin roster table's Save button —
     // see roster.js's own comment on this), so without diffing against the
     // current stored value, an edit to just one field would create a
-    // change request listing all seven as "changed". Only what actually
+    // change request listing all five as "changed". Only what actually
     // differs belongs in the reviewer's queue.
     const actualChanges = {};
     Object.keys(proposed).forEach((key) => {
@@ -447,13 +447,13 @@ function createRosterService({
   // comment) — anything changed after this goes through the approval queue.
   function createForSelfRegistration({
     userId, department, jobTitle, employmentType, joiningDate,
-    workLocation, workingHours, workSchedule, managerEmployeeId, actorId, ip,
+    workLocation, managerEmployeeId, actorId, ip,
   }) {
     if (!userId) throw new EmployeesError('userId is required.');
     if (employeeRepository.existsByUserId(userId)) {
       throw new EmployeesError('This account already has an employee record.', 409);
     }
-    if (!joiningDate || !workingHours || !workSchedule) {
+    if (!joiningDate) {
       throw new EmployeesError('All work details are required.');
     }
     if (!jobTitle || !JOB_TITLES.includes(jobTitle)) {
@@ -473,7 +473,7 @@ function createRosterService({
     }
 
     const created = employeeRepository.insert({
-      userId, department, jobTitle, employmentType, joiningDate, workLocation, workingHours, workSchedule,
+      userId, department, jobTitle, employmentType, joiningDate, workLocation,
       managerEmployeeId: managerEmployeeId || null,
       profileLocked: true,
     });

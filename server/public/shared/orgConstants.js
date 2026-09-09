@@ -14,14 +14,12 @@
    in departments.js), since a hardcoded list meant adding a department
    required a code change and a deploy. */
 (function () {
-  const WORK_LOCATIONS = ['remote', 'cairo_office', 'alex_office', 'hybrid_cairo', 'hybrid_alex'];
+  const WORK_LOCATIONS = ['remote', 'cairo_office', 'alex_office'];
 
   const WORK_LOCATION_LABELS = {
     remote: 'Remote',
-    cairo_office: 'Cairo Office',
-    alex_office: 'Alex Office',
-    hybrid_cairo: 'Hybrid (Cairo)',
-    hybrid_alex: 'Hybrid (Alex)',
+    cairo_office: 'Cairo',
+    alex_office: 'Alex',
   };
 
   const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
