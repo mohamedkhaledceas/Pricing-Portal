@@ -39,7 +39,7 @@
     'People & Culture', 'Social Media Executive', 'Reel Creator', 'Photographer/Videographer',
     'Head of Production', 'Head of Content Creation', 'Creative Director', 'Business Developer',
     'Freelancer', 'Sales', 'UGC', 'Motion Graphic', 'Marketing Manager', 'Executive Assistant',
-    'Developers', 'Software Engineer',
+    'Developers', 'Software Engineer', 'Learn with Marie',
   ];
 
   window.OrgConstants = {

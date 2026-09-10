@@ -27,7 +27,7 @@ const JOB_TITLES = Object.freeze([
   'People & Culture', 'Social Media Executive', 'Reel Creator', 'Photographer/Videographer',
   'Head of Production', 'Head of Content Creation', 'Creative Director', 'Business Developer',
   'Freelancer', 'Sales', 'UGC', 'Motion Graphic', 'Marketing Manager', 'Executive Assistant',
-  'Developers', 'Software Engineer',
+  'Developers', 'Software Engineer', 'Learn with Marie',
 ]);
 
 module.exports = { WORK_LOCATIONS, WORK_LOCATION_LABELS, JOB_TITLES };
