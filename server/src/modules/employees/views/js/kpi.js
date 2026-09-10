@@ -415,7 +415,10 @@ function renderSubNav() {
   const nav = $('#kpi-sub-nav');
   if (!nav) return;
   const tabs = [{ id: 'overview', label: 'Overview' }, { id: 'history', label: 'History' }, { id: 'peerReview', label: 'Team Reviews' }];
-  if (kpiPerms.isManager || kpiPerms.isAdmin) tabs.push({ id: 'team', label: 'Team Performance' });
+  // hasReports (computed in loadViewCandidates via the same reporting-line
+  // FK as the backend's own team-head check) is what lets a real team head
+  // see this tab too, not just the manager/admin company-wide roles.
+  if (kpiPerms.isManager || kpiPerms.isAdmin || kpiPerms.hasReports) tabs.push({ id: 'team', label: 'Team Performance' });
   if (kpiPerms.isPeopleCulture) tabs.push({ id: 'frameworks', label: 'Browse Frameworks' });
   if (kpiPerms.isAdmin) tabs.push({ id: 'mappingAdmin', label: 'ClickUp Mappings' });
 
