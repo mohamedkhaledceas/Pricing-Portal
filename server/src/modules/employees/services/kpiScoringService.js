@@ -103,7 +103,7 @@ function computeMetricScore(formulaConfig, actualValue, resolvedTarget) {
 }
 
 function createKpiScoringService({
-  employeeRepository, employeeModel, kpiDefinitionRepository, kpiScoreRepository,
+  employeeRepository, employeeModel, departmentRepository, kpiDefinitionRepository, kpiScoreRepository,
   pillarAReviewRepository, selfEvaluationRepository, kpiNotificationRepository,
   kpiEmployeeTargetRepository, kpiAutoMetricMappingRepository, kpiClickupMetricsService,
   audit, roles, logger,
@@ -465,28 +465,56 @@ function createKpiScoringService({
     return actions;
   }
 
-  // Manager or admin auth role only — not P&C, and not scoped to "this
-  // actor's own direct reports" (corrected from an earlier misreading of
-  // the same "role, not relationship" instruction target-setting already
-  // got). Any manager or admin sees the same company-wide list.
-  function computeTeamSummary({ actorAuthRole, quarter }) {
-    if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.ADMIN) {
+  function summaryRow(row, quarter) {
+    const breakdown = computeBreakdown(row.id, quarter);
+    const entry = employeeModel.toDirectoryEntry(row);
+    return {
+      employeeId: row.id,
+      firstName: entry.firstName,
+      lastName: entry.lastName,
+      kpiProfile: row.kpi_profile,
+      total: breakdown.final.total,
+      statusBand: breakdown.final.statusBand,
+      // Surfaced so manager/admin's Team Performance view can badge whoever
+      // runs each team/department — same source as the roster's own
+      // "Team Head" badge (employees.is_team_head), not derived here.
+      isTeamHead: entry.isTeamHead,
+    };
+  }
+
+  // Team head (employees.is_team_head — the only field that can ever be
+  // set as another employee's manager_employee_id, see rosterService's
+  // canAssignTeamHead check) sees a flat list of just their own direct
+  // reports via the reporting-line FK — one level only, matching
+  // getDirectReports/"My Team"'s existing scoping exactly.
+  //
+  // Manager (this org's CEO account) or admin sees two things, not one
+  // company-wide list: `myTeam` (their own direct reports, same FK as
+  // above) plus `byDepartment` (every department's real, current
+  // membership, independent of `myTeam` — an employee who is both a
+  // direct report and a department member appears in both; that overlap
+  // is intentional, confirmed with the user, not deduplicated). Anyone
+  // with neither gets 403, unchanged.
+  function computeTeamSummary({ actorEmployee, actorAuthRole, quarter }) {
+    const isCompanyWide = actorAuthRole === roles.MANAGER || actorAuthRole === roles.ADMIN;
+    if (!isCompanyWide && !(actorEmployee && actorEmployee.isTeamHead)) {
       throw new EmployeesError('You do not have permission to view the team performance summary.', 403);
     }
-    const targets = employeeRepository.findAllActive();
 
-    return targets.map((row) => {
-      const breakdown = computeBreakdown(row.id, quarter);
-      const entry = employeeModel.toDirectoryEntry(row);
-      return {
-        employeeId: row.id,
-        firstName: entry.firstName,
-        lastName: entry.lastName,
-        kpiProfile: row.kpi_profile,
-        total: breakdown.final.total,
-        statusBand: breakdown.final.statusBand,
-      };
-    });
+    if (!isCompanyWide) {
+      return employeeRepository.findByManagerId(actorEmployee.id).map((row) => summaryRow(row, quarter));
+    }
+
+    const myTeam = actorEmployee ? employeeRepository.findByManagerId(actorEmployee.id).map((row) => summaryRow(row, quarter)) : [];
+
+    const allActive = employeeRepository.findAllActive();
+    const byDepartment = {};
+    for (const dept of departmentRepository.findAll()) {
+      const members = allActive.filter((row) => row.department === dept.code).map((row) => summaryRow(row, quarter));
+      if (members.length > 0) byDepartment[dept.label] = members;
+    }
+
+    return { myTeam, byDepartment };
   }
 
   // Mapping config is workspace-configuration knowledge, not HR data —

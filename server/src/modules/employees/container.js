@@ -87,7 +87,7 @@ const kpiClickupMetricsService = createKpiClickupMetricsService({
   clickupGet: clickupClient.clickupGet, teamId: CLICKUP_TEAM_ID, kpiClickupStatusEventRepository,
 });
 const kpiScoringService = createKpiScoringService({
-  employeeRepository, employeeModel, kpiDefinitionRepository, kpiScoreRepository,
+  employeeRepository, employeeModel, departmentRepository, kpiDefinitionRepository, kpiScoreRepository,
   pillarAReviewRepository, selfEvaluationRepository, kpiNotificationRepository,
   kpiEmployeeTargetRepository, kpiAutoMetricMappingRepository, kpiClickupMetricsService,
   audit, roles: ROLES, logger,
