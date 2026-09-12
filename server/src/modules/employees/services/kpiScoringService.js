@@ -106,7 +106,7 @@ function createKpiScoringService({
   employeeRepository, employeeModel, departmentRepository, kpiDefinitionRepository, kpiScoreRepository,
   pillarAReviewRepository, selfEvaluationRepository, kpiNotificationRepository,
   kpiEmployeeTargetRepository, kpiAutoMetricMappingRepository, kpiClickupMetricsService,
-  audit, roles, logger,
+  audit, roles, logger, teamMembership,
 }) {
   function buildPillarA(reviewRow) {
     const dimensions = PILLAR_A_DIMENSIONS.map((dim) => {
@@ -482,27 +482,39 @@ function createKpiScoringService({
     };
   }
 
-  // Team head (employees.is_team_head — the only field that can ever be
-  // set as another employee's manager_employee_id, see rosterService's
-  // canAssignTeamHead check) sees a flat list of just their own direct
-  // reports via the reporting-line FK — one level only, matching
-  // getDirectReports/"My Team"'s existing scoping exactly.
+  // Permission to view this page at all, for a non-company-wide actor, is
+  // "do you currently manage anyone" — the same dynamic, reports-driven
+  // definition teamMembership uses everywhere else, not the is_team_head
+  // flag (which is independently assignable and can drift out of sync; see
+  // teamMembership.js). This also matches the frontend's own tab-visibility
+  // gate (kpi.js's kpiPerms.hasReports), which was already reports-based —
+  // previously the two disagreed, so someone with a report but
+  // is_team_head=false saw the tab and then got a 403 clicking into it.
+  //
+  // Once permitted, membership is teamMembership's shared rule: direct
+  // reports (reporting-line FK) plus the rest of the employee's department,
+  // deduplicated. Same rule the "My Team" tab uses (rosterService.getMyTeam)
+  // — one place decides who's on a team, not a second copy here.
   //
   // Manager (this org's CEO account) or admin sees two things, not one
   // company-wide list: `myTeam` (their own direct reports, same FK as
   // above) plus `byDepartment` (every department's real, current
   // membership, independent of `myTeam` — an employee who is both a
   // direct report and a department member appears in both; that overlap
-  // is intentional, confirmed with the user, not deduplicated). Anyone
-  // with neither gets 403, unchanged.
+  // is intentional, confirmed with the user, not deduplicated).
   function computeTeamSummary({ actorEmployee, actorAuthRole, quarter }) {
     const isCompanyWide = actorAuthRole === roles.MANAGER || actorAuthRole === roles.ADMIN;
-    if (!isCompanyWide && !(actorEmployee && actorEmployee.isTeamHead)) {
+    const directReports = actorEmployee ? employeeRepository.findByManagerId(actorEmployee.id) : [];
+    if (!isCompanyWide && directReports.length === 0) {
       throw new EmployeesError('You do not have permission to view the team performance summary.', 403);
     }
 
     if (!isCompanyWide) {
-      return employeeRepository.findByManagerId(actorEmployee.id).map((row) => summaryRow(row, quarter));
+      const departmentMembers = actorEmployee.department
+        ? employeeRepository.findByDepartment(actorEmployee.department, actorEmployee.id)
+        : [];
+      const { members } = teamMembership.resolveTeamMembership({ directReports, departmentMembers });
+      return members.map((row) => summaryRow(row, quarter));
     }
 
     const myTeam = actorEmployee ? employeeRepository.findByManagerId(actorEmployee.id).map((row) => summaryRow(row, quarter)) : [];

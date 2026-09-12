@@ -31,6 +31,7 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.patch('/employees/profile-change-requests/:id/approve', rosterController.approveChangeRequest);
   router.patch('/employees/profile-change-requests/:id/reject', rosterController.rejectChangeRequest);
   router.get('/employees/team', rosterController.getDirectReports);
+  router.get('/employees/team/mine', rosterController.getMyTeam);
   router.get('/employees', rosterController.list);
   router.post('/employees', rosterController.create);
   router.patch('/employees/:id', rosterController.update);
