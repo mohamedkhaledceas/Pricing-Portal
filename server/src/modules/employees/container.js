@@ -34,6 +34,7 @@ const clickupClient = require('../../common/integrations/clickupClient');
 const CLICKUP_TEAM_ID = '36181979';
 
 const timeOffRules = require('./services/timeOffRules');
+const teamMembership = require('./services/teamMembership');
 const kpiFrameworkSeed = require('./services/kpiFrameworkSeed.data');
 const createAttachEmployeeMiddleware = require('./middleware/attachEmployee');
 const { deleteStoredPhoto, UPLOAD_DIR: employeePhotoUploadDir } = require('./middleware/photoUpload');
@@ -79,6 +80,7 @@ const clickupUserSync = startClickupUserSyncSchedule({ employeeRepository, click
 const rosterService = createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
   profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync, departmentRepository,
+  teamMembership,
 });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, audit, roles: ROLES });
@@ -90,7 +92,7 @@ const kpiScoringService = createKpiScoringService({
   employeeRepository, employeeModel, departmentRepository, kpiDefinitionRepository, kpiScoreRepository,
   pillarAReviewRepository, selfEvaluationRepository, kpiNotificationRepository,
   kpiEmployeeTargetRepository, kpiAutoMetricMappingRepository, kpiClickupMetricsService,
-  audit, roles: ROLES, logger,
+  audit, roles: ROLES, logger, teamMembership,
 });
 const departmentService = createDepartmentService({ departmentRepository, departmentModel, audit, roles: ROLES });
 const kpiClickupSyncService = createKpiClickupSyncService({

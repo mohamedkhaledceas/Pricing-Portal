@@ -14,6 +14,7 @@ const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
 function createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
   profileChangeRequestModel, audit, roles, deleteStoredPhoto, clickupUserSync, departmentRepository,
+  teamMembership,
 }) {
   // Must exist and be active — departments is now a real table (see
   // docs/adr/0011) instead of a frozen array; the DB-level FK on
@@ -188,6 +189,21 @@ function createRosterService({
 
   function getDirectReports(managerEmployeeId) {
     return decorateStatusList(employeeRepository.findByManagerId(managerEmployeeId).map(employeeModel.toEmployee));
+  }
+
+  // The "My Team" tab's single source of truth (see teamMembership) —
+  // reports and department are queried independently, then resolved
+  // together, since an employee's manager need not be in their own
+  // department.
+  function getMyTeam(employeeId) {
+    const employee = employeeRepository.findById(employeeId);
+    if (!employee) throw new EmployeesError('Employee not found.', 404);
+
+    const directReports = employeeRepository.findByManagerId(employeeId);
+    const departmentMembers = employee.department ? employeeRepository.findByDepartment(employee.department, employeeId) : [];
+    const { isManager, members } = teamMembership.resolveTeamMembership({ directReports, departmentMembers });
+
+    return { isManager, members: decorateStatusList(members.map(employeeModel.toDirectoryEntry)) };
   }
 
   function create({
@@ -490,7 +506,7 @@ function createRosterService({
   }
 
   return {
-    canManageRoster, listAll, listDirectory, listTeamHeadsByDepartment, getMine, getDirectReports,
+    canManageRoster, listAll, listDirectory, listTeamHeadsByDepartment, getMine, getDirectReports, getMyTeam,
     create, update, setActive, setMyPhoto, updateMine, getMyPendingChangeRequest,
     listPendingChangeRequests, approveChangeRequest, rejectChangeRequest,
     createForSelfRegistration,

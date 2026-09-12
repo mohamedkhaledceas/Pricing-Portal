@@ -39,6 +39,17 @@ function createRosterController({ rosterService }) {
     return res.json({ employees });
   }
 
+  // Single source of truth for "My Team" everywhere it's shown (see
+  // rosterService.getMyTeam / services/teamMembership.js). No employee
+  // profile -> nothing to compute a team from.
+  function getMyTeam(req, res) {
+    if (!req.employee) {
+      return res.json({ isManager: false, employees: [] });
+    }
+    const { isManager, members } = rosterService.getMyTeam(req.employee.id);
+    return res.json({ isManager, employees: members });
+  }
+
   function create(req, res) {
     const body = req.body || {};
     const employee = rosterService.create({
@@ -172,7 +183,7 @@ function createRosterController({ rosterService }) {
   }
 
   return {
-    list, getMine, directory, teamHeadsPublic, getDirectReports, create, update, deactivate, reactivate,
+    list, getMine, directory, teamHeadsPublic, getDirectReports, getMyTeam, create, update, deactivate, reactivate,
     uploadMyPhoto, removeMyPhoto, updateMine,
     pendingChangeRequests, approveChangeRequest, rejectChangeRequest,
   };

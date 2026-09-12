@@ -41,6 +41,15 @@ function findByManagerId(managerEmployeeId) {
   return db.prepare(`${SELECT_WITH_USER} WHERE e.manager_employee_id = ? ORDER BY u.first_name, u.last_name`).all(managerEmployeeId);
 }
 
+// Active only, excluding the caller — matches findAllActive/listDirectory's
+// own scoping (an inactive colleague has no meaningful team-membership
+// entry to show). Backs teamMembership.resolveTeamMembership's department
+// half; see that module for why department and manager_employee_id are
+// queried as two independent sets rather than one combined query.
+function findByDepartment(department, excludeId) {
+  return db.prepare(`${SELECT_WITH_USER} WHERE e.department = ? AND e.active = 1 AND e.id != ? ORDER BY u.first_name, u.last_name`).all(department, excludeId);
+}
+
 function findByClickupUserId(clickupUserId) {
   return db.prepare(`${SELECT_WITH_USER} WHERE e.clickup_user_id = ?`).get(String(clickupUserId));
 }
@@ -134,6 +143,7 @@ module.exports = {
   findById,
   findByUserId,
   findByManagerId,
+  findByDepartment,
   findByClickupUserId,
   findTeamHeadsByDepartment,
   existsByUserId,

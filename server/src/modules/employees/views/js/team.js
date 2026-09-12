@@ -56,23 +56,21 @@ window.myTeamToggleCard = function (id) {
 };
 
 // Everyone has this context regardless of whether they manage anyone —
-// their own manager, plus anyone who either shares that same manager or
-// shares their department (either condition is enough — a same-department
-// colleague under a different manager is still "my team" day to day).
-// Computed client-side off the already-loaded, already-broadly-visible
-// directory (see toDirectoryEntry's own comment — this endpoint is
-// already served to every authenticated role for the Teams directory
-// modal and the handover picker) rather than a new backend endpoint.
-function myTeamSectionHtml(directory) {
+// their own manager, plus their team. Membership itself (direct reports
+// plus department for anyone who manages others, department alone
+// otherwise) is decided once, server-side, by rosterService.getMyTeam /
+// services/teamMembership.js — the single source of truth every team-scoped
+// screen shares. This only resolves the returned ids against the
+// already-loaded directory so cards get the directory's cross-referenced
+// managerName/managerEmail display fields.
+function myTeamSectionHtml(myTeam) {
   const myEmployeeId = state.myEmployee && state.myEmployee.id;
   if (!myEmployeeId) return '';
   const myManagerId = state.myEmployee.managerEmployeeId;
-  const myDepartment = state.myEmployee.department;
   const manager = myManagerId ? directoryById[myManagerId] : null;
-  const teammates = directory.filter((e) =>
-    e.id !== myEmployeeId && e.id !== myManagerId &&
-    ((myManagerId && e.managerEmployeeId === myManagerId) || (myDepartment && e.department === myDepartment))
-  );
+  const teammates = (myTeam.employees || [])
+    .map((e) => directoryById[e.id])
+    .filter((e) => e && e.id !== myEmployeeId && e.id !== myManagerId);
 
   let body;
   if (manager || teammates.length) {
@@ -80,7 +78,7 @@ function myTeamSectionHtml(directory) {
       ${manager ? myTeamCardHtml(manager, 'Manager') : ''}
       ${teammates.map((t) => myTeamCardHtml(t)).join('')}
     </div>`;
-  } else if (myManagerId || myDepartment) {
+  } else if (myManagerId || state.myEmployee.department) {
     body = `<div class="empty-state">No other teammates found yet.</div>`;
   } else {
     body = `<div class="empty-state">You haven't been assigned a direct manager or department yet — once you are, your team will show up here.</div>`;
@@ -300,15 +298,16 @@ export async function renderTeam() {
   // with real network latency). Same shape overview.js's fetches already
   // use correctly: a Promise.resolve(null) placeholder for calls that
   // don't apply to this role, so every branch still destructures cleanly.
-  const [directory, teamRes, pcRes, changeRes] = await Promise.all([
+  const [, myTeamRes, teamRes, pcRes, changeRes] = await Promise.all([
     loadDirectoryIndex(),
+    apiFetch('/api/employees/team/mine'),
     apiFetch('/api/employees/leave-requests/team'),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
     canReviewProfileChanges ? apiFetch('/api/employees/profile-change-requests') : Promise.resolve(null),
     window.Departments.load(apiFetch),
   ]);
 
-  const sections = [myTeamSectionHtml(directory)].filter(Boolean);
+  const sections = [myTeamSectionHtml(myTeamRes)].filter(Boolean);
   const teamRequests = teamRes.requests || [];
 
   // A decision (approve/reject) is always scoped to actual direct reports,
