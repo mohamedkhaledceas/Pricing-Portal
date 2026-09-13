@@ -38,11 +38,6 @@ function departmentOptionsHtml(currentCode) {
   }
   return options.join('');
 }
-// 'on_leave' deliberately excluded — it's computed server-side from
-// approved leave requests, not a settable value (see rosterService).
-const STATUS_OPTIONS = ['active', 'remote'];
-const STATUS_LABELS = { active: 'Active', remote: 'Remote', on_leave: 'On Leave' };
-const STATUS_BADGE_CLASS = { active: 'badge-approved', remote: 'badge-approved', on_leave: 'badge-pending' };
 // Team Head toggle rendering — matches rosterService.canManageRoster/
 // canAssignTeamHead exactly (same role set, both gates are equivalent).
 const canAssignTeamHead = () => ['admin', 'manager', 'operations', 'people_culture'].includes(state.currentUser && state.currentUser.role);
@@ -191,20 +186,13 @@ async function renderRosterTable() {
           ? `<input type="checkbox" class="edit-team-head" ${e.isTeamHead ? 'checked' : ''} title="Team Head" onchange="rosterFieldChanged(${e.id}, 'isTeamHead', this)">`
           : (e.isTeamHead ? '<span class="badge badge-approved">Team Head</span>' : '')}
       </td>
-      <td>
-        ${e.status === 'on_leave'
-          ? `<span class="badge ${STATUS_BADGE_CLASS.on_leave}">${STATUS_LABELS.on_leave}</span><div class="small muted">computed from approved leave</div>`
-          : `<select class="form-control edit-status small" style="min-width:100px;" onchange="rosterFieldChanged(${e.id}, 'status', this)">
-              ${STATUS_OPTIONS.map((s) => `<option value="${s}" ${e.status === s ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`).join('')}
-            </select>`}
-      </td>
       <td>${e.active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
       <td>
         <button class="btn small ${e.active ? 'danger' : ''}" onclick="rosterToggleActive(${e.id}, ${!e.active})">${e.active ? 'Deactivate' : 'Reactivate'}</button>
       </td>
     </tr>`).join('');
 
-  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="15" class="empty-state">No employees in the roster yet</td></tr>';
+  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="12" class="empty-state">No employees in the roster yet</td></tr>';
 
   // Pre-select each row's manager dropdown now that options exist.
   rosterCache.forEach((e) => {
@@ -485,8 +473,8 @@ export async function renderRoster() {
       <div class="card-title">All Employees</div>
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Manager</th><th>P&amp;C</th><th>Team Head</th><th>Status</th><th>Active</th><th></th></tr></thead>
-          <tbody id="roster-table-body"><tr><td colspan="15" class="empty-state">Loading...</td></tr></tbody>
+          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Manager</th><th>P&amp;C</th><th>Team Head</th><th>Active</th><th></th></tr></thead>
+          <tbody id="roster-table-body"><tr><td colspan="12" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>
     </div>

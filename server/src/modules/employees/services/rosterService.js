@@ -122,26 +122,44 @@ function createRosterService({
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
-  // 'on_leave' is never written to employees.status (see migration
-  // 007's comment) — it's computed here from approved leave_requests
-  // covering today, so the displayed status can't drift from a real
-  // approved leave the way a manually-set third option could.
-  function onLeaveEmployeeIdsToday() {
-    return new Set(leaveRequestRepository.findApprovedOverlapping(todayIso()).map((r) => r.employee_id));
+  // 'on_leave'/'remote' are never written to employees.status by this path
+  // (see migration 007's comment for 'on_leave'; 'remote' otherwise stays
+  // a plain stored value, but a same-day approved WFH request overrides it
+  // here too) — both are computed from approved leave_requests covering
+  // today, so the displayed status can't drift from a real approved
+  // request the way a manually-set/forgotten-to-revert value could. WFH is
+  // split out from every other leave type: it means "working, just not in
+  // office," not "away," so it maps to 'remote' rather than 'on_leave'. If
+  // an employee somehow has both an approved WFH request and a real leave
+  // request overlapping the same day, 'on_leave' wins — the override is
+  // one-or-the-other, not additive. Since this is computed fresh on every
+  // read (not persisted), the day after the WFH request's end_date the
+  // employee simply stops appearing in wfhIds and reverts to whatever
+  // their stored employees.status column actually says, with no manual
+  // step or scheduled job needed.
+  function todaysApprovedOverrides() {
+    const onLeaveIds = new Set();
+    const wfhIds = new Set();
+    leaveRequestRepository.findApprovedOverlapping(todayIso()).forEach((r) => {
+      (r.leave_type === 'wfh' ? wfhIds : onLeaveIds).add(r.employee_id);
+    });
+    return { onLeaveIds, wfhIds };
   }
 
-  function decorateStatus(employee, onLeaveIds) {
+  function decorateStatus(employee, overrides) {
     if (!employee) return employee;
-    return onLeaveIds.has(employee.id) ? { ...employee, status: 'on_leave' } : employee;
+    if (overrides.onLeaveIds.has(employee.id)) return { ...employee, status: 'on_leave' };
+    if (overrides.wfhIds.has(employee.id)) return { ...employee, status: 'remote' };
+    return employee;
   }
 
   function decorateStatusList(employees) {
-    const onLeaveIds = onLeaveEmployeeIdsToday();
-    return employees.map((e) => decorateStatus(e, onLeaveIds));
+    const overrides = todaysApprovedOverrides();
+    return employees.map((e) => decorateStatus(e, overrides));
   }
 
   function decorateStatusOne(employee) {
-    return decorateStatus(employee, onLeaveEmployeeIdsToday());
+    return decorateStatus(employee, todaysApprovedOverrides());
   }
 
   function listAll({ actorAuthRole }) {
