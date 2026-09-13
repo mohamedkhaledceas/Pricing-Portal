@@ -35,13 +35,29 @@ function dayCountForRequest(row, countWorkingDaysInclusive) {
   return row.availability === 'partial_day' ? base / 2 : base;
 }
 
+// Sick leave is uncapped by default — UNLESS it already requires a doctor's
+// note (over 2 consecutive working days, per timeOffRules'
+// sickLeaveRequiresDoctorNote) and P&C confirmed none was provided
+// (doctor_note_provided = 0). That case draws from the same 7-day combined
+// pool Emergency/Mental Health/Short-Notice already share, not a pool of
+// its own. Short sick leave (<=2 days) always stays free, regardless of
+// doctor_note_provided, since it never required a note in the first place.
+function sickCountsAgainstCombined(row, sickLeaveRequiresDoctorNote) {
+  if (row.leave_type !== 'sick') return false;
+  const requiresNote = sickLeaveRequiresDoctorNote({
+    startDate: new Date(`${row.start_date}T00:00:00`),
+    endDate: new Date(`${row.end_date}T00:00:00`),
+  });
+  return requiresNote && !row.doctor_note_provided;
+}
+
 /* requests: raw leave_requests rows (snake_case, as returned by
    leaveRequestRepository). Only status === 'approved' rows count (per the
    user's decision — pending/manager_approved requests don't reduce the
    displayed balance yet). Annual pools reset per calendar year, monthly
    pools per calendar month; a request is bucketed by its start_date only
    (a request spanning a year/month boundary isn't split). */
-function computeBalances(requests, { today, countWorkingDaysInclusive }) {
+function computeBalances(requests, { today, countWorkingDaysInclusive, sickLeaveRequiresDoctorNote }) {
   const year = today.getFullYear();
   const yearMonth = `${year}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
@@ -54,10 +70,11 @@ function computeBalances(requests, { today, countWorkingDaysInclusive }) {
     if (row.status !== 'approved') return;
     const startYear = row.start_date.slice(0, 4);
     const startYearMonth = row.start_date.slice(0, 7);
+    if (startYear !== String(year)) return;
 
-    if (row.leave_type === 'planned' && startYear === String(year)) {
+    if (row.leave_type === 'planned') {
       plannedUsed += dayCountForRequest(row, countWorkingDaysInclusive);
-    } else if (COMBINED_TYPES.has(row.leave_type) && startYear === String(year)) {
+    } else if (COMBINED_TYPES.has(row.leave_type) || sickCountsAgainstCombined(row, sickLeaveRequiresDoctorNote)) {
       combinedUsed += dayCountForRequest(row, countWorkingDaysInclusive);
     } else if (row.leave_type === 'wfh' && startYearMonth === yearMonth) {
       wfhUsed += 1;

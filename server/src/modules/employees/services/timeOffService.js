@@ -170,11 +170,21 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     }));
   }
 
+  // requiresDoctorNote here (unlike submit()'s own copy) is what tells the
+  // P&C confirmation UI whether to show the "Doctor's note provided"
+  // checkbox at all — only sick leave over 2 consecutive working days needs
+  // one; shorter sick leave stays uncapped/free regardless of this flag.
   function listPcPending({ actorAuthRole }) {
     if (actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to view the company-wide approval queue.', 403);
     }
-    return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest);
+    return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest).map((r) => ({
+      ...r,
+      requiresDoctorNote: r.leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({
+        startDate: new Date(`${r.startDate}T00:00:00`),
+        endDate: new Date(`${r.endDate}T00:00:00`),
+      }),
+    }));
   }
 
   // Backs P&C's Overview "policy breach" widget — auto_rejected requests
@@ -223,6 +233,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveBalanceRules.computeBalances(requests, {
       today: new Date(),
       countWorkingDaysInclusive: timeOffRules.countWorkingDaysInclusive,
+      sickLeaveRequiresDoctorNote: timeOffRules.sickLeaveRequiresDoctorNote,
     });
   }
 
@@ -288,7 +299,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
      non-automatic rows — everything except the same-day short-notice/
      mental-health case, which is already applied automatically at
      submission time and isn't meant to be overwritten by this step). */
-  async function pcConfirm({ requestId, actorEmployee, actorAuthRole, decision, decisionNote, salaryDeduction, unpaidDaysCount, actorId, ip }) {
+  async function pcConfirm({ requestId, actorEmployee, actorAuthRole, decision, decisionNote, salaryDeduction, unpaidDaysCount, doctorNoteProvided, actorId, ip }) {
     if (!actorEmployee || actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to confirm leave requests.', 403);
     }
@@ -308,12 +319,20 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       throw new EmployeesError('salaryDeduction must be one of: none, half_day, full_day, unpaid.');
     }
 
+    // Only meaningful for sick leave that actually requires a note (>2
+    // consecutive working days) — see leaveBalanceRules.computeBalances,
+    // which is what actually decides whether an un-noted sick request is
+    // deducted from the combined pool. Stored as given for every other
+    // type/case too (harmless — nothing else reads it).
+    const noteProvided = !!doctorNoteProvided;
+
     const updated = leaveRequestRepository.updatePcDecision(requestId, {
       status: decision,
       pcConfirmedBy: actorEmployee.id,
       salaryDeduction: deduction,
       unpaidDaysCount: deduction === 'unpaid' ? unpaidDaysCount || null : null,
       decisionNote: decision === 'rejected' ? decisionNote.trim() : null,
+      doctorNoteProvided: noteProvided,
     });
 
     audit.record({
@@ -321,7 +340,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       action: `leave_request.pc_${decision}`,
       entityType: 'leave_request',
       entityId: String(requestId),
-      details: { before: { status: request.status }, after: { status: decision, salaryDeduction: deduction } },
+      details: { before: { status: request.status }, after: { status: decision, salaryDeduction: deduction, doctorNoteProvided: noteProvided } },
       ip,
     });
     await clickupLeaveSync.updateStatus(request.clickup_task_id, decision);

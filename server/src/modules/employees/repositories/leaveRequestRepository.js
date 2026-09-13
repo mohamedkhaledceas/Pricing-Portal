@@ -109,11 +109,11 @@ function updateManagerDecision(id, { status, managerDecisionBy, decisionNote }) 
   return findById(id);
 }
 
-function updatePcDecision(id, { status, pcConfirmedBy, salaryDeduction, unpaidDaysCount, decisionNote }) {
+function updatePcDecision(id, { status, pcConfirmedBy, salaryDeduction, unpaidDaysCount, decisionNote, doctorNoteProvided }) {
   db.prepare(
-    `UPDATE leave_requests SET status = ?, pc_confirmed_by = ?, pc_confirmed_at = CURRENT_TIMESTAMP, salary_deduction = ?, unpaid_days_count = ?, pc_decision_note = ?, updated_at = CURRENT_TIMESTAMP
+    `UPDATE leave_requests SET status = ?, pc_confirmed_by = ?, pc_confirmed_at = CURRENT_TIMESTAMP, salary_deduction = ?, unpaid_days_count = ?, pc_decision_note = ?, doctor_note_provided = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`
-  ).run(status, pcConfirmedBy, salaryDeduction, unpaidDaysCount ?? null, decisionNote || null, id);
+  ).run(status, pcConfirmedBy, salaryDeduction, unpaidDaysCount ?? null, decisionNote || null, doctorNoteProvided ? 1 : 0, id);
   return findById(id);
 }
 

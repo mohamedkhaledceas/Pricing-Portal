@@ -174,6 +174,8 @@ async function pcConfirm(id, decision) {
   const deductionSel = card ? card.querySelector('.pc-deduction') : null;
   const salaryDeduction = deductionSel ? deductionSel.value : 'none';
   const unpaidInput = card ? card.querySelector('.pc-unpaid-days') : null;
+  const doctorNoteCheckbox = card ? card.querySelector('.pc-doctor-note') : null;
+  const doctorNoteProvided = doctorNoteCheckbox ? doctorNoteCheckbox.checked : undefined;
   let decisionNote;
   if (decision === 'rejected') {
     decisionNote = (card && card.querySelector('.reject-note') ? card.querySelector('.reject-note').value : '').trim();
@@ -185,7 +187,7 @@ async function pcConfirm(id, decision) {
   try {
     await apiFetch(`/api/employees/leave-requests/${id}/pc-confirm`, {
       method: 'PATCH',
-      body: JSON.stringify({ decision, decisionNote, salaryDeduction, unpaidDaysCount: unpaidInput ? Number(unpaidInput.value) || undefined : undefined }),
+      body: JSON.stringify({ decision, decisionNote, salaryDeduction, unpaidDaysCount: unpaidInput ? Number(unpaidInput.value) || undefined : undefined, doctorNoteProvided }),
     });
     toast(decision === 'approved' ? 'Confirmed' : 'Rejected', 'info');
     rejectingId = null;
@@ -266,10 +268,24 @@ async function profileChangeDecide(id, decision, btn) {
 }
 window.profileChangeDecide = profileChangeDecide;
 
+// Only sick leave that already requires a note (>2 consecutive working
+// days, per timeOffService.listPcPending's requiresDoctorNote flag) gets
+// this checkbox — shorter sick leave stays uncapped/free with no decision
+// to make here. Unchecked (the default) means "no note" — deducted from
+// the combined Emergency/Mental Health/Short-Notice pool once approved;
+// checked means the request stays uncapped, same as any other sick leave.
+function doctorNoteCheckboxHtml(r) {
+  if (r.leaveType !== 'sick' || !r.requiresDoctorNote) return '';
+  return `<label class="small" style="display:flex;align-items:center;gap:6px;">
+    <input type="checkbox" class="pc-doctor-note"> Doctor's note provided
+  </label>`;
+}
+
 function pcActions(r) {
   if (r.status !== 'manager_approved') return '';
   if (rejectingId === r.id) return rejectNoteForm(r.id, `pcConfirm(${r.id},'rejected')`);
   return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
+    ${doctorNoteCheckboxHtml(r)}
     <select class="form-control pc-deduction" style="width:auto;">
       <option value="none">No deduction</option>
       <option value="half_day">Half-day deduction</option>
