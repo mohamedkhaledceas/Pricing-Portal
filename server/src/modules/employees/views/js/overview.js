@@ -112,6 +112,19 @@ function whosOnlineSection(directory) {
     </div>`;
 }
 
+// Pure client-side aggregate over the same directory fetch whosOnlineSection
+// already uses — status is already decorated server-side to 'active' |
+// 'remote' | 'on_leave' (rosterService.decorateStatusList cross-references
+// today's approved leave), so no new endpoint or per-employee lookup is
+// needed here.
+function teamAvailabilitySummaryHtml(directory) {
+  const counts = { active: 0, remote: 0, on_leave: 0 };
+  directory.forEach((e) => { if (counts[e.status] !== undefined) counts[e.status] += 1; });
+  return `<div class="small muted" style="margin:-4px 0 10px;">
+    ${counts.active} working · ${counts.remote} remote · ${counts.on_leave} on leave
+  </div>`;
+}
+
 const STATUS_LABELS = {
   pending: 'Pending', manager_approved: 'Manager-Approved', approved: 'Approved',
   rejected: 'Rejected', auto_rejected: 'Auto-Rejected', cancelled: 'Cancelled',
@@ -289,6 +302,7 @@ async function renderManagerOverview(role) {
     ${isPeopleCulture ? pcActionCards(pendingRes.requests || [], roster) : ''}
 
     ${(isManager || isPeopleCulture) ? departmentBreakdownSection(roster) : ''}
+    ${teamAvailabilitySummaryHtml(directory)}
     ${whosOnlineSection(directory)}
     ${whosOffTodaySection(offTodayRes.offToday || [])}
   `;
@@ -410,6 +424,7 @@ export async function renderOverview() {
     ${isPeopleCulture ? pcActionCards(pendingRes.requests || [], roster) : ''}
 
     ${(isManager || isPeopleCulture) ? departmentBreakdownSection(roster) : ''}
+    ${teamAvailabilitySummaryHtml(directory)}
     ${whosOnlineSection(directory)}
     ${whosOffTodaySection(offTodayRes.offToday || [], myPartnerIds)}
 
