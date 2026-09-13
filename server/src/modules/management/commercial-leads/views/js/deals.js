@@ -14,6 +14,20 @@ export function statusPillHtml(status, listKey) {
   return `<span class="status-pill"${style}>${escapeHtml(status)}</span>`;
 }
 
+// Flags a deal whose ClickUp task hasn't been touched in a while — helps
+// AMs spot neglected accounts/deals. Pure client-side comparison against
+// clickupUpdatedAt, which is already present and populated on every deal
+// for every list (see deal.model.js's toDeal()); no backend change needed.
+const STALE_DAYS_THRESHOLD = 14;
+function isStale(deal) {
+  if (!deal.clickupUpdatedAt) return false;
+  const ageMs = Date.now() - new Date(deal.clickupUpdatedAt).getTime();
+  return ageMs > STALE_DAYS_THRESHOLD * 86400000;
+}
+function staleBadgeHtml(deal) {
+  return isStale(deal) ? `<span class="stale-badge" title="Not updated in ${STALE_DAYS_THRESHOLD}+ days">⚠ Stale</span>` : '';
+}
+
 // fields are {name: {value, type}} — url-type fields render as real links.
 function fieldText(fields, name) {
   const f = fields[name];
@@ -95,7 +109,7 @@ export function renderPipelineTable() {
   }
   tbody.innerHTML = deals.map((d) => `
     <tr class="deal-row" data-id="${d.id}">
-      <td>${escapeHtml(d.name)}</td>
+      <td>${escapeHtml(d.name)} ${staleBadgeHtml(d)}</td>
       <td>${statusPillHtml(d.status, 'pipeline')}</td>
       <td>${escapeHtml(fieldText(d.fields, 'Contact Person '))}</td>
       <td>${escapeHtml(fieldText(d.fields, 'Country '))}</td>
@@ -111,8 +125,34 @@ export function renderPipelineTable() {
   });
 }
 
+// Mirrors populateFilterOptions/applyFiltersAndSort above, but this list
+// has no country/source/contact fields rendered (see the table's own
+// Name/Status-only header) — just status + a name search, per this card's
+// own "live display only" scope.
+function populateActiveClientsFilterOptions() {
+  const selectEl = $('#filterStatusActiveClients');
+  const sorted = Array.from(new Set(state.dealsCache.activeClients.map((d) => d.status).filter(Boolean))).sort();
+  selectEl.innerHTML = '<option value="">All</option>' + sorted.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  selectEl.value = state.activeClientsFilters.status;
+}
+
+function applyActiveClientsFilters(deals) {
+  const filters = state.activeClientsFilters;
+  return deals.filter((d) =>
+    (!filters.status || d.status === filters.status) &&
+    (!filters.search || d.name.toLowerCase().includes(filters.search))
+  );
+}
+
+function updateClearFiltersButtonActiveClients() {
+  const f = state.activeClientsFilters;
+  $('#btnClearFiltersActiveClients').hidden = !(f.status || f.search);
+}
+
 export function renderActiveClientsTable() {
-  const allDeals = state.dealsCache.activeClients;
+  populateActiveClientsFilterOptions();
+  updateClearFiltersButtonActiveClients();
+  const allDeals = applyActiveClientsFilters(state.dealsCache.activeClients);
   const { pageItems: deals, clampedPage } = paginate(allDeals, state.activeClientsPage, state.activeClientsPageSize, 'paginationActiveClients',
     (p) => { state.activeClientsPage = p; renderActiveClientsTable(); },
     (size) => { state.activeClientsPageSize = size; state.activeClientsPage = 1; renderActiveClientsTable(); }
@@ -120,11 +160,12 @@ export function renderActiveClientsTable() {
   state.activeClientsPage = clampedPage;
   const tbody = document.querySelector('#activeClientsTable tbody');
   if (deals.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="2" class="empty-note">No items synced yet.</td></tr>';
+    const message = state.dealsCache.activeClients.length === 0 ? 'No items synced yet.' : 'No items match.';
+    tbody.innerHTML = `<tr><td colspan="2" class="empty-note">${message}</td></tr>`;
     return;
   }
   tbody.innerHTML = deals.map((d) => `
-    <tr><td>${escapeHtml(d.name)}</td><td>${statusPillHtml(d.status, 'activeClients')}</td></tr>
+    <tr><td>${escapeHtml(d.name)} ${staleBadgeHtml(d)}</td><td>${statusPillHtml(d.status, 'activeClients')}</td></tr>
   `).join('');
 }
 
@@ -145,4 +186,21 @@ export function bindDealsUi() {
   });
   $('#sortPipeline').addEventListener('change', (e) => { state.sortMode = e.target.value; state.pipelinePage = 1; renderPipelineTable(); });
   $('#sortPipeline').addEventListener('click', (e) => e.stopPropagation());
+
+  $('#filterStatusActiveClients').addEventListener('change', (e) => {
+    state.activeClientsFilters.status = e.target.value;
+    state.activeClientsPage = 1;
+    renderActiveClientsTable();
+  });
+  $('#searchActiveClients').addEventListener('input', (e) => {
+    state.activeClientsFilters.search = e.target.value.trim().toLowerCase();
+    state.activeClientsPage = 1;
+    renderActiveClientsTable();
+  });
+  $('#btnClearFiltersActiveClients').addEventListener('click', () => {
+    state.activeClientsFilters = { status: '', search: '' };
+    $('#searchActiveClients').value = '';
+    state.activeClientsPage = 1;
+    renderActiveClientsTable();
+  });
 }

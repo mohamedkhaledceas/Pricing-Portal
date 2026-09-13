@@ -128,6 +128,11 @@
     <div class="card">
       <h2>Active Clients — AM</h2>
       <p class="hint">Live display only — no computed insights for this list</p>
+      <div class="table-toolbar">
+        <label>Status <select id="filterStatusActiveClients"><option value="">All</option></select></label>
+        <input type="search" id="searchActiveClients" placeholder="Search name…" aria-label="Search by name">
+        <button id="btnClearFiltersActiveClients" class="danger" hidden>Clear filters</button>
+      </div>
       <table class="data-table" id="activeClientsTable">
         <thead><tr><th>Name</th><th>Status</th></tr></thead>
         <tbody></tbody>
