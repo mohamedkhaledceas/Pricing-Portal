@@ -13,6 +13,7 @@ export const state = {
   dealsCache: { pipeline: [], activeClients: [], offboarding: [] },
   statusColors: { pipeline: {}, activeClients: {}, offboarding: {} },
   filters: { status: '', country: '', source: '', search: '' },
+  activeClientsFilters: { status: '', search: '' },
   sortMode: 'edited-desc',
   quarterlyState: null,
   pipelinePage: 1,
