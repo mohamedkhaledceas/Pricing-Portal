@@ -55,7 +55,19 @@ function createDealsController({ dealsService }) {
     res.json(dealsService.getQuarterlyKpis(req.query.quarter));
   }
 
-  return { clickupSurvey, deals, stats, stageDurations, statusColors, quarterlyKpis };
+  // exportDealsCsv itself throws ValidationError for an unrecognized `list`
+  // — no need to duplicate that check here, Express forwards a sync throw
+  // to errorHandler.js the same way every other route in this file already
+  // relies on (see `deals` above).
+  function exportDeals(req, res) {
+    const listKey = req.query.list;
+    const csv = dealsService.exportDealsCsv(listKey);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${listKey}-deals-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.send(csv);
+  }
+
+  return { clickupSurvey, deals, stats, stageDurations, statusColors, quarterlyKpis, exportDeals };
 }
 
 module.exports = createDealsController;

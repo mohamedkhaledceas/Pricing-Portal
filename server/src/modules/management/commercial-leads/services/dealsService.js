@@ -1,6 +1,7 @@
 /* Read-facing aggregation for the dashboard. Extracted unchanged from the
    old commercialLead.js — same shapes, same behavior, now sourced through
    repositories instead of inline db.prepare calls. */
+const { ValidationError } = require('../../../../common/errors');
 const { LISTS, INSIGHTS_LIST_ID } = require('../constants');
 const dealRepository = require('../repositories/dealRepository');
 const dailyCountsRepository = require('../repositories/dailyCountsRepository');
@@ -84,4 +85,48 @@ function getQuarterlyKpis(requestedQuarter) {
   };
 }
 
-module.exports = { getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis };
+// Wraps a value in quotes and doubles any embedded quotes whenever it
+// contains a comma, quote, or newline — the one thing the older KPI-export
+// precedent (kpiScoringService.exportHistoryCsv) skips, safely only because
+// its own fields are all plain numbers. Deal names and custom-field values
+// are free text and routinely contain commas, so this can't be skipped here.
+function csvEscape(value) {
+  const str = value === undefined || value === null ? '' : String(value);
+  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function fieldValueText(field) {
+  if (!field) return '';
+  return Array.isArray(field.value) ? field.value.join('; ') : String(field.value);
+}
+
+/* One flat table per list — Name/Status/every custom field seen on any deal
+   in that list (the union, so every row has the same columns even though
+   ClickUp custom fields are populated per-task)/Created/Last Updated. Reuses
+   getDeals()'s same toDeal() shape; no separate query path to keep in sync. */
+function exportDealsCsv(listKey) {
+  if (!Object.prototype.hasOwnProperty.call(LISTS, listKey)) {
+    throw new ValidationError(`"list" must be one of: ${Object.keys(LISTS).join(', ')}.`);
+  }
+  const deals = getDeals()[listKey];
+  const fieldNames = Array.from(new Set(deals.flatMap((d) => Object.keys(d.fields)))).sort();
+
+  const header = ['Name', 'Status', ...fieldNames, 'Created', 'Last Updated'];
+  const lines = [header.map(csvEscape).join(',')];
+  deals.forEach((d) => {
+    const row = [
+      d.name,
+      d.status,
+      ...fieldNames.map((name) => fieldValueText(d.fields[name])),
+      d.clickupCreatedAt || '',
+      d.clickupUpdatedAt || '',
+    ];
+    lines.push(row.map(csvEscape).join(','));
+  });
+  // CRLF — the CSV-standard line ending, and what makes Excel on Windows
+  // treat every row as a real row instead of occasionally mis-splitting on
+  // a bare \n depending on locale/version.
+  return lines.join('\r\n');
+}
+
+module.exports = { getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis, exportDealsCsv };
