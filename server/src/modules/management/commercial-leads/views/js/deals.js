@@ -182,6 +182,26 @@ export function renderActiveClientsTable() {
   });
 }
 
+// A plain fetch, not apiFetch — the download needs the Authorization
+// header, which a bare <a href> can't carry, and apiFetch always calls
+// res.json() (this response is a CSV blob). Same pattern as the Employees
+// module's KPI history CSV export (views/js/kpiHistory.js).
+async function downloadDealsCsv(listKey) {
+  const res = await fetch(`/api/commercial-lead/deals/export?list=${listKey}`, {
+    headers: { Authorization: 'Bearer ' + state.accessToken },
+  });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${listKey}-deals-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function bindDealsUi() {
   $('#filterStatus').addEventListener('change', (e) => { state.filters.status = e.target.value; state.pipelinePage = 1; renderPipelineTable(); });
   $('#filterCountry').addEventListener('change', (e) => { state.filters.country = e.target.value; state.pipelinePage = 1; renderPipelineTable(); });
@@ -216,4 +236,7 @@ export function bindDealsUi() {
     state.activeClientsPage = 1;
     renderActiveClientsTable();
   });
+
+  $('#btnExportPipeline').addEventListener('click', () => downloadDealsCsv('pipeline'));
+  $('#btnExportActiveClients').addEventListener('click', () => downloadDealsCsv('activeClients'));
 }

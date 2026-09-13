@@ -23,6 +23,7 @@ function createCommercialLeadsRouter({ dealsController, authenticate }) {
   router.get('/clickup/survey', authenticate, requireManager, dealsController.clickupSurvey);
 
   router.get('/commercial-lead/deals', authenticate, requireManager, dealsController.deals);
+  router.get('/commercial-lead/deals/export', authenticate, requireManager, dealsController.exportDeals);
   router.get('/commercial-lead/stats', authenticate, requireManager, dealsController.stats);
   router.get('/commercial-lead/stage-durations', authenticate, requireManager, dealsController.stageDurations);
   router.get('/commercial-lead/status-colors', authenticate, requireManager, dealsController.statusColors);
