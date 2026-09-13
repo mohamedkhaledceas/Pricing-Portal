@@ -165,8 +165,18 @@ export function renderActiveClientsTable() {
     return;
   }
   tbody.innerHTML = deals.map((d) => `
-    <tr><td>${escapeHtml(d.name)} ${staleBadgeHtml(d)}</td><td>${statusPillHtml(d.status, 'activeClients')}</td></tr>
+    <tr class="deal-row" data-id="${d.id}">
+      <td>${escapeHtml(d.name)} ${staleBadgeHtml(d)}</td>
+      <td>${statusPillHtml(d.status, 'activeClients')}</td>
+    </tr>
+    <tr><td colspan="2" style="padding:0;border:none;"><div class="deal-details" id="details-${d.id}">${renderDealDetails(d)}</div></td></tr>
   `).join('');
+  tbody.querySelectorAll('.deal-row').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;
+      document.getElementById('details-' + row.dataset.id).classList.toggle('open');
+    });
+  });
 }
 
 export function bindDealsUi() {
