@@ -23,6 +23,7 @@ function toLeaveRequest(row) {
     pcDecisionNote: row.pc_decision_note,
     salaryDeduction: row.salary_deduction,
     unpaidDaysCount: row.unpaid_days_count,
+    doctorNoteProvided: !!row.doctor_note_provided,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

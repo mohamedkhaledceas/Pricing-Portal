@@ -108,6 +108,7 @@ function createTimeOffController({ timeOffService }) {
       decisionNote: body.decisionNote,
       salaryDeduction: body.salaryDeduction,
       unpaidDaysCount: body.unpaidDaysCount,
+      doctorNoteProvided: body.doctorNoteProvided,
       actorId: req.user.id,
       ip: req.ip,
     });
