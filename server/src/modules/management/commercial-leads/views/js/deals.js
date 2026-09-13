@@ -18,9 +18,12 @@ export function statusPillHtml(status, listKey) {
 // AMs spot neglected accounts/deals. Pure client-side comparison against
 // clickupUpdatedAt, which is already present and populated on every deal
 // for every list (see deal.model.js's toDeal()); no backend change needed.
-const STALE_DAYS_THRESHOLD = 14;
+// A 'closed' deal is finished, not neglected — no changes expected or
+// wanted, so it's excluded regardless of age.
+const STALE_DAYS_THRESHOLD = 7;
 function isStale(deal) {
   if (!deal.clickupUpdatedAt) return false;
+  if (String(deal.status).trim().toLowerCase() === 'closed') return false;
   const ageMs = Date.now() - new Date(deal.clickupUpdatedAt).getTime();
   return ageMs > STALE_DAYS_THRESHOLD * 86400000;
 }
