@@ -34,6 +34,24 @@ function statCard(title, body) {
   </div>`;
 }
 
+// Trims a trailing ".0" (e.g. partial-day usage can leave a value like 13.5,
+// but whole numbers should read as "14", not "14.0").
+function fmtBalanceNum(n) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function balanceRow(b) {
+  return `<div class="stat-row">
+    <span class="stat-num" style="font-size:18px;">${fmtBalanceNum(b.remaining)}/${fmtBalanceNum(b.total)}${b.unit === 'hours' ? 'h' : ''}</span>
+    <span class="stat-lbl">${escapeHtml(b.label)}${b.period === 'month' ? ' (this month)' : ''}</span>
+  </div>`;
+}
+
+function leaveBalanceCardBody(balances) {
+  if (!balances) return `<div class="muted small mt-8">Unavailable</div>`;
+  return `${balanceRow(balances.planned)}${balanceRow(balances.combined)}${balanceRow(balances.wfh)}${balanceRow(balances.excuse)}`;
+}
+
 // Shared by "Who's Off Today" and "Who's Online" — same tile grid shape,
 // just a different item renderer and empty message.
 function tileGrid(tilesHtml, emptyMessage) {
@@ -327,8 +345,9 @@ export async function renderOverview() {
   const role = state.currentUser && state.currentUser.role;
   const isPeopleCulture = role === 'people_culture';
   const isManager = role === 'manager';
-  const [mineRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes, peerReviewStatusRes] = await Promise.all([
+  const [mineRes, balancesRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes, peerReviewStatusRes] = await Promise.all([
     apiFetch('/api/employees/leave-requests/mine'),
+    apiFetch('/api/employees/leave-requests/balances/mine'),
     apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
     (isPeopleCulture || isManager) ? apiFetch('/api/employees') : Promise.resolve(null),
@@ -378,6 +397,7 @@ export async function renderOverview() {
         <div class="stat-row">
           <span class="stat-num" style="font-size:22px;">${counts.rejected}</span><span class="stat-lbl">Rejected</span>
         </div>`)}
+      ${statCard('Leave Balance', leaveBalanceCardBody(balancesRes && balancesRes.balances))}
       ${statCard('Department', `<div class="mt-8" style="font-weight:650;">${escapeHtml(emp.department || '—')}</div>
         <div class="muted small mt-8">${emp.kpiProfile ? 'KPI profile: ' + escapeHtml(emp.kpiProfile) : 'No KPI profile assigned'}</div>`)}
       ${statCard('Reporting', `<div class="mt-8">${isPeopleCulture ? '<span class="badge badge-approved">People &amp; Culture</span>' : '<span class="badge badge-neutral">Team member</span>'}</div>`)}

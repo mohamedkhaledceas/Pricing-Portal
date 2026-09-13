@@ -34,6 +34,17 @@ export function availabilityLabel(value) {
   return a ? a.label : value;
 }
 
+// Mirrors server/src/modules/employees/services/leaveBalanceRules.js's
+// bucketForType — which of the 4 tracked balance pools a leave type draws
+// from. null = uncapped, not tracked (sick, unpaid, public_holiday).
+export function balanceBucketForType(leaveType) {
+  if (leaveType === 'planned') return 'planned';
+  if (['emergency', 'mental_health', 'short_notice'].includes(leaveType)) return 'combined';
+  if (leaveType === 'wfh') return 'wfh';
+  if (leaveType === 'excuse') return 'excuse';
+  return null;
+}
+
 export const STATUS_LABELS = {
   pending: 'Pending (manager)',
   manager_approved: 'Pending (P&C)',

@@ -72,6 +72,19 @@ function createTimeOffController({ timeOffService }) {
     return res.json({ breakdown });
   }
 
+  function getBalances(req, res) {
+    const employee = requireEmployee(req);
+    return res.json({ balances: timeOffService.getMyBalances(employee.id) });
+  }
+
+  // No requireEmployee — this is a stateless preview of the notice-window
+  // rule (same leniency as the conflict-pairs/mine/overlap check), not tied
+  // to any particular employee's own data.
+  function checkNotice(req, res) {
+    const { leaveType, startDate } = req.query;
+    return res.json(timeOffService.checkNotice({ leaveType, startDate }));
+  }
+
   async function managerDecision(req, res) {
     const request = await timeOffService.managerDecision({
       requestId: Number(req.params.id),
@@ -111,7 +124,7 @@ function createTimeOffController({ timeOffService }) {
     return res.json({ request });
   }
 
-  return { submit, listMine, listTeam, offToday, listPcPending, listAutoRejected, getLeaveBreakdown, managerDecision, pcConfirm, cancel };
+  return { submit, listMine, listTeam, offToday, listPcPending, listAutoRejected, getLeaveBreakdown, getBalances, checkNotice, managerDecision, pcConfirm, cancel };
 }
 
 module.exports = createTimeOffController;
