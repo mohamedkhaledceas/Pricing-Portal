@@ -34,6 +34,7 @@ const clickupClient = require('../../common/integrations/clickupClient');
 const CLICKUP_TEAM_ID = '36181979';
 
 const timeOffRules = require('./services/timeOffRules');
+const leaveBalanceRules = require('./services/leaveBalanceRules');
 const teamMembership = require('./services/teamMembership');
 const kpiFrameworkSeed = require('./services/kpiFrameworkSeed.data');
 const createAttachEmployeeMiddleware = require('./middleware/attachEmployee');
@@ -84,7 +85,7 @@ const rosterService = createRosterService({
 });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, audit, roles: ROLES });
-const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES });
+const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES });
 const kpiClickupMetricsService = createKpiClickupMetricsService({
   clickupGet: clickupClient.clickupGet, teamId: CLICKUP_TEAM_ID, kpiClickupStatusEventRepository,
 });

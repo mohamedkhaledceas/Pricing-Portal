@@ -1,7 +1,7 @@
 import { $, $all, escapeHtml, fmtDate, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
-import { LEAVE_TYPES, leaveTypeLabel, AVAILABILITY_OPTIONS, availabilityLabel, STATUS_LABELS } from './leaveTypes.js';
+import { LEAVE_TYPES, leaveTypeLabel, AVAILABILITY_OPTIONS, availabilityLabel, STATUS_LABELS, balanceBucketForType } from './leaveTypes.js';
 
 let directoryById = {};
 async function loadDirectoryIndex() {
@@ -18,6 +18,18 @@ function nameFor(employeeId) {
 async function getDirectory() {
   const res = await apiFetch('/api/employees/directory');
   return res.employees || [];
+}
+
+// Fetched once per form render (same lifetime as directoryById) — warn-only,
+// never blocks the form if the fetch fails.
+let myBalances = null;
+async function loadMyBalances() {
+  try {
+    const res = await apiFetch('/api/employees/leave-requests/balances/mine');
+    myBalances = res.balances || null;
+  } catch (err) {
+    myBalances = null;
+  }
 }
 
 export function switchSubTab(tabId, btn) {
@@ -81,10 +93,45 @@ async function checkConflictsLive() {
   }
 }
 
+// Warn-only balance check — fires as soon as a type is picked, no dates
+// needed. Uncapped types (sick/unpaid/public_holiday) show nothing. Never
+// blocks submission; see the leave-balance plan's "no new auto-reject".
+function renderBalanceWarning() {
+  const el = $('#form-balance-warning');
+  if (!el) return;
+  const type = $('#req-type').value;
+  const bucket = type && balanceBucketForType(type);
+  const b = bucket && myBalances && myBalances[bucket];
+  if (!b || b.remaining > b.total * 0.3) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="alert alert-warn">
+    <div>⚠ You have <strong>${b.remaining}${b.unit === 'hours' ? 'h' : ''} of ${b.total}${b.unit === 'hours' ? 'h' : ''}</strong> ${escapeHtml(b.label)} remaining this ${b.period} — you're running low.</div>
+  </div>`;
+}
+
+// Live, non-blocking preview of the same notice-window rule submit() already
+// enforces — surfaced early so the requester sees the risk before they
+// submit, not just in the after-the-fact auto-reject banner.
+async function checkNoticeLive() {
+  const el = $('#form-notice-warning');
+  if (!el) return;
+  const type = $('#req-type').value;
+  const startDate = $('#req-start').value;
+  if (!type || !startDate) { el.innerHTML = ''; return; }
+  try {
+    const res = await apiFetch(`/api/employees/leave-requests/notice-check?leaveType=${type}&startDate=${startDate}`);
+    el.innerHTML = res.autoReject
+      ? `<div class="alert alert-warn"><div>⚠ This falls within the notice period for ${escapeHtml(leaveTypeLabel(type))} — ${escapeHtml(res.reason || '')} It may be auto-rejected if you submit now.</div></div>`
+      : '';
+  } catch (err) {
+    el.innerHTML = ''; // best-effort — never block filling out the form over this check itself failing
+  }
+}
+
 function onStartChange() {
   if ($('#req-type').value === 'wfh') $('#req-end').value = $('#req-start').value;
   if (!$('#req-end').value || $('#req-end').value < $('#req-start').value) $('#req-end').value = $('#req-start').value;
   checkConflictsLive();
+  checkNoticeLive();
 }
 
 async function populateHandoverSelect() {
@@ -140,6 +187,9 @@ async function submitRequest() {
     onTypeChange();
     $('#req-reason').value = '';
     $('#form-conflict-warning').innerHTML = '';
+    $('#form-balance-warning').innerHTML = '';
+    $('#form-notice-warning').innerHTML = '';
+    loadMyBalances();
   } catch (err) {
     resultEl.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
   } finally {
@@ -170,6 +220,7 @@ export function renderNewRequestForm() {
             ${LEAVE_TYPES.filter((t) => t.value !== 'public_holiday').map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}
           </select>
           <div class="form-hint" id="req-type-notice"></div>
+          <div class="form-group full" id="form-balance-warning"></div>
         </div>
 
         <div id="form-fields" style="display:none;">
@@ -183,6 +234,7 @@ export function renderNewRequestForm() {
             <label class="form-label">End Date *</label>
             <input type="date" class="form-control" id="req-end">
           </div>
+          <div class="form-group full" id="form-notice-warning"></div>
 
           <div class="form-group" id="group-availability">
             <label class="form-label">Availability *</label>
@@ -217,11 +269,14 @@ export function renderNewRequestForm() {
     $('#req-type-notice').textContent = t ? 'Notice required: ' + t.notice : '';
     onTypeChange();
     checkConflictsLive();
+    renderBalanceWarning();
+    checkNoticeLive();
   });
   $('#req-start').addEventListener('change', onStartChange);
   $('#req-end').addEventListener('change', checkConflictsLive);
   $('#submit-btn').addEventListener('click', submitRequest);
   populateHandoverSelect();
+  loadMyBalances().then(renderBalanceWarning);
 }
 
 /* ── Today (team status) ── */

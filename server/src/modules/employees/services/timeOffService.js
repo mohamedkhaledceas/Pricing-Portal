@@ -13,7 +13,7 @@ function parseDateOnly(value) {
    -> manager decision -> P&C confirmation. timeOffRules holds the pure
    notice-window math; this service is what actually touches the DB and
    enforces who's allowed to do what. */
-function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, audit, clickupLeaveSync, conflictPairService, roles }) {
+function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles }) {
   async function submit({ employeeId, leaveType, startDate, endDate, availability, handoverEmployeeId, reason, actorId, ip }) {
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       throw new EmployeesError(`Leave type must be one of: ${VALID_LEAVE_TYPES.join(', ')}.`);
@@ -215,6 +215,31 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return VALID_LEAVE_TYPES.map((type) => byType[type]);
   }
 
+  // Read-only, computed on read from the same rows getLeaveBreakdown uses —
+  // no balance ledger/table (see the leave-balance plan's rationale: fixed,
+  // non-configurable, non-prorated constants don't need one yet).
+  function getMyBalances(employeeId) {
+    const requests = leaveRequestRepository.findByEmployeeId(employeeId);
+    return leaveBalanceRules.computeBalances(requests, {
+      today: new Date(),
+      countWorkingDaysInclusive: timeOffRules.countWorkingDaysInclusive,
+    });
+  }
+
+  // Read-only preview of the exact same rule submit() enforces above — lets
+  // the form warn before the requester commits, without changing what
+  // actually gets auto-rejected at submission time.
+  function checkNotice({ leaveType, startDate }) {
+    if (!VALID_LEAVE_TYPES.includes(leaveType)) {
+      throw new EmployeesError(`Leave type must be one of: ${VALID_LEAVE_TYPES.join(', ')}.`);
+    }
+    const start = parseDateOnly(startDate);
+    if (!start) {
+      throw new EmployeesError('startDate must be a valid date in YYYY-MM-DD format.');
+    }
+    return timeOffRules.checkNoticeWindow({ leaveType, submittedAt: new Date(), startDate: start });
+  }
+
   async function managerDecision({ requestId, actorEmployee, actorAuthRole, decision, decisionNote, actorId, ip }) {
     if (!['approved', 'rejected'].includes(decision)) {
       throw new EmployeesError('Decision must be "approved" or "rejected".');
@@ -326,7 +351,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
-  return { submit, listMine, listTeam, listOffToday, listPcPending, listAutoRejected, getLeaveBreakdown, managerDecision, pcConfirm, cancel };
+  return { submit, listMine, listTeam, listOffToday, listPcPending, listAutoRejected, getLeaveBreakdown, getMyBalances, checkNotice, managerDecision, pcConfirm, cancel };
 }
 
 module.exports = createTimeOffService;
