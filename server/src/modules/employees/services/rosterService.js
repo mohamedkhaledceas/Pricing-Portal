@@ -49,6 +49,20 @@ function createRosterService({
     }
   }
 
+  // Backs the roster table's ClickUp ID picker — lets an admin search
+  // ClickUp members by name instead of needing to already know someone's
+  // numeric id (the only thing that field actually stores). Same
+  // permission gate as the rest of roster management; not cached here,
+  // since this list only loads once per roster-page visit, not per row.
+  async function listClickupMembers({ actorAuthRole }) {
+    requireCanManageRoster({ actorAuthRole });
+    try {
+      return await clickupUserSync.listMembers();
+    } catch (error) {
+      throw new EmployeesError('Could not reach ClickUp to list members — try again shortly.', 502);
+    }
+  }
+
   // Same role set as canManageRoster — admin/manager/operations/P&C can all
   // flag/unflag a Team Head, matching the roster table's own toggle
   // visibility.
@@ -527,7 +541,7 @@ function createRosterService({
     canManageRoster, listAll, listDirectory, listTeamHeadsByDepartment, getMine, getDirectReports, getMyTeam,
     create, update, setActive, setMyPhoto, updateMine, getMyPendingChangeRequest,
     listPendingChangeRequests, approveChangeRequest, rejectChangeRequest,
-    createForSelfRegistration,
+    createForSelfRegistration, listClickupMembers,
   };
 }
 

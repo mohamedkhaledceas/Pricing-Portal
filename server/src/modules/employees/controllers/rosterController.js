@@ -50,6 +50,13 @@ function createRosterController({ rosterService }) {
     return res.json({ isManager, employees: members });
   }
 
+  // Async — wrapped in catchAsync at the route (see routes/index.js), same
+  // as timeOffController's async handlers.
+  async function clickupMembers(req, res) {
+    const members = await rosterService.listClickupMembers({ actorAuthRole: req.user.role });
+    return res.json({ members });
+  }
+
   function create(req, res) {
     const body = req.body || {};
     const employee = rosterService.create({
@@ -184,7 +191,7 @@ function createRosterController({ rosterService }) {
 
   return {
     list, getMine, directory, teamHeadsPublic, getDirectReports, getMyTeam, create, update, deactivate, reactivate,
-    uploadMyPhoto, removeMyPhoto, updateMine,
+    uploadMyPhoto, removeMyPhoto, updateMine, clickupMembers,
     pendingChangeRequests, approveChangeRequest, rejectChangeRequest,
   };
 }

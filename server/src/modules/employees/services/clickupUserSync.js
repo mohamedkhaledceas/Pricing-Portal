@@ -9,12 +9,31 @@
 const logger = require('../../../common/logger');
 
 function createClickupUserSync({ employeeRepository, clickupClient, teamId }) {
+  async function fetchTeamMembers() {
+    const { teams } = await clickupClient.clickupGet('/team');
+    const team = teams.find((t) => String(t.id) === String(teamId)) || teams[0];
+    return (team.members || []).map((m) => m.user);
+  }
+
+  // Backs the roster UI's manual "ClickUp ID" picker (rosterService.
+  // listClickupMembers) — the automatic email match above only covers the
+  // case where a login email happens to equal the ClickUp account's email;
+  // this is the fallback for everyone else, so an admin can search by name
+  // instead of needing to already know a numeric id. Deliberately returns
+  // only id/name/email, never the raw API key or anything else ClickUp's
+  // member object carries.
+  async function listMembers() {
+    const members = await fetchTeamMembers();
+    return members
+      .map((u) => ({ id: u.id, name: u.username, email: u.email }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
   async function run() {
     let membersByEmail;
     try {
-      const { teams } = await clickupClient.clickupGet('/team');
-      const team = teams.find((t) => String(t.id) === String(teamId)) || teams[0];
-      membersByEmail = new Map((team.members || []).map((m) => [String(m.user.email).toLowerCase(), m.user.id]));
+      const members = await fetchTeamMembers();
+      membersByEmail = new Map(members.map((u) => [String(u.email).toLowerCase(), u.id]));
     } catch (error) {
       logger.error('ClickUp user sync: could not fetch team members, skipping this run.', { error: error.message });
       return;
@@ -39,7 +58,7 @@ function createClickupUserSync({ employeeRepository, clickupClient, teamId }) {
     }
   }
 
-  return { run };
+  return { run, listMembers };
 }
 
 module.exports = createClickupUserSync;
