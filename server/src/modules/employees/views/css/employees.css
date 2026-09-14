@@ -117,13 +117,13 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .dept-bar-fill{height:100%; background:var(--accent)}
 .dept-row-count{font-size:12.5px; font-weight:650; width:24px; text-align:right; flex:none}
 
-/* ── Roster's Departments admin card (click a name to list its people) ── */
-.dept-name-btn{display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-weight:600}
-.dept-name-btn:hover{color:var(--accent)}
+/* ── Roster's Departments admin card (click anywhere on the card to list its people) ── */
+.dept-card{cursor:pointer}
+.dept-card:hover{border-color:var(--accent)}
+.dept-name-btn{display:inline-flex; align-items:center; gap:6px; font-weight:600}
 .dept-name-chev{display:inline-block; font-size:10px; color:var(--muted); transition:transform .15s ease}
-.dept-name-btn.expanded .dept-name-chev{transform:rotate(90deg)}
-.dept-members{margin-top:8px; padding-top:8px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:5px}
-.dept-member-row{font-size:12.5px}
+.dept-card.expanded .dept-name-chev{transform:rotate(90deg)}
+.dept-members{margin-top:10px; padding-top:10px; border-top:1px solid var(--border)}
 
 /* ── Forms ── */
 .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
