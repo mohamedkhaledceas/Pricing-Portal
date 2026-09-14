@@ -159,7 +159,7 @@ function orgChartSectionHtml() {
   Object.values(childrenByManager).forEach((list) => list.sort(byName));
 
   return `<div class="card section">
-    <div class="card-title">Company Org Chart</div>
+    <div class="card-title">Organization Chart</div>
     <ul class="org-chart-tree">${roots.map((r) => orgChartNodeHtml(r, childrenByManager)).join('')}</ul>
   </div>`;
 }
