@@ -24,6 +24,22 @@ function createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRule
     return clickupUserId ? { add: [Number(clickupUserId)], rem: [] } : undefined;
   }
 
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Confirmed live against production (2026-09): even the individual
+  // follow-up field-set call (not just the bundled create-time payload the
+  // comment below already distrusts) can return 200 and still not persist
+  // the value — read-back after writing is the only way to know it actually
+  // landed. One retry catches this in practice.
+  async function usersFieldPersisted(taskId, fieldId, clickupUserId) {
+    const task = await clickupClient.clickupGet(`/task/${taskId}`);
+    const field = (task.custom_fields || []).find((f) => f.id === fieldId);
+    const currentIds = ((field && field.value) || []).map((u) => String(u.id));
+    return currentIds.includes(String(clickupUserId));
+  }
+
   function dateFieldValueMs(dateOnlyString) {
     if (!dateOnlyString) return undefined;
     return new Date(`${dateOnlyString}T00:00:00Z`).getTime();
@@ -68,20 +84,37 @@ function createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRule
 
   async function setUsersFields(taskId, { employee, managerEmployee, handoverEmployee }) {
     const assignments = [
-      [CF.EMPLOYEE, employee && employee.clickup_user_id],
-      [CF.MANAGER, managerEmployee && managerEmployee.clickup_user_id],
-      [CF.HANDOVER, handoverEmployee && handoverEmployee.clickup_user_id],
+      ['Employee', CF.EMPLOYEE, employee && employee.clickup_user_id],
+      ['Manager', CF.MANAGER, managerEmployee && managerEmployee.clickup_user_id],
+      ['HandOver', CF.HANDOVER, handoverEmployee && handoverEmployee.clickup_user_id],
     ];
-    for (const [fieldId, clickupUserId] of assignments) {
+    for (const [label, fieldId, clickupUserId] of assignments) {
       const value = usersFieldValue(clickupUserId);
-      if (!fieldId || !value) continue;
-      try {
-        await clickupClient.clickupPost(`/task/${taskId}/field/${fieldId}`, { value });
-      } catch (error) {
-        // One field failing to set shouldn't be treated as the whole sync
-        // failing — the task itself already exists with everything else on
-        // it. Logged, not thrown.
-        logger.error('ClickUp leave sync: setting a users-type field failed.', { error: error.message, taskId, fieldId });
+      if (!fieldId || !value) {
+        // Not itself an error — no manager/handover assigned, or that
+        // person's own clickup_user_id hasn't been linked yet (see
+        // clickupUserSync.js). Logged so a field that's blank on the
+        // ClickUp task because of a roster/linking gap is traceable,
+        // instead of looking indistinguishable from this sync failing.
+        logger.info('ClickUp leave sync: skipping a users-type field with no value to set.', { taskId, field: label });
+        continue;
+      }
+
+      let persisted = false;
+      for (let attempt = 0; attempt <= 1 && !persisted; attempt += 1) {
+        try {
+          await clickupClient.clickupPost(`/task/${taskId}/field/${fieldId}`, { value });
+          persisted = await usersFieldPersisted(taskId, fieldId, clickupUserId);
+        } catch (error) {
+          // One field failing to set shouldn't be treated as the whole sync
+          // failing — the task itself already exists with everything else
+          // on it. Logged, not thrown.
+          logger.error('ClickUp leave sync: setting a users-type field failed.', { error: error.message, taskId, field: label, attempt });
+        }
+        if (!persisted && attempt === 0) await sleep(500);
+      }
+      if (!persisted) {
+        logger.error('ClickUp leave sync: a users-type field did not persist after retrying — ClickUp likely dropped it silently.', { taskId, field: label, clickupUserId });
       }
     }
   }

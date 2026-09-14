@@ -65,6 +65,32 @@ function managerOptions(excludeId) {
     .join('');
 }
 
+// Loaded once per roster-page visit (see renderRosterTable), not per row —
+// backs the ClickUp ID column below so an admin can search by name/email
+// instead of needing to already know someone's raw numeric ClickUp id.
+let clickupMembersCache = [];
+
+async function loadClickupMembers() {
+  try {
+    const res = await apiFetch('/api/employees/clickup-members');
+    clickupMembersCache = res.members || [];
+  } catch (err) {
+    clickupMembersCache = []; // ClickUp unreachable — falls back to the raw-id option below, same as departmentOptionsHtml's own precedent
+  }
+}
+
+// Same "current value survives even if unmatched" fallback as
+// departmentOptionsHtml/jobTitleOptionsHtml above — an employee's stored
+// clickup_user_id may point at someone who's since left the ClickUp
+// workspace, or the fetch above may have failed outright.
+function clickupMemberOptionsHtml(currentId) {
+  const options = clickupMembersCache.map((m) => `<option value="${m.id}" ${String(m.id) === String(currentId) ? 'selected' : ''}>${escapeHtml(m.name)} (${escapeHtml(m.email)})</option>`);
+  if (currentId && !clickupMembersCache.some((m) => String(m.id) === String(currentId))) {
+    options.push(`<option value="${escapeHtml(String(currentId))}" selected>#${escapeHtml(String(currentId))} (not found in ClickUp)</option>`);
+  }
+  return options.join('');
+}
+
 async function submitCreate() {
   const btn = $('#roster-create-btn');
   const resultEl = $('#roster-create-result');
@@ -129,7 +155,7 @@ async function toggleActive(id, active) {
 window.rosterToggleActive = toggleActive;
 
 async function renderRosterTable() {
-  const [res] = await Promise.all([apiFetch('/api/employees'), window.Departments.load(apiFetch)]);
+  const [res] = await Promise.all([apiFetch('/api/employees'), window.Departments.load(apiFetch), loadClickupMembers()]);
   rosterCache = res.employees || [];
   directoryCache = rosterCache.map((e) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName }));
 
@@ -180,6 +206,12 @@ async function renderRosterTable() {
           ${managerOptions(e.id)}
         </select>
       </td>
+      <td>
+        <select class="form-control edit-clickup-id small" style="min-width:170px;" onchange="rosterFieldChanged(${e.id}, 'clickupUserId', this)">
+          <option value="">— Unlinked —</option>
+          ${clickupMemberOptionsHtml(e.clickupUserId)}
+        </select>
+      </td>
       <td style="text-align:center;">${e.authRole === 'people_culture' ? '<span class="badge badge-approved">P&amp;C</span>' : ''}</td>
       <td style="text-align:center;">
         ${canAssignTeamHead()
@@ -192,7 +224,7 @@ async function renderRosterTable() {
       </td>
     </tr>`).join('');
 
-  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="12" class="empty-state">No employees in the roster yet</td></tr>';
+  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="13" class="empty-state">No employees in the roster yet</td></tr>';
 
   // Pre-select each row's manager dropdown now that options exist.
   rosterCache.forEach((e) => {
@@ -531,8 +563,8 @@ export async function renderRoster() {
       <div class="card-title">All Employees</div>
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Manager</th><th>P&amp;C</th><th>Team Head</th><th>Active</th><th></th></tr></thead>
-          <tbody id="roster-table-body"><tr><td colspan="12" class="empty-state">Loading...</td></tr></tbody>
+          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Manager</th><th>ClickUp ID</th><th>P&amp;C</th><th>Team Head</th><th>Active</th><th></th></tr></thead>
+          <tbody id="roster-table-body"><tr><td colspan="13" class="empty-state">Loading...</td></tr></tbody>
         </table>
       </div>
     </div>

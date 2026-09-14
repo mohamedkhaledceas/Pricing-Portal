@@ -33,6 +33,7 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.get('/employees/team', rosterController.getDirectReports);
   router.get('/employees/team/mine', rosterController.getMyTeam);
   router.get('/employees', rosterController.list);
+  router.get('/employees/clickup-members', catchAsync(rosterController.clickupMembers));
   router.post('/employees', rosterController.create);
   router.patch('/employees/:id', rosterController.update);
   router.post('/employees/:id/deactivate', rosterController.deactivate);
