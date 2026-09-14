@@ -264,6 +264,13 @@ async function addDepartment() {
 window.deptAdd = addDepartment;
 
 let editingDepartmentId = null;
+let expandedDepartmentId = null;
+
+function toggleDepartmentExpand(id) {
+  expandedDepartmentId = expandedDepartmentId === id ? null : id;
+  renderDepartmentsSection();
+}
+window.deptToggleExpand = toggleDepartmentExpand;
 
 function askEditDepartment(id) {
   editingDepartmentId = id;
@@ -296,7 +303,10 @@ window.deptSaveEdit = saveEditDepartment;
 function renderDepartmentsSection() {
   const departments = window.Departments.list();
   $('#departments-list').innerHTML = departments.length
-    ? departments.map((d) => `<div class="request-card" style="margin-bottom:6px;">
+    ? departments.map((d) => {
+        const isExpanded = expandedDepartmentId === d.id;
+        const members = isExpanded ? rosterCache.filter((e) => e.department === d.code) : [];
+        return `<div class="request-card" style="margin-bottom:6px;">
         ${editingDepartmentId === d.id
           ? `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
               <input class="form-control" id="dept-edit-input-${d.id}" value="${escapeHtml(d.label)}" style="flex:1; min-width:200px;">
@@ -304,10 +314,18 @@ function renderDepartmentsSection() {
               <button class="btn small" onclick="deptCancelEdit()">Cancel</button>
             </div>`
           : `<div class="request-card-top">
-              <div>${escapeHtml(d.label)} <span class="small muted">${escapeHtml(d.code)}</span></div>
+              <div class="dept-name-btn ${isExpanded ? 'expanded' : ''}" onclick="deptToggleExpand(${d.id})">
+                <span class="dept-name-chev">▸</span>${escapeHtml(d.label)}
+              </div>
               <button class="btn small" onclick="deptAskEdit(${d.id})">Edit</button>
-            </div>`}
-      </div>`).join('')
+            </div>
+            ${isExpanded ? `<div class="dept-members">${
+              members.length
+                ? members.map((m) => `<div class="dept-member-row">${escapeHtml(m.firstName + ' ' + m.lastName)}${m.jobTitle ? `<span class="small muted"> · ${escapeHtml(m.jobTitle)}</span>` : ''}</div>`).join('')
+                : `<div class="small muted">Nobody in this department</div>`
+            }</div>` : ''}`}
+      </div>`;
+      }).join('')
     : `<div class="empty-state small">No departments yet</div>`;
 
   $('#departments-form').innerHTML = `
