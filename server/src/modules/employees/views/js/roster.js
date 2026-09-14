@@ -264,6 +264,13 @@ async function addDepartment() {
 window.deptAdd = addDepartment;
 
 let editingDepartmentId = null;
+let expandedDepartmentId = null;
+
+function toggleDepartmentExpand(id) {
+  expandedDepartmentId = expandedDepartmentId === id ? null : id;
+  renderDepartmentsSection();
+}
+window.deptToggleExpand = toggleDepartmentExpand;
 
 function askEditDepartment(id) {
   editingDepartmentId = id;
@@ -293,21 +300,72 @@ async function saveEditDepartment(id) {
 }
 window.deptSaveEdit = saveEditDepartment;
 
+// Same clickable-card look and click-to-expand-for-detail behavior as My
+// Team's myTeamCardHtml (team.js) / the Teams directory modal
+// (shared/teamsDirectory.js) — reuses their CSS (loaded globally via
+// accountMenu.css). Kept as its own markup/toggle (dept-member-* ids)
+// rather than calling into team.js, matching that module's own precedent:
+// both can be on screen at once (different tabs, but tab-panels are only
+// hidden, not removed) and would otherwise collide on the same
+// #team-directory-card-N ids.
+function employeeNameById(id) {
+  const e = rosterCache.find((x) => x.id === id);
+  return e ? `${e.firstName} ${e.lastName}` : null;
+}
+function deptMemberCardHtml(e) {
+  const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
+  const managerName = e.managerEmployeeId ? employeeNameById(e.managerEmployeeId) : null;
+  return `
+    <div class="team-directory-card" id="dept-member-card-${e.id}" role="button" tabindex="0" onclick="event.stopPropagation(); deptMemberToggleCard(${e.id})">
+      <div class="team-directory-card-summary">
+        <div class="team-directory-card-avatar">${avatarHtml}</div>
+        <div>
+          <div class="team-directory-card-name">${escapeHtml(e.firstName + ' ' + e.lastName)}</div>
+          <div class="team-directory-card-title small muted">${escapeHtml(e.jobTitle || '')}</div>
+        </div>
+      </div>
+      <div class="team-directory-card-detail" id="dept-member-detail-${e.id}" hidden>
+        <div><strong>Email:</strong> ${e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'}</div>
+        <div><strong>Manager:</strong> ${managerName ? escapeHtml(managerName) : 'No manager assigned'}</div>
+      </div>
+    </div>`;
+}
+// Accordion, not independent toggles — same rule as My Team's cards.
+window.deptMemberToggleCard = function (id) {
+  const detail = document.getElementById('dept-member-detail-' + id);
+  if (!detail) return;
+  const wasHidden = detail.hidden;
+  document.querySelectorAll('[id^="dept-member-detail-"]').forEach((d) => { d.hidden = true; });
+  detail.hidden = !wasHidden;
+};
+
 function renderDepartmentsSection() {
   const departments = window.Departments.list();
   $('#departments-list').innerHTML = departments.length
-    ? departments.map((d) => `<div class="request-card" style="margin-bottom:6px;">
-        ${editingDepartmentId === d.id
-          ? `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
+    ? departments.map((d) => {
+        const isExpanded = expandedDepartmentId === d.id;
+        const isEditing = editingDepartmentId === d.id;
+        const members = isExpanded ? rosterCache.filter((e) => e.department === d.code) : [];
+        return `<div class="request-card dept-card ${isExpanded ? 'expanded' : ''}" style="margin-bottom:6px;" ${isEditing ? '' : `role="button" tabindex="0" onclick="deptToggleExpand(${d.id})"`}>
+        ${isEditing
+          ? `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;" onclick="event.stopPropagation()">
               <input class="form-control" id="dept-edit-input-${d.id}" value="${escapeHtml(d.label)}" style="flex:1; min-width:200px;">
               <button class="btn small primary" onclick="deptSaveEdit(${d.id})">Save</button>
               <button class="btn small" onclick="deptCancelEdit()">Cancel</button>
             </div>`
           : `<div class="request-card-top">
-              <div>${escapeHtml(d.label)} <span class="small muted">${escapeHtml(d.code)}</span></div>
-              <button class="btn small" onclick="deptAskEdit(${d.id})">Edit</button>
-            </div>`}
-      </div>`).join('')
+              <div class="dept-name-btn">
+                <span class="dept-name-chev">▸</span>${escapeHtml(d.label)}
+              </div>
+              <button class="btn small" onclick="event.stopPropagation(); deptAskEdit(${d.id})">Edit</button>
+            </div>
+            ${isExpanded ? `<div class="dept-members">${
+              members.length
+                ? `<div class="team-directory-grid">${members.map((m) => deptMemberCardHtml(m)).join('')}</div>`
+                : `<div class="small muted">Nobody in this department</div>`
+            }</div>` : ''}`}
+      </div>`;
+      }).join('')
     : `<div class="empty-state small">No departments yet</div>`;
 
   $('#departments-form').innerHTML = `

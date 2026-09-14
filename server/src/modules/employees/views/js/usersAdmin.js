@@ -74,7 +74,7 @@ function renderUsersTable(users) {
       ? `<button type="button" class="btn small ${u.isActive ? 'danger' : ''}" onclick="usersToggleActive(${u.id}, ${!u.isActive})">${u.isActive ? 'Deactivate' : 'Reactivate'}</button>`
       : '';
     const uuidCell = showUuid
-      ? `<td><span class="small muted" style="font-family:monospace;">${escapeHtml(u.uuid || '—')}</span>${u.uuid ? ` <button type="button" class="btn small" onclick="usersCopyUuid('${u.uuid}')" title="Copy UUID">Copy</button>` : ''}</td>`
+      ? `<td class="uuid-col"><span class="small muted" style="font-family:monospace;">${escapeHtml(u.uuid || '—')}</span>${u.uuid ? ` <button type="button" class="btn small" onclick="usersCopyUuid('${u.uuid}')" title="Copy UUID">Copy</button>` : ''}</td>`
       : '';
     return `<tr>
       <td>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</td>
@@ -90,7 +90,7 @@ function renderUsersTable(users) {
     <div class="card section">
       <div class="table-scroll">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th>${showUuid ? '<th>UUID (support tracing)</th>' : ''}</tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th>${showUuid ? '<th class="uuid-col">UUID (support tracing)</th>' : ''}</tr></thead>
           <tbody>${rows || `<tr><td colspan="${showUuid ? 6 : 5}" class="empty-state">No accounts found</td></tr>`}</tbody>
         </table>
       </div>
