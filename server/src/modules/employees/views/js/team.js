@@ -90,6 +90,80 @@ function myTeamSectionHtml(myTeam) {
   </div>`;
 }
 
+// ── Company Org Chart — everyone's full reporting line, not just direct
+// reports (unlike My Team above). Built entirely client-side from
+// directoryById, the same directory fetch My Team already loads — no new
+// endpoint needed, since managerEmployeeId + name/department/jobTitle/
+// photo is exactly what a tree needs and the directory endpoint is
+// already open to any authenticated employee (see rosterService.
+// listDirectory's own comment on why: non-sensitive, needed for pickers).
+// Same clickable-card look as My Team's cards, own id namespace
+// (org-card-/org-detail-) for the same reason myTeamCardHtml's comment
+// gives — both can be on screen at once.
+function orgChartMemberCardHtml(e) {
+  const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
+  const dept = e.department ? window.Departments.labelFor(e.department) : null;
+  return `
+    <div class="team-directory-card" id="org-card-${e.id}" role="button" tabindex="0" onclick="orgChartToggleCard(${e.id})">
+      <div class="team-directory-card-summary">
+        <div class="team-directory-card-avatar">${avatarHtml}</div>
+        <div>
+          <div class="team-directory-card-name">${escapeHtml(e.firstName + ' ' + e.lastName)}</div>
+          <div class="team-directory-card-title small muted">${escapeHtml(e.jobTitle || '')}</div>
+        </div>
+      </div>
+      <div class="team-directory-card-detail" id="org-detail-${e.id}" hidden>
+        <div><strong>Department:</strong> ${escapeHtml(dept || '—')}</div>
+        <div><strong>Email:</strong> ${e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'}</div>
+      </div>
+    </div>`;
+}
+// Accordion, not independent toggles — same rule as My Team's cards.
+window.orgChartToggleCard = function (id) {
+  const detail = document.getElementById('org-detail-' + id);
+  if (!detail) return;
+  const wasHidden = detail.hidden;
+  document.querySelectorAll('[id^="org-detail-"]').forEach((d) => { d.hidden = true; });
+  detail.hidden = !wasHidden;
+};
+
+function orgChartNodeHtml(e, childrenByManager) {
+  const kids = childrenByManager[e.id] || [];
+  return `<li>
+    ${orgChartMemberCardHtml(e)}
+    ${kids.length ? `<ul class="org-chart-children">${kids.map((k) => orgChartNodeHtml(k, childrenByManager)).join('')}</ul>` : ''}
+  </li>`;
+}
+
+function orgChartSectionHtml() {
+  const employees = Object.values(directoryById);
+  if (!employees.length) return '';
+  const byId = new Map(employees.map((e) => [e.id, e]));
+  const childrenByManager = {};
+  const roots = [];
+  employees.forEach((e) => {
+    // An inactive/missing manager (deactivated, or bad data) has no node
+    // to nest under — treat as a root rather than silently dropping the
+    // employee from the chart entirely.
+    if (e.managerEmployeeId && byId.has(e.managerEmployeeId)) {
+      if (!childrenByManager[e.managerEmployeeId]) childrenByManager[e.managerEmployeeId] = [];
+      childrenByManager[e.managerEmployeeId].push(e);
+    } else {
+      roots.push(e);
+    }
+  });
+  // Alphabetical within each level — no seniority/title data to sort by
+  // otherwise, and this keeps the tree deterministic across reloads.
+  const byName = (a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
+  roots.sort(byName);
+  Object.values(childrenByManager).forEach((list) => list.sort(byName));
+
+  return `<div class="card section">
+    <div class="card-title">Company Org Chart</div>
+    <ul class="org-chart-tree">${roots.map((r) => orgChartNodeHtml(r, childrenByManager)).join('')}</ul>
+  </div>`;
+}
+
 // r.conflictWarnings comes attached from the backend (timeOffService's
 // withConflictWarnings, see timeOffService.js) — warn-only, never blocks
 // anything; this just labels the card so a manager can see it before
@@ -323,7 +397,7 @@ export async function renderTeam() {
     window.Departments.load(apiFetch),
   ]);
 
-  const sections = [myTeamSectionHtml(myTeamRes)].filter(Boolean);
+  const sections = [myTeamSectionHtml(myTeamRes), orgChartSectionHtml()].filter(Boolean);
   const teamRequests = teamRes.requests || [];
 
   // A decision (approve/reject) is always scoped to actual direct reports,
