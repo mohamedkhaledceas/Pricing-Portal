@@ -1,7 +1,7 @@
 import { $, skeletonBlock, skeletonTableRows } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
-import { paintLogo, updateThemeToggleLabel, cycleTheme } from './theme.js';
+import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderStats } from './charts.js';
 import { renderStageDurations } from './stageDurations.js';
 import { renderQuarterlyKpis, bindQuarterlyUi } from './quarterlyKpis.js';
@@ -62,7 +62,7 @@ function bindUi() {
 }
 
 (async function init() {
-  updateThemeToggleLabel();
+  updateAppearanceControls();
   paintLogo();
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
@@ -86,8 +86,8 @@ function bindUi() {
       try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
       window.location.href = '/login';
     },
-    cycleTheme,
-    updateThemeToggleLabel,
+    setTheme,
+    updateAppearanceControls,
   });
   $('#loginGate').style.display = 'none';
   $('#app').style.display = 'block';

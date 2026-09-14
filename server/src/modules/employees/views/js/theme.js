@@ -20,21 +20,23 @@ export function themePref() {
   }
 }
 
-export function updateThemeToggleLabel() {
+// #theme-seg-btn elements now live inside the shared account-menu dropdown
+// (accountMenu.js), which isn't mounted yet the first time init() calls
+// this — querySelectorAll on nothing is a harmless no-op then.
+export function updateAppearanceControls() {
   const pref = themePref();
-  const el = $('#themeToggleState');
-  if (el) el.textContent = pref === 'dark' ? 'Dark' : pref === 'light' ? 'Light' : 'System';
+  document.querySelectorAll('.theme-seg-btn').forEach((btn) => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.themeValue === pref));
+  });
 }
 
-export function cycleTheme() {
-  const cur = themePref();
-  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
-  if (next === 'system') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', next);
+export function setTheme(value) {
+  if (value === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', value);
   try {
-    if (next === 'system') localStorage.removeItem('pricingPortalTheme');
-    else localStorage.setItem('pricingPortalTheme', next);
+    if (value === 'system') localStorage.removeItem('pricingPortalTheme');
+    else localStorage.setItem('pricingPortalTheme', value);
   } catch (err) {}
   paintLogo();
-  updateThemeToggleLabel();
+  updateAppearanceControls();
 }

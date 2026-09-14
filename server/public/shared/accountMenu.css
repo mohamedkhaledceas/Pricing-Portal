@@ -37,6 +37,17 @@
 .account-menu-item-danger { color: var(--critical, #d03b3b); }
 .account-menu-divider { border-top: 1px solid var(--border, rgba(0,0,0,0.12)); margin: 4px 0; }
 
+.account-menu-appearance { padding: 8px 10px 6px; }
+.account-menu-appearance-label { font-size: 12px; font-weight: 600; color: var(--ink-2, #4a4a4a); margin-bottom: 6px; }
+.theme-seg { display: flex; gap: 2px; background: var(--plane, rgba(0,0,0,0.06)); border-radius: 8px; padding: 2px; }
+.theme-seg-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 6px 0; border: none; border-radius: 6px; background: transparent;
+  color: var(--ink-2, #4a4a4a); cursor: pointer; transition: background-color .12s ease, color .12s ease;
+}
+.theme-seg-btn:hover { background: rgba(0,0,0,0.06); }
+.theme-seg-btn[aria-pressed="true"] { background: var(--surface-1, #fff); color: var(--ink, #191919); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+
 .account-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45);
   display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;

@@ -1,7 +1,7 @@
 import { $, $all } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
-import { paintLogo, updateThemeToggleLabel, cycleTheme } from './theme.js';
+import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderOverview } from './overview.js';
 import { renderNewRequestForm, renderRules, switchSubTab } from './timeOff.js';
 import { renderTeam } from './team.js';
@@ -67,7 +67,7 @@ function bindUi() {
 }
 
 (async function init() {
-  updateThemeToggleLabel();
+  updateAppearanceControls();
   paintLogo();
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
@@ -113,8 +113,8 @@ function bindUi() {
     canManageUsers,
     onUsersClick: () => switchMainTab('users'),
     onLogout: doLogout,
-    cycleTheme,
-    updateThemeToggleLabel,
+    setTheme,
+    updateAppearanceControls,
   });
 
   $('#loginGate').style.display = 'none';

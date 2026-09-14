@@ -1,7 +1,7 @@
 import { $, $$ } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
-import { paintLogo, updateThemeToggleLabel, cycleTheme } from './theme.js';
+import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderAll } from './render.js';
 
 /* Server-side enforcement is requireRole([ROLES.MANAGER, ROLES.ADMIN]) on
@@ -51,7 +51,7 @@ function bindUi() {
 }
 
 (async function init() {
-  updateThemeToggleLabel();
+  updateAppearanceControls();
   paintLogo();
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
@@ -75,8 +75,8 @@ function bindUi() {
       try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
       window.location.href = '/login';
     },
-    cycleTheme,
-    updateThemeToggleLabel,
+    setTheme,
+    updateAppearanceControls,
     // Chart colors are read live from CSS vars at draw time — redraw so
     // they pick up the new theme instead of staying stuck on the old one.
     onThemeChange: renderAll,
