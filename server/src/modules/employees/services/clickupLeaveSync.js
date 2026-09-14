@@ -16,6 +16,7 @@ function createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRule
   const LIST_ID = (config && config.listId) || defaults.LEAVE_REQUEST_LIST_ID;
   const CF = (config && config.cf) || defaults.CF;
   const REQUEST_TYPE_OPTIONS = (config && config.requestTypeOptions) || defaults.REQUEST_TYPE_OPTIONS;
+  const MONTH_OPTIONS = (config && config.monthOptions) || defaults.MONTH_OPTIONS;
   const SALARY_DEDUCTION_OPTIONS = (config && config.salaryDeductionOptions) || defaults.SALARY_DEDUCTION_OPTIONS;
   const EXPECTED_AVAILABILITY_OPTIONS = (config && config.expectedAvailabilityOptions) || defaults.EXPECTED_AVAILABILITY_OPTIONS;
   const LEAVE_STATUS_OPTIONS = (config && config.leaveStatusOptions) || defaults.LEAVE_STATUS_OPTIONS;
@@ -61,6 +62,10 @@ function createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRule
     push(CF.EXPECTED_AVAILABILITY, EXPECTED_AVAILABILITY_OPTIONS[leaveRequest.availability]);
     const start = new Date(`${leaveRequest.startDate}T00:00:00`);
     const end = new Date(`${leaveRequest.endDate}T00:00:00`);
+    // The list view groups tasks by this field — never set before, so every
+    // portal-submitted request landed in the view's ungrouped "empty"
+    // bucket instead of alongside that month's other requests.
+    push(CF.MONTH, MONTH_OPTIONS[start.getMonth()]);
     push(CF.TOTAL_DAYS, String(timeOffRules.countWorkingDaysInclusive(start, end)));
     push(CF.POSTING_DATE, Date.now());
     push(CF.LEAVE_STATUS, LEAVE_STATUS_OPTIONS[leaveRequest.status]);
