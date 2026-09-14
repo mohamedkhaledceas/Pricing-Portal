@@ -138,6 +138,10 @@ table.data-table th{text-align:left; color:var(--muted); font-weight:650; font-s
 table.data-table td{padding:9px 8px; border-bottom:1px solid var(--border)}
 table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
 .table-scroll{overflow-x:auto}
+/* Users table's UUID column (support-tracing, admin-only) is the widest
+   column by far and not needed for everyday mobile use — dropping it on
+   narrow screens cuts the Users table's scroll width roughly in half. */
+@media (max-width:640px){.uuid-col{display:none}}
 .leave-breakdown-totals{font-weight:700}
 .leave-breakdown-totals td{border-top:1px solid var(--border); border-bottom:none}
 
