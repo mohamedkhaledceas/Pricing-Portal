@@ -202,6 +202,13 @@ table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
   background:var(--surface-1); border:1px solid var(--border); border-radius:10px;
   box-shadow:0 12px 30px rgba(0,0,0,0.18); z-index:40;
 }
+@media (max-width:480px){
+  /* The notif holder sits in a flex row with justify-content:space-between;
+     on narrow screens the row wraps and this becomes the only item on its
+     line, so it lands at the LEFT edge, not the right — right:0 anchoring
+     then pushes most of this fixed-width panel off-screen to the left. */
+  .kpi-notif-panel{right:auto; left:0; width:min(320px, calc(100vw - 48px))}
+}
 #kpi-notif-holder{position:relative}
 .kpi-notif-item{padding:10px 12px; border-bottom:1px solid var(--border); cursor:pointer}
 .kpi-notif-item:last-child{border-bottom:none}
