@@ -147,7 +147,13 @@ async function submitRequest() {
   const btn = $('#submit-btn');
   const resultEl = $('#form-banner');
   resultEl.innerHTML = '';
+  const originalBtnHtml = btn.innerHTML;
   btn.disabled = true;
+  // The ClickUp sync this now waits on (see clickupLeaveSync.js) reads each
+  // field back and retries on failure, so a submit can take a few seconds
+  // instead of feeling instant — without this, the button just looked
+  // frozen/unresponsive for that whole window.
+  btn.innerHTML = '<span class="btn-spinner"></span>Submitting…';
   try {
     const type = $('#req-type').value;
     const isWfh = type === 'wfh';
@@ -155,6 +161,7 @@ async function submitRequest() {
     if (!reason) {
       resultEl.innerHTML = `<div class="alert alert-danger"><div>A reason is required.</div></div>`;
       btn.disabled = false;
+      btn.innerHTML = originalBtnHtml;
       return;
     }
     const payload = {
@@ -194,6 +201,7 @@ async function submitRequest() {
     resultEl.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
   } finally {
     btn.disabled = false;
+    btn.innerHTML = originalBtnHtml;
   }
 }
 window.submitRequest = submitRequest;

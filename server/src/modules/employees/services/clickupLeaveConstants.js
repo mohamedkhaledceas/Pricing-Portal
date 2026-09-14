@@ -54,6 +54,26 @@ const SALARY_DEDUCTION_OPTIONS = {
   unpaid: '4f909837-a205-4dc9-b2fe-1fe0eff853a4', // no distinct "unpaid" option — closest is "Deduction Applies"
 };
 
+// The list view groups tasks by this field — confirmed against
+// GET /list/{LEAVE_REQUEST_LIST_ID}/field (2026-09). Index 0 = January,
+// matching Date#getMonth(). The field also has two junk options ("au",
+// "SEP") left over from manual data entry, deliberately not referenced
+// here.
+const MONTH_OPTIONS = [
+  '53d35625-af11-4b7b-a2fe-4e96fedf4be7', // January
+  '9abbb0a2-27a7-425a-8e50-7a3538beefee', // February
+  '75b4f2ad-a331-4369-b254-acc8924337e7', // March
+  '47662234-4716-47cb-ad81-331a883d60db', // April
+  '7a62d05e-39e3-46dc-8807-f4a644d6c05c', // May
+  '3bbfc432-a84d-49ce-9d83-069ffd6483d9', // June
+  'dcd9422c-3245-484b-a368-eee0a1a37303', // July
+  '950742f1-ce20-4856-a9cb-ec11b6647b3b', // August
+  '5df7bfe3-5917-47cb-9c07-d66144593986', // September
+  '0ba20b96-78fd-42e9-875e-0de64ca87125', // October
+  '7525d146-3d1e-468b-865b-a50961786024', // November
+  '91b1fc05-1d07-41bf-93ed-14ab87e579af', // December
+];
+
 const EXPECTED_AVAILABILITY_OPTIONS = {
   partial_day: '74278f02-f85c-4fa4-ad46-fe7555597c61', // "Partial Day"
   full_day: '9579b7bd-174e-4124-a4f3-16ffa293256e',
@@ -78,6 +98,7 @@ module.exports = {
   LEAVE_REQUEST_LIST_ID,
   CF,
   REQUEST_TYPE_OPTIONS,
+  MONTH_OPTIONS,
   SALARY_DEDUCTION_OPTIONS,
   EXPECTED_AVAILABILITY_OPTIONS,
   LEAVE_STATUS_OPTIONS,

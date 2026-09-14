@@ -257,6 +257,17 @@ table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
 }
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* Inline variant for a button's own "working" state (e.g. Time Off's
+   Submit Request, which now waits on a ClickUp read-back-and-retry and can
+   take a few seconds) — sits next to replacement text rather than
+   standing alone like .loading-spinner above. currentColor so it matches
+   whatever text color the button already has (primary/danger/default). */
+.btn-spinner{
+  display:inline-block; width:13px; height:13px; margin:0 7px -2px 0; border-radius:50%;
+  border:2px solid currentColor; border-top-color:transparent; opacity:0.85;
+  animation:spin 0.7s linear infinite;
+}
+
 .skeleton{position:relative; overflow:hidden; background:var(--plane); border-radius:6px; display:block}
 .skeleton::after{content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); animation:skeleton-shimmer 1.3s ease-in-out infinite}
 @keyframes skeleton-shimmer{from{transform:translateX(-100%)} to{transform:translateX(100%)}}
