@@ -19,6 +19,20 @@ function svgEl(tag, attrs, parent) {
   return e;
 }
 
+/* SVG text never wraps or clips on its own, and chart SVGs use
+   overflow:visible (needed so tooltips/hover targets aren't cut off) - a
+   label longer than its column silently renders straight past the card
+   edge instead of breaking or scrolling. Truncate with an ellipsis instead;
+   the full name is still available via the bar's own hover tooltip. */
+function fitSvgText(el, maxWidth) {
+  let text = el.textContent;
+  if (!text || el.getComputedTextLength() <= maxWidth) return;
+  while (text.length > 1 && el.getComputedTextLength() > maxWidth) {
+    text = text.slice(0, -1);
+    el.textContent = text + '…';
+  }
+}
+
 export function money(v, compact = true) {
   if (v === null || v === undefined) return '—';
   const a = Math.abs(v);
@@ -122,6 +136,7 @@ export function chartBarsH(mount, { items, color, valueFmt, reference, refLabel,
     const w = Math.max(0, (d.value / max) * plotW);
     const lab = svgEl('text', { x: labW - 10, y: y + barT / 2 + 4, 'text-anchor': 'end', fill: V('--ink-2'), 'font-size': 12 }, svg);
     lab.textContent = d.name;
+    fitSvgText(lab, labW - 14);
     const p = svgEl('path', { d: barH(labW, y, w, barT, 4), fill: d.color || color || V('--s1') }, svg);
     hoverable(p, `<div class="tk">${esc(d.name)}</div><b>${valueFmt(d.value)}</b>${d.extra ? `<div class="tk">${d.extra}</div>` : ''}`);
     const vt = svgEl('text', { x: labW + w + 8, y: y + barT / 2 + 4, fill: V('--ink-2'), 'font-size': 11.5 }, svg);
