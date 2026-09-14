@@ -2095,8 +2095,8 @@ function updateLoginUi(){
       canManageUsers: USER_MANAGER_ROLES.includes(auth.user.role),
       onUsersClick: openUsersView,
       onLogout: logoutFromApi,
-      cycleTheme,
-      updateThemeToggleLabel,
+      setTheme,
+      updateAppearanceControls,
     });
   }
 
@@ -2526,24 +2526,24 @@ const THEME_KEY = 'pricingPortalTheme';
 function themePref(){
   try{ return localStorage.getItem(THEME_KEY) || 'system'; }catch(err){ return 'system'; }
 }
-function updateThemeToggleLabel(){
-  const el = $('#themeToggleState');
-  if(el){
-    const pref = themePref();
-    el.textContent = pref === 'dark' ? 'Dark' : pref === 'light' ? 'Light' : 'System';
-  }
+// .theme-seg-btn elements live inside the shared account-menu dropdown
+// (accountMenu.js) — querySelectorAll on nothing before it's mounted is a
+// harmless no-op.
+function updateAppearanceControls(){
+  const pref = themePref();
+  document.querySelectorAll('.theme-seg-btn').forEach((btn) => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.themeValue === pref));
+  });
 }
-function cycleTheme(){
-  const cur = themePref();
-  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
-  if(next === 'system') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', next);
+function setTheme(value){
+  if(value === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', value);
   try{
-    if(next === 'system') localStorage.removeItem(THEME_KEY);
-    else localStorage.setItem(THEME_KEY, next);
+    if(value === 'system') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, value);
   }catch(err){}
   paintLogos();
-  updateThemeToggleLabel();
+  updateAppearanceControls();
 }
 function bindTheme(){
   if(window.matchMedia){
@@ -2551,10 +2551,10 @@ function bindTheme(){
     const h = () => paintLogos();
     mq.addEventListener ? mq.addEventListener('change', h) : mq.addListener(h);
   }
-  updateThemeToggleLabel();
-  // #btnThemeToggle lives inside the shared account-menu dropdown now,
-  // not in the static page markup — accountMenu.js binds its click handler
-  // itself each time the menu is (re-)rendered, mounted from
+  updateAppearanceControls();
+  // .theme-seg-btn buttons live inside the shared account-menu dropdown
+  // now, not in the static page markup — accountMenu.js binds their click
+  // handlers itself each time the menu is (re-)rendered, mounted from
   // updateLoginUi(). Nothing to bind here anymore.
   document.addEventListener('input', () => {
     dirty = true;

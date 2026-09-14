@@ -19,26 +19,26 @@ export function themePref() {
   }
 }
 
-export function updateThemeToggleLabel() {
-  // #themeToggleState now lives inside the shared account-menu dropdown
-  // (accountMenu.js), which isn't mounted yet the first time init() calls
-  // this — null until the menu renders, so this must stay a no-op then.
-  const el = $('#themeToggleState');
-  if (el) el.textContent = themePref() === 'dark' ? 'Dark' : themePref() === 'light' ? 'Light' : 'System';
+// #theme-seg-btn elements now live inside the shared account-menu dropdown
+// (accountMenu.js), which isn't mounted yet the first time init() calls
+// this — querySelectorAll on nothing is a harmless no-op then.
+export function updateAppearanceControls() {
+  const pref = themePref();
+  document.querySelectorAll('.theme-seg-btn').forEach((btn) => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.themeValue === pref));
+  });
 }
 
 /* Chart colors are read live from CSS custom properties at render time
    (charts.js's V() helper), so unlike commercial-leads' bar-only charts,
    switching theme here needs a redraw — main.js's toggle handler does that. */
-export function cycleTheme() {
-  const cur = themePref();
-  const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'system' : 'light';
-  if (next === 'system') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', next);
+export function setTheme(value) {
+  if (value === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', value);
   try {
-    if (next === 'system') localStorage.removeItem('pricingPortalTheme');
-    else localStorage.setItem('pricingPortalTheme', next);
+    if (value === 'system') localStorage.removeItem('pricingPortalTheme');
+    else localStorage.setItem('pricingPortalTheme', value);
   } catch (err) {}
   paintLogo();
-  updateThemeToggleLabel();
+  updateAppearanceControls();
 }
