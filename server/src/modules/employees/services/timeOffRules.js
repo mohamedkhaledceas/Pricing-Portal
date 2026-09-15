@@ -125,11 +125,33 @@ function sickLeaveRequiresDoctorNote({ startDate, endDate }) {
   return countWorkingDaysInclusive(startDate, endDate) > 2;
 }
 
+// WFH's own late-submission rule — separate from checkNoticeWindow above
+// (which exempts wfh entirely) since this isn't a notice-window/auto-reject
+// case: a WFH request for *today*, submitted at/after 9:00 AM local time,
+// is still allowed through to the manager/P&C queue, just flagged so P&C
+// can apply a deduction at their own judgement (their existing manual
+// deduction dropdown — see timeOffService.pcConfirm), the same way most of
+// the breach table's non-automatic rows already work. Computed on read from
+// the stored submittedAt/startDate (see timeOffService.listPcPending), not
+// a stored flag — same pattern as requiresDoctorNote above.
+const WFH_SAME_DAY_CUTOFF_HOUR = 9;
+
+function isWfhLateSameDaySubmission({ leaveType, submittedAt, startDate }) {
+  if (leaveType !== 'wfh') return false;
+  const sameCalendarDay = submittedAt.getFullYear() === startDate.getFullYear()
+    && submittedAt.getMonth() === startDate.getMonth()
+    && submittedAt.getDate() === startDate.getDate();
+  if (!sameCalendarDay) return false;
+  return submittedAt.getHours() >= WFH_SAME_DAY_CUTOFF_HOUR;
+}
+
 module.exports = {
   isWorkingDay,
   countWorkingDaysExclusive,
   countWorkingDaysInclusive,
   checkNoticeWindow,
   sickLeaveRequiresDoctorNote,
+  isWfhLateSameDaySubmission,
+  WFH_SAME_DAY_CUTOFF_HOUR,
   LEAVE_TYPE_LABELS,
 };

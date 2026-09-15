@@ -230,7 +230,19 @@
     return `
       <form id="acctWorkDetailsForm">
         <div class="account-form-row">
-          <div class="account-field"><label>Job title</label><input id="acctJobTitle" value="${escapeHtml(employee.jobTitle || '')}" required></div>
+          <div class="account-field">
+            <label>Job title</label>
+            <select id="acctJobTitle" required>
+              <option value="">— Select —</option>
+              ${(() => {
+                const options = oc.JOB_TITLES.map((t) => `<option value="${escapeHtml(t)}" ${employee.jobTitle === t ? 'selected' : ''}>${escapeHtml(t)}</option>`);
+                if (employee.jobTitle && !oc.JOB_TITLES.includes(employee.jobTitle)) {
+                  options.push(`<option value="${escapeHtml(employee.jobTitle)}" selected>${escapeHtml(employee.jobTitle)} (unmatched)</option>`);
+                }
+                return options.join('');
+              })()}
+            </select>
+          </div>
           <div class="account-field">
             <label>Department</label>
             <select id="acctDepartment" required>
