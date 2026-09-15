@@ -43,6 +43,7 @@ function toDirectoryEntry(row) {
   if (!row) return null;
   return {
     id: row.id,
+    userId: row.user_id, // cross-referenced against common/realtime's live socket presence — see rosterService.listDirectory
     firstName: row.user_first_name,
     lastName: row.user_last_name,
     email: row.user_email,
@@ -52,7 +53,7 @@ function toDirectoryEntry(row) {
     status: row.status,
     isTeamHead: !!row.is_team_head,
     managerEmployeeId: row.manager_employee_id,
-    online: !!row.user_online,
+    online: false, // overwritten in rosterService.listDirectory with real-time presence; default here only in case that's ever skipped
   };
 }
 

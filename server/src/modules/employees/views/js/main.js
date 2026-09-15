@@ -9,6 +9,7 @@ import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
 import { renderUsersAdmin } from './usersAdmin.js';
 import { renderLeaveReport } from './leaveBreakdown.js';
+import { connectRealtime } from './realtime.js';
 
 // 'manager' is the CEO's role in this org — full company-wide roster
 // access, same as people_culture (see rosterService.canManageRoster).
@@ -84,6 +85,8 @@ function bindUi() {
     $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
     return;
   }
+
+  connectRealtime(); // needs state.accessToken, which bootstrapAuth() above just set
 
   const meRes = await apiFetch('/api/employees/me');
   state.myEmployee = meRes.employee;

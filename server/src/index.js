@@ -899,7 +899,7 @@ app.use(errorHandler);
    a second one, so this app and its realtime layer share one port and one
    Render service. */
 const httpServer = http.createServer(app);
-initRealtime(httpServer);
+initRealtime(httpServer, { verifyAccessToken: authModule.verifyAccessToken });
 
 httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);

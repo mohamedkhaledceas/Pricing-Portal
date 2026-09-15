@@ -25,6 +25,7 @@ const profileChangeRequestModel = require('./models/profileChangeRequest.model')
 
 const audit = require('../../common/audit');
 const logger = require('../../common/logger');
+const realtime = require('../../common/realtime');
 const { ROLES } = require('../../common/constants/roles');
 const { authenticate } = require('../auth');
 const clickupClient = require('../../common/integrations/clickupClient');
@@ -81,7 +82,7 @@ const clickupUserSync = startClickupUserSyncSchedule({ employeeRepository, click
 const rosterService = createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
   profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync, departmentRepository,
-  teamMembership,
+  teamMembership, realtime,
 });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, audit, roles: ROLES });
