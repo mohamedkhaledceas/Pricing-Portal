@@ -10,7 +10,7 @@ const { AuthError } = require('../errors');
    already knows how to turn an AppError into the same `{error: message}`
    shape this used to build by hand. The difference: it's actually logged
    now, with a correlation ID, instead of vanishing on the way out. */
-function createAuthController({ authService, setRefreshCookie, clearRefreshCookie, readRefreshCookie, transaction, employeeProvisioning }) {
+function createAuthController({ authService, setRefreshCookie, clearRefreshCookie, readRefreshCookie, transaction, employeeProvisioning, appBaseUrl }) {
   function register(req, res) {
     const { token, user, refreshToken } = authService.register({
       ...req.body,
@@ -62,7 +62,26 @@ function createAuthController({ authService, setRefreshCookie, clearRefreshCooki
     return res.json({ ok: true });
   }
 
-  return { register, login, refresh, logout, getMe, updateProfile, changePassword };
+  // Fixed, generic message regardless of what forgotPassword actually did
+  // internally (real user vs. unknown email vs. deactivated account) — see
+  // that function's own comment on why this can't vary by outcome.
+  // baseUrl is the injected, operator-configured appBaseUrl (see
+  // config/index.js) — deliberately never derived from this request's own
+  // Host header (see that config comment for why: with `trust proxy`
+  // enabled, that header is attacker-controllable on the very request that
+  // triggers the email).
+  async function forgotPassword(req, res) {
+    await authService.forgotPassword({ ...req.body, baseUrl: appBaseUrl, ip: req.ip });
+    return res.json({ ok: true, message: 'If an account exists for that email, a password reset link has been sent.' });
+  }
+
+  function resetPassword(req, res) {
+    const { token, newPassword } = req.body || {};
+    authService.resetPassword({ rawToken: token, newPassword, transaction, ip: req.ip });
+    return res.json({ ok: true });
+  }
+
+  return { register, login, refresh, logout, getMe, updateProfile, changePassword, forgotPassword, resetPassword };
 }
 
 module.exports = createAuthController;

@@ -9,6 +9,7 @@
     "seed": "node src/seed-owner.js",
     "create-user": "node src/create-user.js",
     "backup:snapshot": "node src/backup.js",
+    "test-email": "node src/test-email.js",
     "backfill:commercial-lead": "node src/modules/management/commercial-leads/jobs/backfill.js"
   },
   "dependencies": {
