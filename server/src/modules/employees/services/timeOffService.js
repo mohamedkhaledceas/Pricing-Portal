@@ -174,6 +174,10 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   // P&C confirmation UI whether to show the "Doctor's note provided"
   // checkbox at all — only sick leave over 2 consecutive working days needs
   // one; shorter sick leave stays uncapped/free regardless of this flag.
+  // wfhSubmittedLate is the same kind of read-time flag, for the 9:00 AM
+  // same-day WFH rule (see timeOffRules.isWfhLateSameDaySubmission) — warns
+  // P&C so they can apply a deduction manually; nothing was auto-rejected
+  // or auto-deducted at submission time for this case.
   function listPcPending({ actorAuthRole }) {
     if (actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to view the company-wide approval queue.', 403);
@@ -183,6 +187,11 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       requiresDoctorNote: r.leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({
         startDate: new Date(`${r.startDate}T00:00:00`),
         endDate: new Date(`${r.endDate}T00:00:00`),
+      }),
+      wfhSubmittedLate: timeOffRules.isWfhLateSameDaySubmission({
+        leaveType: r.leaveType,
+        submittedAt: new Date(r.createdAt),
+        startDate: new Date(`${r.startDate}T00:00:00`),
       }),
     }));
   }
@@ -239,7 +248,10 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
 
   // Read-only preview of the exact same rule submit() enforces above — lets
   // the form warn before the requester commits, without changing what
-  // actually gets auto-rejected at submission time.
+  // actually gets auto-rejected at submission time. lateWfhSubmission rides
+  // alongside the notice-window result (rather than replacing it) since
+  // it's a separate, non-auto-rejecting rule — see
+  // timeOffRules.isWfhLateSameDaySubmission; always false for non-wfh types.
   function checkNotice({ leaveType, startDate }) {
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       throw new EmployeesError(`Leave type must be one of: ${VALID_LEAVE_TYPES.join(', ')}.`);
@@ -248,7 +260,10 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     if (!start) {
       throw new EmployeesError('startDate must be a valid date in YYYY-MM-DD format.');
     }
-    return timeOffRules.checkNoticeWindow({ leaveType, submittedAt: new Date(), startDate: start });
+    const submittedAt = new Date();
+    const noticeCheck = timeOffRules.checkNoticeWindow({ leaveType, submittedAt, startDate: start });
+    const lateWfhSubmission = timeOffRules.isWfhLateSameDaySubmission({ leaveType, submittedAt, startDate: start });
+    return { ...noticeCheck, lateWfhSubmission };
   }
 
   async function managerDecision({ requestId, actorEmployee, actorAuthRole, decision, decisionNote, actorId, ip }) {

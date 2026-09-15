@@ -119,9 +119,13 @@ async function checkNoticeLive() {
   if (!type || !startDate) { el.innerHTML = ''; return; }
   try {
     const res = await apiFetch(`/api/employees/leave-requests/notice-check?leaveType=${type}&startDate=${startDate}`);
-    el.innerHTML = res.autoReject
-      ? `<div class="alert alert-warn"><div>⚠ This falls within the notice period for ${escapeHtml(leaveTypeLabel(type))} — ${escapeHtml(res.reason || '')} It may be auto-rejected if you submit now.</div></div>`
-      : '';
+    if (res.autoReject) {
+      el.innerHTML = `<div class="alert alert-warn"><div>⚠ This falls within the notice period for ${escapeHtml(leaveTypeLabel(type))} — ${escapeHtml(res.reason || '')} It may be auto-rejected if you submit now.</div></div>`;
+    } else if (res.lateWfhSubmission) {
+      el.innerHTML = `<div class="alert alert-warn"><div>⚠ Same-day Work From Home must be submitted before 9:00 AM. Submitting now will still go through, but a salary deduction may be applied.</div></div>`;
+    } else {
+      el.innerHTML = '';
+    }
   } catch (err) {
     el.innerHTML = ''; // best-effort — never block filling out the form over this check itself failing
   }
@@ -435,7 +439,7 @@ export function renderRules() {
       <div>Sick leave longer than 2 consecutive working days requires a doctor's note, submitted within 2 working days of your return.</div>
     </div>
     <div class="section alert alert-info">
-      <div>Work From Home is limited to <strong>1 request per calendar month</strong>. A second request in the same month is auto-rejected.</div>
+      <div>Work From Home is limited to <strong>1 request per calendar month</strong>. A second request in the same month is auto-rejected. A same-day WFH request must be submitted <strong>before 9:00 AM</strong> — submitting after 9:00 AM for a same-day request is still accepted, but a salary deduction will be applied.</div>
     </div>
     <div class="section">
       <div class="card-title">Approval Workflow</div>

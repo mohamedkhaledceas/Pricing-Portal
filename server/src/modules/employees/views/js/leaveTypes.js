@@ -9,7 +9,7 @@ export const LEAVE_TYPES = [
   { value: 'emergency', label: 'Emergency Leave', notice: 'None — same-day OK' },
   { value: 'mental_health', label: 'Mental Health Day', notice: '1 working day' },
   { value: 'public_holiday', label: 'Public Holiday', notice: 'Automatic — no request needed' },
-  { value: 'wfh', label: 'Work From Home', notice: 'Any time — 1/month quota' },
+  { value: 'wfh', label: 'Work From Home', notice: 'Before 9:00 AM same-day — 1/month quota' },
   { value: 'excuse', label: 'Excuse', notice: '1 working day' },
   { value: 'unpaid', label: 'Unpaid Leave', notice: '3 working days' },
 ];

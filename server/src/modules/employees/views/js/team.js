@@ -1,4 +1,4 @@
-import { $, escapeHtml, fmtDate, toast } from './dom.js';
+import { $, escapeHtml, fmtDate, fmtDateTime, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { leaveTypeLabel, availabilityLabel, STATUS_LABELS } from './leaveTypes.js';
@@ -187,7 +187,20 @@ function noManagerFlagHtml(r) {
   return `<div class="request-card-conflict">⚠ ${escapeHtml(r.managerDecisionNote)}</div>`;
 }
 
-function requestCard(r, actionsHtml) {
+// P&C-only warning (see timeOffService.listPcPending's wfhSubmittedLate
+// flag / timeOffRules.isWfhLateSameDaySubmission) — a WFH request for today,
+// submitted at/after 9:00 AM, isn't auto-rejected, but P&C needs to see it
+// flagged so they can apply a deduction via their existing dropdown
+// (pcActions). Passed in per-call (extraWarningHtml below) rather than
+// computed unconditionally in requestCard, since this same card renderer is
+// shared with the manager's queue, which doesn't set deductions and
+// shouldn't show it.
+function lateWfhWarningHtml(r) {
+  if (!r.wfhSubmittedLate) return '';
+  return `<div class="request-card-conflict">⚠ Submitted at ${escapeHtml(fmtDateTime(r.createdAt))} — after 9:00 AM for a same-day WFH request. A deduction should be applied.</div>`;
+}
+
+function requestCard(r, actionsHtml, extraWarningHtml) {
   return `<div class="request-card" id="team-card-${r.id}">
     <div class="request-card-top">
       <div>
@@ -199,6 +212,7 @@ function requestCard(r, actionsHtml) {
     ${r.reason ? `<div class="request-card-reason">${escapeHtml(r.reason)}</div>` : ''}
     ${conflictWarningHtml(r)}
     ${noManagerFlagHtml(r)}
+    ${extraWarningHtml || ''}
     ${actionsHtml || ''}
   </div>`;
 }
@@ -430,7 +444,7 @@ export async function renderTeam() {
     sections.push(`
       <div class="card section">
         <div class="card-title">Pending P&amp;C Confirmation (company-wide)</div>
-        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
+        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
       </div>`);
   }
 
