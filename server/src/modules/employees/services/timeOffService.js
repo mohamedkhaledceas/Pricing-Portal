@@ -145,13 +145,23 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return { ...request, conflictWarnings: conflictPairService.findOverlaps({ employeeId: request.employeeId, startDate: request.startDate, endDate: request.endDate }) };
   }
 
+  // Same working-day count (partial_day halved) already used to deduct
+  // from balance — shown to whoever is deciding a request (direct manager
+  // or P&C, regardless of which) so the number they see on the card
+  // matches what will actually count against the employee's balance once
+  // approved, computed fresh from the dates the requester actually entered
+  // rather than trusted from the client.
+  function withRequestedDays(request) {
+    return { ...request, requestedDays: leaveBalanceRules.requestedDaysFor(request, timeOffRules.countWorkingDaysInclusive) };
+  }
+
   function listTeam({ actorEmployee, actorAuthRole }) {
     if (actorAuthRole === roles.MANAGER) {
-      return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings);
+      return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings).map(withRequestedDays);
     }
     if (!actorEmployee) return [];
     const reportIds = employeeRepository.findByManagerId(actorEmployee.id).map((row) => row.id);
-    return leaveRequestRepository.findByEmployeeIds(reportIds).map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings);
+    return leaveRequestRepository.findByEmployeeIds(reportIds).map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings).map(withRequestedDays);
   }
 
   // Non-sensitive operational info — visible to any authenticated employee,
@@ -196,6 +206,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
           endDate: new Date(`${r.endDate}T00:00:00`),
         }),
         leaveTypeUsage: leaveBalanceRules.usageForLeaveType(balances, r.leaveType),
+        requestedDays: leaveBalanceRules.requestedDaysFor(r, timeOffRules.countWorkingDaysInclusive),
         wfhSubmittedLate: timeOffRules.isWfhLateSameDaySubmission({
           leaveType: r.leaveType,
           submittedAt: new Date(r.createdAt),

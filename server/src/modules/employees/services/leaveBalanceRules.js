@@ -53,6 +53,16 @@ function dayCountForRequest(row, countWorkingDaysInclusive) {
   return row.availability === 'partial_day' ? base / 2 : base;
 }
 
+// Same rule as dayCountForRequest above, for a request already mapped to
+// camelCase (leaveRequestModel.toLeaveRequest's shape) rather than a raw
+// DB row — used by timeOffService to show managers/P&C the number of
+// days a *pending* request represents, matching what it will actually
+// count against balance once approved.
+function requestedDaysFor({ startDate, endDate, availability }, countWorkingDaysInclusive) {
+  const base = countWorkingDaysInclusive(new Date(`${startDate}T00:00:00`), new Date(`${endDate}T00:00:00`));
+  return availability === 'partial_day' ? base / 2 : base;
+}
+
 // Sick leave is uncapped by default — UNLESS it already requires a doctor's
 // note (over 2 consecutive working days, per timeOffRules'
 // sickLeaveRequiresDoctorNote) and P&C confirmed none was provided
@@ -151,5 +161,6 @@ module.exports = {
   BUCKET_LABELS,
   bucketForType,
   usageForLeaveType,
+  requestedDaysFor,
   computeBalances,
 };

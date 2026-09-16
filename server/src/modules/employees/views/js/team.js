@@ -227,12 +227,29 @@ function leaveTypeUsageHtml(r) {
   return `<div class="request-card-meta">${text}</div>`;
 }
 
+// Trims a trailing ".0" (partial_day halving can leave a value like 0.5,
+// but a whole-day count should read as "2", not "2.0").
+function fmtDays(n) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+// Abbreviated weekday for a YYYY-MM-DD value (e.g. "Mon") — the date range
+// alone (fmtDate) doesn't tell a manager/P&C which days of the week a
+// request actually falls on without them doing the math themselves.
+function fmtDayOfWeek(value) {
+  const d = new Date(`${value}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { weekday: 'short' });
+}
+
 function requestCard(r, actionsHtml, extraWarningHtml) {
+  const isMultiDay = r.endDate !== r.startDate;
+  const dateRangeHtml = `${fmtDate(r.startDate)}${isMultiDay ? ' → ' + fmtDate(r.endDate) : ''}`;
+  const dayOfWeekHtml = `${fmtDayOfWeek(r.startDate)}${isMultiDay ? ' → ' + fmtDayOfWeek(r.endDate) : ''}`;
   return `<div class="request-card" id="team-card-${r.id}">
     <div class="request-card-top">
       <div>
         <div class="request-card-name">${escapeHtml(nameFor(r.employeeId))}</div>
-        <div class="request-card-meta">${escapeHtml(leaveTypeLabel(r.leaveType))} · ${fmtDate(r.startDate)}${r.endDate !== r.startDate ? ' → ' + fmtDate(r.endDate) : ''}${r.availability ? ' (' + escapeHtml(availabilityLabel(r.availability)) + ')' : (r.halfDay ? ' (half-day)' : '')}</div>
+        <div class="request-card-meta">${escapeHtml(leaveTypeLabel(r.leaveType))} · ${dateRangeHtml}, ${escapeHtml(dayOfWeekHtml)}${r.availability ? ' (' + escapeHtml(availabilityLabel(r.availability)) + ')' : (r.halfDay ? ' (half-day)' : '')}${r.requestedDays != null ? ` · ${escapeHtml(fmtDays(r.requestedDays))} day${r.requestedDays === 1 ? '' : 's'}` : ''}</div>
       </div>
       <span class="badge badge-${r.status}">${escapeHtml(r.status.replace('_', ' '))}</span>
     </div>
