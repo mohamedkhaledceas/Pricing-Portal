@@ -109,6 +109,15 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .presence-dot{width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none}
 .presence-dot.online{background:var(--good)}
 
+/* ── My Reporting Line (My Team tab, team.js) — a horizontal row of the
+   same .team-directory-card used elsewhere, connected by arrows, since
+   it's a single path rather than a grid of unrelated peers. Cards keep a
+   fixed width here (the grid's auto-fill sizing doesn't apply outside a
+   grid container) so the row reads as a line, not a wrapped block. */
+.reporting-line-row{display:flex; align-items:center; flex-wrap:wrap; gap:10px}
+.reporting-line-row .team-directory-card{width:220px; flex:none}
+.reporting-line-arrow{color:var(--muted); font-size:15px; flex:none}
+
 /* ── Company Org Chart (Teams tab, teamsDirectory.js) — reuses
    .team-directory-card from accountMenu.css for each person; this just
    handles the tree nesting. Indent + a left border on each child list is
