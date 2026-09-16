@@ -333,8 +333,8 @@ async function saveEditDepartment(id) {
 window.deptSaveEdit = saveEditDepartment;
 
 // Same clickable-card look and click-to-expand-for-detail behavior as My
-// Team's myTeamCardHtml (team.js) / the Teams directory modal
-// (shared/teamsDirectory.js) — reuses their CSS (loaded globally via
+// Team's myTeamCardHtml (team.js) / the Teams tab (teamsDirectory.js) —
+// reuses their CSS (loaded globally via
 // accountMenu.css). Kept as its own markup/toggle (dept-member-* ids)
 // rather than calling into team.js, matching that module's own precedent:
 // both can be on screen at once (different tabs, but tab-panels are only

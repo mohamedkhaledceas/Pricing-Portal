@@ -18,7 +18,6 @@
 <script src="/shared/departments.js"></script>
 <script src="/shared/accountMenu.js"></script>
 <script src="/shared/accountSettings.js"></script>
-<script src="/shared/teamsDirectory.js"></script>
 </head>
 <body>
 
@@ -59,7 +58,8 @@
       <button class="nav-tab active" id="maintab-overview" data-tab="overview">Overview</button>
       <button class="nav-tab" id="maintab-timeoff" data-tab="timeoff">Time Off</button>
       <button class="nav-tab" id="maintab-kpi" data-tab="kpi">KPIs</button>
-      <button class="nav-tab" id="maintab-team" data-tab="team" style="display:none;">My Team</button>
+      <button class="nav-tab" id="maintab-team" data-tab="team">My Team</button>
+      <button class="nav-tab" id="maintab-teams" data-tab="teams">Teams</button>
       <button class="nav-tab" id="maintab-roster" data-tab="roster" style="display:none;">Roster</button>
       <button class="nav-tab" id="maintab-leave-report" data-tab="leave-report" style="display:none;">Leave Report</button>
     </div>
@@ -118,6 +118,14 @@
           <div class="page-subtitle">Your manager and teammates, direct-report leave requests, and P&amp;C's company-wide confirmation queue</div>
         </div>
         <div id="team-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+      </div>
+
+      <div id="tab-teams" class="tab-panel">
+        <div class="page-header">
+          <div class="page-title">Teams</div>
+          <div class="page-subtitle">Organization chart, and the full company directory by department</div>
+        </div>
+        <div id="teams-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
       </div>
 
       <div id="tab-roster" class="tab-panel">

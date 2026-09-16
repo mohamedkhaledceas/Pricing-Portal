@@ -38,7 +38,12 @@ function toEmployee(row) {
    Teams directory (email as a mailto: contact link, manager lookup) and the
    handover/manager-picker use this already served, but still not the
    roster-management view (toEmployee), which stays gated to P&C/admin/
-   manager/operations. */
+   manager/operations. isCompanyManager is a narrow, purpose-named exception
+   to "no auth role" above — the org chart (teamsDirectory.js) needs to
+   anchor its single root at the one real 'manager'-role account (the CEO;
+   see docs — 'manager' is this org's CEO role, not a generic line-manager
+   role) regardless of that account's own manager_employee_id, which a
+   flat boolean answers without exposing the full role string/other roles. */
 function toDirectoryEntry(row) {
   if (!row) return null;
   return {
@@ -52,6 +57,7 @@ function toDirectoryEntry(row) {
     photoUrl: row.photo_url,
     status: row.status,
     isTeamHead: !!row.is_team_head,
+    isCompanyManager: row.user_role === 'manager',
     managerEmployeeId: row.manager_employee_id,
     online: false, // overwritten in rosterService.listDirectory with real-time presence; default here only in case that's ever skipped
   };

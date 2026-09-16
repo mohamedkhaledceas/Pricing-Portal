@@ -103,9 +103,10 @@
 .account-btn-danger { background: transparent; color: var(--critical, #d03b3b); border: 1px solid var(--critical, #d03b3b); }
 .account-btn-danger:disabled { opacity: 0.5; cursor: default; }
 
-/* Teams directory modal (teamsDirectory.js) — wider than the standard
-   .account-modal since it holds a multi-column card grid, not a form. */
-.team-directory-modal { max-width: 860px; }
+/* Teams directory — company directory grouped by department, used both by
+   the Employees Portal's Teams tab (teamsDirectory.js) and the My
+   Team/Organization Chart cards (team.js) and Roster's department cards
+   (roster.js). */
 .team-directory-section { margin-bottom: 22px; }
 .team-directory-section:last-child { margin-bottom: 0; }
 .team-directory-section h3 { margin: 0 0 10px; font-size: 14px; }

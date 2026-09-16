@@ -109,13 +109,14 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .presence-dot{width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none}
 .presence-dot.online{background:var(--good)}
 
-/* ── Company Org Chart (My Team tab) — reuses .team-directory-card from
-   accountMenu.css for each person; this just handles the tree nesting.
-   Indent + a left border on each child list is enough of a "this is
-   nested under that" cue without heavier connector-line SVG work. */
+/* ── Company Org Chart (Teams tab, teamsDirectory.js) — reuses
+   .team-directory-card from accountMenu.css for each person; this just
+   handles the tree nesting. Indent + a left border on each child list is
+   enough of a "this is nested under that" cue without heavier
+   connector-line SVG work. */
 .org-chart-tree, .org-chart-children{list-style:none; margin:0; padding:0}
 .org-chart-tree > li{margin-bottom:10px}
-.org-chart-children{margin-top:10px; padding-left:20px; border-left:2px solid var(--border); display:flex; flex-direction:column; gap:10px}
+.org-chart-children{margin-top:10px; padding-left:32px; border-left:2px solid var(--border); display:flex; flex-direction:column; gap:10px}
 
 /* ── Department headcount breakdown ── */
 .dept-row{display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border)}
