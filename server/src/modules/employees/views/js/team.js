@@ -209,6 +209,24 @@ function lateWfhWarningHtml(r) {
   return `<div class="request-card-conflict">⚠ Submitted at ${escapeHtml(fmtDateTime(r.createdAt))} — after 9:00 AM for a same-day WFH request. A deduction should be applied.</div>`;
 }
 
+// P&C-only context (see timeOffService.listPcPending's leaveTypeUsage) —
+// the requester's own current standing for the SPECIFIC leave type this
+// request is for, not a fixed sick+unpaid pair regardless of type. Capped
+// types (planned/combined/wfh/excuse) show "used/total"; sick/unpaid show
+// just a running "taken" count, since they have no cap; null (public
+// holiday) shows nothing. Same reasoning lateWfhWarningHtml above only
+// applies to the P&C card, not the shared manager queue.
+function leaveTypeUsageHtml(r) {
+  const u = r.leaveTypeUsage;
+  if (!u) return '';
+  const unitSuffix = u.unit === 'hours' ? 'h' : '';
+  const periodText = u.period === 'month' ? 'this month' : 'this year';
+  const text = u.total != null
+    ? `${escapeHtml(u.label)}: ${escapeHtml(String(u.used))}/${escapeHtml(String(u.total))}${unitSuffix} used ${periodText}`
+    : `${escapeHtml(u.label)} taken ${periodText}: ${escapeHtml(String(u.used))} day${u.used === 1 ? '' : 's'}`;
+  return `<div class="request-card-meta">${text}</div>`;
+}
+
 function requestCard(r, actionsHtml, extraWarningHtml) {
   return `<div class="request-card" id="team-card-${r.id}">
     <div class="request-card-top">
@@ -453,7 +471,7 @@ export async function renderTeam() {
     sections.push(`
       <div class="card section">
         <div class="card-title">Pending P&amp;C Confirmation (company-wide)</div>
-        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
+        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r) + leaveTypeUsageHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
       </div>`);
   }
 

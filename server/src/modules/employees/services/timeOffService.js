@@ -182,18 +182,27 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     if (actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to view the company-wide approval queue.', 403);
     }
-    return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest).map((r) => ({
-      ...r,
-      requiresDoctorNote: r.leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({
-        startDate: new Date(`${r.startDate}T00:00:00`),
-        endDate: new Date(`${r.endDate}T00:00:00`),
-      }),
-      wfhSubmittedLate: timeOffRules.isWfhLateSameDaySubmission({
-        leaveType: r.leaveType,
-        submittedAt: new Date(r.createdAt),
-        startDate: new Date(`${r.startDate}T00:00:00`),
-      }),
-    }));
+    return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest).map((r) => {
+      // The requester's own current standing for the SPECIFIC leave type
+      // this request is for — not a fixed sick+unpaid pair regardless of
+      // type (per the user's own correction: "the counter of the requested
+      // leave type... as a rule"). null for public_holiday, which has no
+      // balance to show.
+      const balances = getMyBalances(r.employeeId);
+      return {
+        ...r,
+        requiresDoctorNote: r.leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({
+          startDate: new Date(`${r.startDate}T00:00:00`),
+          endDate: new Date(`${r.endDate}T00:00:00`),
+        }),
+        leaveTypeUsage: leaveBalanceRules.usageForLeaveType(balances, r.leaveType),
+        wfhSubmittedLate: timeOffRules.isWfhLateSameDaySubmission({
+          leaveType: r.leaveType,
+          submittedAt: new Date(r.createdAt),
+          startDate: new Date(`${r.startDate}T00:00:00`),
+        }),
+      };
+    });
   }
 
   // Backs P&C's Overview "policy breach" widget — auto_rejected requests

@@ -47,9 +47,20 @@ function balanceRow(b) {
   </div>`;
 }
 
+// Sick/Unpaid have no quota (leaveBalanceRules.computeBalances gives them
+// no total/remaining, deliberately — see that file's own comment), so
+// there's nothing to show a fraction against; just how many have been
+// taken this year, distinct in shape from balanceRow above.
+function uncappedBalanceRow(b) {
+  return `<div class="stat-row">
+    <span class="stat-num" style="font-size:18px;">${fmtBalanceNum(b.used)}${b.unit === 'hours' ? 'h' : ''}</span>
+    <span class="stat-lbl">${escapeHtml(b.label)} taken this year</span>
+  </div>`;
+}
+
 function leaveBalanceCardBody(balances) {
   if (!balances) return `<div class="muted small mt-8">Unavailable</div>`;
-  return `${balanceRow(balances.planned)}${balanceRow(balances.combined)}${balanceRow(balances.wfh)}${balanceRow(balances.excuse)}`;
+  return `${balanceRow(balances.planned)}${balanceRow(balances.combined)}${balanceRow(balances.wfh)}${balanceRow(balances.excuse)}${uncappedBalanceRow(balances.sick)}${uncappedBalanceRow(balances.unpaid)}`;
 }
 
 // Shared by "Who's Off Today" and "Who's Online" — same tile grid shape,
