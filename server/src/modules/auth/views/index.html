@@ -47,7 +47,14 @@
     </div>
     <button type="submit" class="btn primary login-submit">Log in</button>
     <div id="loginError" class="alert alert-danger" role="alert" hidden></div>
-    <button type="button" id="btnShowForgotPassword" class="btn ghost login-switch">Forgot password?</button>
+    <!-- Hidden until Resend's sending domain has SPF/DKIM verified — the
+         backend already fails safe with no email sent (see authService.
+         forgotPassword's fire-and-forget sendEmail), but a real employee
+         clicking this would still see "check your email" and never get
+         one. This is the only path to showForgotPasswordForm() (main.js),
+         so hiding it is enough on its own — remove `hidden` once DNS
+         verification completes. -->
+    <button type="button" id="btnShowForgotPassword" class="btn ghost login-switch" hidden>Forgot password?</button>
     <button type="button" id="btnShowSignup" class="btn ghost login-switch">Don't have an account? Sign up</button>
   </form>
 
