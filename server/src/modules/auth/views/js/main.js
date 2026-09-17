@@ -1,4 +1,4 @@
-import { $ } from './dom.js';
+import { $, escapeHtml } from './dom.js';
 import { paintLogo } from './theme.js';
 
 /* This page's only job is to authenticate and hand off — it never holds
@@ -51,20 +51,16 @@ function setButtonLoading(btn, loading, loadingText) {
   }
 }
 
-function showLoginForm() {
-  $('#signupForm').hidden = true;
-  $('#signupStep2Form').hidden = true;
-  $('#loginForm').hidden = false;
+const ALL_LOGIN_CARDS = ['loginForm', 'signupForm', 'signupStep2Form', 'forgotPasswordForm', 'resetPasswordForm'];
+
+function showOnly(id) {
+  ALL_LOGIN_CARDS.forEach((cardId) => { $('#' + cardId).hidden = cardId !== id; });
 }
-function showSignupForm() {
-  $('#loginForm').hidden = true;
-  $('#signupStep2Form').hidden = true;
-  $('#signupForm').hidden = false;
-}
-function showSignupStep2() {
-  $('#signupForm').hidden = true;
-  $('#signupStep2Form').hidden = false;
-}
+function showLoginForm() { showOnly('loginForm'); }
+function showSignupForm() { showOnly('signupForm'); }
+function showSignupStep2() { showOnly('signupStep2Form'); }
+function showForgotPasswordForm() { showOnly('forgotPasswordForm'); }
+function showResetPasswordForm() { showOnly('resetPasswordForm'); }
 
 $('#btnShowSignup').addEventListener('click', () => {
   $('#loginError').hidden = true;
@@ -79,6 +75,17 @@ $('#btnShowLogin').addEventListener('click', () => {
 $('#btnBackToStep1').addEventListener('click', () => {
   $('#signupStep2Error').hidden = true;
   showSignupForm();
+});
+$('#btnShowForgotPassword').addEventListener('click', () => {
+  $('#loginError').hidden = true;
+  showForgotPasswordForm();
+  $('#forgotEmail').focus();
+});
+$('#btnBackToLoginFromForgot').addEventListener('click', () => {
+  $('#forgotError').hidden = true;
+  $('#forgotSuccess').hidden = true;
+  showLoginForm();
+  $('#loginEmail').focus();
 });
 
 $('#loginForm').addEventListener('submit', async (e) => {
@@ -100,6 +107,90 @@ $('#loginForm').addEventListener('submit', async (e) => {
     window.location.href = '/';
   } catch (err) {
     errBox.textContent = err.message || 'Login failed.';
+    errBox.hidden = false;
+    setButtonLoading(submitBtn, false);
+  }
+});
+
+/* ── Forgot / reset password ────────────────────────────────────────── */
+
+$('#forgotPasswordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('#forgotEmail').value.trim();
+  const errBox = $('#forgotError');
+  const successBox = $('#forgotSuccess');
+  errBox.hidden = true;
+  successBox.hidden = true;
+  if (!email) {
+    errBox.textContent = 'Please enter your email.';
+    errBox.hidden = false;
+    return;
+  }
+  const submitBtn = $('#forgotPasswordForm').querySelector('button[type=submit]');
+  setButtonLoading(submitBtn, true, 'Sending…');
+  try {
+    // Backend always resolves the same way regardless of whether this
+    // email actually matches an account — see authService.forgotPassword's
+    // own comment. The message shown here is exactly what it returns, so
+    // this page never has to (and never could) distinguish the two cases.
+    const res = await apiPost('/api/auth/forgot-password', { email });
+    successBox.textContent = res.message || 'If an account exists for that email, a password reset link has been sent.';
+    successBox.hidden = false;
+    $('#forgotPasswordForm').reset();
+  } catch (err) {
+    // Only reachable for a real request-level failure (rate-limited,
+    // network, validation) — never "email not found," which the backend
+    // never distinguishes in the first place.
+    errBox.textContent = err.message || 'Something went wrong. Please try again.';
+    errBox.hidden = false;
+  } finally {
+    setButtonLoading(submitBtn, false);
+  }
+});
+
+function resetPasswordHint() {
+  const pw = $('#resetNewPassword').value;
+  const { level, label } = passwordStrength(pw);
+  const cssClass = level ? 'field-hint-' + level : '';
+  const el = document.getElementById('hint-resetNewPassword');
+  el.textContent = label;
+  el.className = 'field-hint' + (cssClass ? ' ' + cssClass : '');
+}
+$('#resetNewPassword').addEventListener('input', resetPasswordHint);
+$('#resetNewPasswordConfirm').addEventListener('input', () => setHint('resetNewPasswordConfirm', '', ''));
+
+let pendingResetToken = null;
+
+$('#resetPasswordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errBox = $('#resetError');
+  const successBox = $('#resetSuccess');
+  errBox.hidden = true;
+  successBox.hidden = true;
+
+  const newPassword = $('#resetNewPassword').value;
+  const newPasswordConfirm = $('#resetNewPasswordConfirm').value;
+  if (newPassword.length < 8) {
+    errBox.textContent = 'Password must be at least 8 characters long.';
+    errBox.hidden = false;
+    return;
+  }
+  if (newPassword !== newPasswordConfirm) {
+    setHint('resetNewPasswordConfirm', 'Passwords do not match.', 'field-hint-error');
+    return;
+  }
+  setHint('resetNewPasswordConfirm', '', '');
+
+  const submitBtn = $('#resetPasswordForm').querySelector('button[type=submit]');
+  setButtonLoading(submitBtn, true, 'Resetting…');
+  try {
+    await apiPost('/api/auth/reset-password', { token: pendingResetToken, newPassword });
+    successBox.textContent = 'Password changed. Redirecting to log in…';
+    successBox.hidden = false;
+    $('#resetPasswordForm').reset();
+    setTimeout(() => { window.location.href = '/login'; }, 1500);
+  } catch (err) {
+    errBox.textContent = err.message || 'This reset link is invalid or has expired. Please request a new one.';
     errBox.hidden = false;
     setButtonLoading(submitBtn, false);
   }
@@ -243,7 +334,7 @@ async function refreshManagerOptions() {
       return;
     }
     managerSelect.innerHTML = '<option value="">— Select —</option>'
-      + heads.map((h) => `<option value="${h.id}">${h.firstName} ${h.lastName}</option>`).join('');
+      + heads.map((h) => `<option value="${escapeHtml(h.id)}">${escapeHtml(h.firstName)} ${escapeHtml(h.lastName)}</option>`).join('');
     managerSelect.disabled = false;
     info.textContent = 'Team head for the department you selected';
   } catch (err) {
@@ -321,6 +412,23 @@ $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; })
   await populateStep2Dropdowns();
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
+  }
+
+  /* A reset-password link (?resetToken=...) takes priority over everything
+     else on this page, including the already-authenticated auto-redirect
+     right below — the token's own validity is what actually gates the
+     reset, not whether this browser happens to still have a live session
+     (e.g. testing the link in the same browser that requested it). The
+     token is read once into memory and stripped from the visible URL
+     immediately so it doesn't linger in browser history/back-forward
+     cache/screen-share once the page has it. */
+  const resetTokenFromUrl = new URLSearchParams(window.location.search).get('resetToken');
+  if (resetTokenFromUrl) {
+    pendingResetToken = resetTokenFromUrl;
+    window.history.replaceState({}, '', '/login');
+    showResetPasswordForm();
+    $('#resetNewPassword').focus();
+    return;
   }
 
   /* Already-authenticated visitors (a valid refresh cookie still on file)

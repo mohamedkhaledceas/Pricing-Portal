@@ -5,10 +5,13 @@ import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderOverview } from './overview.js';
 import { renderNewRequestForm, renderRules, switchSubTab } from './timeOff.js';
 import { renderTeam } from './team.js';
+import { renderTeamsDirectory } from './teamsDirectory.js';
+import { renderRequestsCenter } from './requestsCenter.js';
 import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
 import { renderUsersAdmin } from './usersAdmin.js';
 import { renderLeaveReport } from './leaveBreakdown.js';
+import { connectRealtime } from './realtime.js';
 
 // 'manager' is the CEO's role in this org — full company-wide roster
 // access, same as people_culture (see rosterService.canManageRoster).
@@ -42,6 +45,8 @@ export function switchMainTab(tabId, btn) {
   if (tabId === 'overview') renderOverview();
   if (tabId === 'timeoff') switchSubTab(state.subTab, $('#subtab-' + state.subTab));
   if (tabId === 'team') renderTeam();
+  if (tabId === 'teams') renderTeamsDirectory();
+  if (tabId === 'requests') renderRequestsCenter();
   if (tabId === 'roster') renderRoster();
   if (tabId === 'kpi') renderKpi();
   if (tabId === 'users') renderUsersAdmin();
@@ -85,18 +90,16 @@ function bindUi() {
     return;
   }
 
+  connectRealtime(); // needs state.accessToken, which bootstrapAuth() above just set
+
   const meRes = await apiFetch('/api/employees/me');
   state.myEmployee = meRes.employee;
 
-  const emp = state.myEmployee;
-  // "My Team" tab is visible with an employee profile (may manage direct
-  // reports) OR for manager/people_culture roles, who need it for their
-  // approval queues even without a roster record of their own — same
-  // reasoning as Overview's COMPANY_OVERVIEW_ROLES. renderTeam() itself
-  // shows an empty state if they manage no one.
-  const TEAM_TAB_ROLES = ['manager', 'people_culture'];
-  const canSeeTeamTab = emp || (state.currentUser && TEAM_TAB_ROLES.includes(state.currentUser.role));
-  $('#maintab-team').style.display = canSeeTeamTab ? '' : 'none';
+  // "My Team" and "Teams" are always visible now — every account is
+  // provisioned with an employee profile at signup (no more manual roster
+  // add as a separate step), and renderTeam()/renderTeamsDirectory() both
+  // already degrade gracefully (empty sections, not errors) for the rare
+  // account with no employee record (e.g. one made via create-user.js).
   // Admin and P&C can both manage the roster with no employee profile at
   // all — the backend's canManageRoster grants it on auth role alone.
   const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);

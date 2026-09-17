@@ -3,18 +3,6 @@ import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { LEAVE_TYPES, leaveTypeLabel, AVAILABILITY_OPTIONS, availabilityLabel, STATUS_LABELS, balanceBucketForType } from './leaveTypes.js';
 
-let directoryById = {};
-async function loadDirectoryIndex() {
-  const res = await apiFetch('/api/employees/directory');
-  directoryById = {};
-  (res.employees || []).forEach((e) => { directoryById[e.id] = e; });
-  return directoryById;
-}
-function nameFor(employeeId) {
-  const e = directoryById[employeeId];
-  return e ? `${e.firstName} ${e.lastName}` : `Employee #${employeeId}`;
-}
-
 async function getDirectory() {
   const res = await apiFetch('/api/employees/directory');
   return res.employees || [];
@@ -41,7 +29,6 @@ export function switchSubTab(tabId, btn) {
   if (panel) panel.classList.add('active');
 
   if (tabId === 'today') renderToday();
-  if (tabId === 'history') renderHistory();
 }
 window.switchSubTab = switchSubTab;
 
@@ -61,11 +48,11 @@ function onTypeChange() {
   if (isWfh) $('#req-end').value = $('#req-start').value;
 }
 
-// Shared with team.js's own conflict-warning rendering (same shape, same
-// warn-only conflictPairService.findOverlaps result) — kept as a small
-// local duplicate rather than a shared module, same as directoryById/
-// nameFor above (each view file already keeps its own tiny copy of this
-// kind of helper).
+// Shared with requestsCenter.js's own conflict-warning rendering (same
+// shape, same warn-only conflictPairService.findOverlaps result) — kept
+// as a small local duplicate rather than a shared module, matching this
+// codebase's existing precedent of each view file keeping its own tiny
+// copy of this kind of helper.
 function conflictWarningsHtml(conflicts) {
   if (!conflicts || !conflicts.length) return '';
   return `<div class="alert alert-warn">${conflicts.map((w) => `
@@ -320,103 +307,10 @@ async function renderToday() {
     : `<div class="empty-state">Nobody's off today</div>`;
 }
 
-/* ── History ── */
-// Native window.confirm() blocks the whole tab (and browser-automation
-// input) until manually dismissed — a two-click inline confirm avoids that
-// without introducing a modal component the codebase doesn't otherwise have.
-let confirmingCancelId = null;
-
-async function cancelRequest(id) {
-  try {
-    await apiFetch(`/api/employees/leave-requests/${id}/cancel`, { method: 'POST' });
-    toast('Request cancelled', 'info');
-    confirmingCancelId = null;
-    renderHistory();
-  } catch (err) {
-    toast(err.message, 'danger');
-  }
-}
-window.cancelRequest = cancelRequest;
-
-function askCancelRequest(id) {
-  confirmingCancelId = id;
-  renderHistory();
-}
-window.askCancelRequest = askCancelRequest;
-
-function cancelCancelRequest() {
-  confirmingCancelId = null;
-  renderHistory();
-}
-window.cancelCancelRequest = cancelCancelRequest;
-
-// A human rejection can happen at either stage (manager or P&C, never
-// both — pcConfirm only runs once a request is manager_approved, so a
-// pc_decision_note only ever exists alongside a prior manager approval,
-// not a manager rejection). auto_rejected has no rejecter at all — that's
-// autoRejectReason, already shown separately.
-function rejectionDetail(r) {
-  if (r.status !== 'rejected') return '';
-  if (r.pcDecisionNote) {
-    return `<div class="small muted mt-8">Rejected by ${escapeHtml(nameFor(r.pcConfirmedBy))} (People &amp; Culture): ${escapeHtml(r.pcDecisionNote)}</div>`;
-  }
-  if (r.managerDecisionNote) {
-    return `<div class="small muted mt-8">Rejected by ${escapeHtml(nameFor(r.managerDecisionBy))}: ${escapeHtml(r.managerDecisionNote)}</div>`;
-  }
-  return '';
-}
-
-// The one case where managerDecisionNote exists without a managerDecisionBy
-// (see timeOffService.submit's skippedManagerStage) — surfaced here too so
-// "why did this jump straight to Pending (P&C)" stays visible on the
-// employee's own history, not just in the one-time submit banner.
-function noManagerDetail(r) {
-  if (r.managerDecisionBy || !r.managerDecisionNote) return '';
-  return `<div class="small muted mt-8">${escapeHtml(r.managerDecisionNote)}</div>`;
-}
-
-async function renderHistory() {
-  const container = $('#history-content');
-  container.innerHTML = `<div class="empty-state">Loading history...</div>`;
-  let res;
-  try {
-    [res] = await Promise.all([apiFetch('/api/employees/leave-requests/mine'), loadDirectoryIndex()]);
-  } catch (err) {
-    container.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
-    return;
-  }
-  const requests = res.requests || [];
-  if (!requests.length) {
-    container.innerHTML = `<div class="empty-state">No requests yet</div>`;
-    return;
-  }
-  container.innerHTML = `
-    <div class="table-scroll">
-      <table class="data-table">
-        <thead><tr><th>Type</th><th>Dates</th><th>Status</th><th>Deduction</th><th></th></tr></thead>
-        <tbody>
-          ${requests.map((r) => `<tr>
-            <td>${escapeHtml(leaveTypeLabel(r.leaveType))}</td>
-            <td>${fmtDate(r.startDate)}${r.endDate !== r.startDate ? ' → ' + fmtDate(r.endDate) : ''}${r.availability ? ' (' + escapeHtml(availabilityLabel(r.availability)) + ')' : (r.halfDay ? ' (half-day)' : '')}</td>
-            <td>
-              <span class="badge badge-${r.status}">${escapeHtml(r.status.replace('_', ' '))}</span>
-              ${r.autoRejectReason ? `<div class="small muted mt-8">${escapeHtml(r.autoRejectReason)}</div>` : ''}
-              ${rejectionDetail(r)}
-              ${noManagerDetail(r)}
-            </td>
-            <td>${r.salaryDeduction && r.salaryDeduction !== 'none'
-              ? `<span class="badge badge-rejected">${escapeHtml(r.salaryDeduction.replace('_', ' '))}</span>${r.salaryDeduction === 'unpaid' && r.unpaidDaysCount ? ` <span class="small muted">(${r.unpaidDaysCount} day${r.unpaidDaysCount === 1 ? '' : 's'})</span>` : ''}`
-              : '—'}</td>
-            <td>${['pending', 'manager_approved'].includes(r.status)
-              ? (confirmingCancelId === r.id
-                ? `<span class="small">Cancel this request? </span><button class="btn small danger" onclick="cancelRequest(${r.id})">Yes</button> <button class="btn small" onclick="cancelCancelRequest()">No</button>`
-                : `<button class="btn small" onclick="askCancelRequest(${r.id})">Cancel</button>`)
-              : ''}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
-}
+// My own request history/cancel (formerly here as "My History") moved to
+// the Requests Center tab (requestsCenter.js) — gathered there alongside
+// profile-change history, search/filter, and every approval queue, per
+// Portal §21.
 
 /* ── Rules (static reference) ── */
 export function renderRules() {

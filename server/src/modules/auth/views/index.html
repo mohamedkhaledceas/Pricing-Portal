@@ -47,7 +47,46 @@
     </div>
     <button type="submit" class="btn primary login-submit">Log in</button>
     <div id="loginError" class="alert alert-danger" role="alert" hidden></div>
+    <!-- Hidden until Resend's sending domain has SPF/DKIM verified — the
+         backend already fails safe with no email sent (see authService.
+         forgotPassword's fire-and-forget sendEmail), but a real employee
+         clicking this would still see "check your email" and never get
+         one. This is the only path to showForgotPasswordForm() (main.js),
+         so hiding it is enough on its own — remove `hidden` once DNS
+         verification completes. -->
+    <button type="button" id="btnShowForgotPassword" class="btn ghost login-switch" hidden>Forgot password?</button>
     <button type="button" id="btnShowSignup" class="btn ghost login-switch">Don't have an account? Sign up</button>
+  </form>
+
+  <form id="forgotPasswordForm" class="card login-card" hidden>
+    <h2>Reset your password</h2>
+    <p class="muted">Enter your account email and we'll send you a reset link if it matches an account.</p>
+    <div class="form-group">
+      <label class="form-label" for="forgotEmail">Email</label>
+      <input id="forgotEmail" class="form-control" name="email" type="email" autocomplete="email" placeholder="you@company.com" required>
+    </div>
+    <button type="submit" class="btn primary login-submit">Send reset link</button>
+    <div id="forgotError" class="alert alert-danger" role="alert" hidden></div>
+    <div id="forgotSuccess" class="alert alert-info" role="status" hidden></div>
+    <button type="button" id="btnBackToLoginFromForgot" class="btn ghost login-switch">Back to log in</button>
+  </form>
+
+  <form id="resetPasswordForm" class="card login-card" hidden>
+    <h2>Set a new password</h2>
+    <p class="muted">Choose a new password for your account.</p>
+    <div class="form-group">
+      <label class="form-label" for="resetNewPassword">New password</label>
+      <div class="field-hint" id="hint-resetNewPassword">At least 8 characters</div>
+      <input id="resetNewPassword" class="form-control" name="newPassword" type="password" autocomplete="new-password" placeholder="at least 8 characters" minlength="8" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="resetNewPasswordConfirm">Confirm new password</label>
+      <input id="resetNewPasswordConfirm" class="form-control" name="newPasswordConfirm" type="password" autocomplete="new-password" placeholder="re-enter password" minlength="8" required>
+      <div class="field-hint field-hint-error" id="hint-resetNewPasswordConfirm" hidden></div>
+    </div>
+    <button type="submit" class="btn primary login-submit">Reset password</button>
+    <div id="resetError" class="alert alert-danger" role="alert" hidden></div>
+    <div id="resetSuccess" class="alert alert-info" role="status" hidden></div>
   </form>
 
   <form id="signupForm" class="card login-card" hidden>

@@ -47,9 +47,20 @@ function balanceRow(b) {
   </div>`;
 }
 
+// Sick/Unpaid have no quota (leaveBalanceRules.computeBalances gives them
+// no total/remaining, deliberately — see that file's own comment), so
+// there's nothing to show a fraction against; just how many have been
+// taken this year, distinct in shape from balanceRow above.
+function uncappedBalanceRow(b) {
+  return `<div class="stat-row">
+    <span class="stat-num" style="font-size:18px;">${fmtBalanceNum(b.used)}${b.unit === 'hours' ? 'h' : ''}</span>
+    <span class="stat-lbl">${escapeHtml(b.label)} taken this year</span>
+  </div>`;
+}
+
 function leaveBalanceCardBody(balances) {
   if (!balances) return `<div class="muted small mt-8">Unavailable</div>`;
-  return `${balanceRow(balances.planned)}${balanceRow(balances.combined)}${balanceRow(balances.wfh)}${balanceRow(balances.excuse)}`;
+  return `${balanceRow(balances.planned)}${balanceRow(balances.combined)}${balanceRow(balances.wfh)}${balanceRow(balances.excuse)}${uncappedBalanceRow(balances.sick)}${uncappedBalanceRow(balances.unpaid)}`;
 }
 
 // Shared by "Who's Off Today" and "Who's Online" — same tile grid shape,
@@ -91,25 +102,48 @@ function whosOffTodaySection(offToday, partnerIds) {
     </div>`;
 }
 
-// online/lastSeenAt come from the directory endpoint (open to any
-// authenticated employee — see rosterService.listDirectory) so this widget
-// works the same for a plain employee and for manager/admin/P&C's
-// no-profile company-wide view. "Online" itself is last_seen_at within 5
-// minutes, computed in SQL by employeeRepository (see its SELECT_WITH_USER
-// comment) — there's no heartbeat ping, so it really means "made an API
-// call recently," which for an internal tool with no idle screen is a
-// reasonable proxy for "has the app open right now."
+// online comes from the directory endpoint (open to any authenticated
+// employee — see rosterService.listDirectory) so this widget works the
+// same for a plain employee and for manager/admin/P&C's no-profile
+// company-wide view. "Online" itself is real-time Socket.IO presence (see
+// common/realtime) — true the moment a browser tab with this app open has
+// a live connection, false the moment the last one closes; kept fresh
+// between full re-renders via applyPresenceChange below, pushed by
+// realtime.js on every 'presence:change' event.
 function whosOnlineSection(directory) {
   const online = directory.filter((e) => e.online);
   const offlineCount = directory.length - online.length;
   return `
-    <div class="card section">
+    <div class="card section" id="whosOnlineCard">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div class="card-title" style="margin-bottom:0;">Who's Online</div>
         <div class="small muted">${online.length} online · ${offlineCount} offline</div>
       </div>
       ${tileGrid(online.map(onlineTile), 'Nobody is online right now')}
     </div>`;
+}
+
+// Cache of the last-fetched directory, kept only so a live presence event
+// (see realtime.js) can patch a single entry's `online` flag and re-render
+// just this one card — without it, every presence change would need a
+// fresh /api/employees/directory fetch (or a full renderOverview() re-run)
+// just to know everyone else's current department/name/photo again, which
+// a live push event has no reason to need. Deliberately not exported/
+// touched anywhere else; whosOnlineSection is the only reader.
+let cachedDirectory = null;
+
+// Called by realtime.js on every 'presence:change' push. No-ops quietly if
+// Overview hasn't been rendered yet (cachedDirectory is null) or isn't the
+// currently-visible tab (#whosOnlineCard not in the DOM) — either way
+// there's nothing to patch, and the next real renderOverview() call will
+// fetch fresh data anyway.
+export function applyPresenceChange(userId, online) {
+  if (!cachedDirectory) return;
+  const entry = cachedDirectory.find((e) => e.userId === userId);
+  if (!entry || entry.online === online) return;
+  entry.online = online;
+  const card = document.getElementById('whosOnlineCard');
+  if (card) card.outerHTML = whosOnlineSection(cachedDirectory);
 }
 
 // Pure client-side aggregate over the same directory fetch whosOnlineSection
@@ -267,6 +301,7 @@ async function renderManagerOverview(role) {
   const active = roster.filter((e) => e.active).length;
   const inactive = roster.length - active;
   const directory = directoryRes.employees || [];
+  cachedDirectory = directory;
   const teamRequests = teamRes.requests || [];
   // No employee profile on this path (renderManagerOverview is only
   // reached when the viewer has none) — structurally can't be anyone's
@@ -382,6 +417,7 @@ export async function renderOverview() {
   });
 
   const directory = directoryRes.employees || [];
+  cachedDirectory = directory;
   const teamRequests = teamRes.requests || [];
   const myDecisionCard = pendingMyDecisionCard(teamRequests, role, directory, emp.id);
   const roster = rosterRes ? rosterRes.employees || [] : [];

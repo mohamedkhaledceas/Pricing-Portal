@@ -48,7 +48,6 @@
       <div id="accountMenu" hidden role="menu" class="account-menu-dropdown">
         <div id="accountMenuEmail" class="account-menu-email">${escapeHtml((opts.currentUser && opts.currentUser.email) || '')}</div>
         <button type="button" id="btnAccountSettings" role="menuitem" class="ghost account-menu-item">Account Settings</button>
-        <button type="button" id="btnTeamsView" role="menuitem" class="ghost account-menu-item">Teams</button>
         <div class="account-menu-appearance">
           <div class="account-menu-appearance-label">Appearance</div>
           <div class="theme-seg" role="group" aria-label="Appearance">
@@ -107,10 +106,6 @@
     document.getElementById('btnAccountSettings').addEventListener('click', () => {
       closeMenu();
       if (window.AccountMenu.openSettings) window.AccountMenu.openSettings(opts);
-    });
-    document.getElementById('btnTeamsView').addEventListener('click', () => {
-      closeMenu();
-      if (window.AccountMenu.openTeams) window.AccountMenu.openTeams(opts);
     });
     const usersBtn = document.getElementById('btnUsersView');
     if (usersBtn) {

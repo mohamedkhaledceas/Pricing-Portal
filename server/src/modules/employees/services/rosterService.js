@@ -14,7 +14,7 @@ const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
 function createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
   profileChangeRequestModel, audit, roles, deleteStoredPhoto, clickupUserSync, departmentRepository,
-  teamMembership,
+  teamMembership, realtime,
 }) {
   // Must exist and be active — departments is now a real table (see
   // docs/adr/0011) instead of a frozen array; the DB-level FK on
@@ -190,7 +190,16 @@ function createRosterService({
   // active list, since an inactive manager has no meaningful directory
   // entry to resolve to anyway.
   function listDirectory() {
-    const entries = decorateStatusList(employeeRepository.findAllActive().map(employeeModel.toDirectoryEntry));
+    // `online` from toDirectoryEntry defaults to false — overwritten here
+    // from real-time Socket.IO presence (common/realtime), keyed by the
+    // auth-side user_id each entry carries. Replaces a 5-minute
+    // last-seen-at heuristic that required rolling manual page
+    // refreshes to see change (see docs/governance/implementation-tracker.md,
+    // 2026-09-15's "Who's Online" entry) — a live socket connection is
+    // either open right now or it isn't, no staleness window needed.
+    const onlineUserIds = realtime.getOnlineUserIds();
+    const entries = decorateStatusList(employeeRepository.findAllActive().map(employeeModel.toDirectoryEntry))
+      .map((e) => ({ ...e, online: onlineUserIds.has(e.userId) }));
     const byId = new Map(entries.map((e) => [e.id, e]));
     return entries.map((e) => {
       const manager = e.managerEmployeeId ? byId.get(e.managerEmployeeId) : null;
@@ -441,6 +450,14 @@ function createRosterService({
     return row ? profileChangeRequestModel.toChangeRequest(row) : null;
   }
 
+  // Same no-permission-gate reasoning as getMyPendingChangeRequest above —
+  // an employee viewing their own full history (Requests Center), not the
+  // review queue. All statuses, not just pending.
+  function getMyChangeRequestHistory(actorEmployee) {
+    if (!actorEmployee) return [];
+    return employeeProfileChangeRequestRepository.findByEmployeeId(actorEmployee.id).map(profileChangeRequestModel.toChangeRequest);
+  }
+
   function listPendingChangeRequests({ actorAuthRole }) {
     requireCanReviewProfileChanges({ actorAuthRole });
     return employeeProfileChangeRequestRepository.findAllPending().map(profileChangeRequestModel.toChangeRequest);
@@ -539,7 +556,7 @@ function createRosterService({
 
   return {
     canManageRoster, listAll, listDirectory, listTeamHeadsByDepartment, getMine, getDirectReports, getMyTeam,
-    create, update, setActive, setMyPhoto, updateMine, getMyPendingChangeRequest,
+    create, update, setActive, setMyPhoto, updateMine, getMyPendingChangeRequest, getMyChangeRequestHistory,
     listPendingChangeRequests, approveChangeRequest, rejectChangeRequest,
     createForSelfRegistration, listClickupMembers,
   };

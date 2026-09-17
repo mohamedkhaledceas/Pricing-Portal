@@ -144,6 +144,13 @@ function createRosterController({ rosterService }) {
     return res.json({ requests });
   }
 
+  // The employee's own full profile-change history (any status), not the
+  // review queue above — backs the Requests Center's "My Requests" list.
+  function myChangeRequestHistory(req, res) {
+    const requests = rosterService.getMyChangeRequestHistory(req.employee);
+    return res.json({ requests });
+  }
+
   function approveChangeRequest(req, res) {
     const employee = rosterService.approveChangeRequest({
       actorAuthRole: req.user.role,
@@ -192,7 +199,7 @@ function createRosterController({ rosterService }) {
   return {
     list, getMine, directory, teamHeadsPublic, getDirectReports, getMyTeam, create, update, deactivate, reactivate,
     uploadMyPhoto, removeMyPhoto, updateMine, clickupMembers,
-    pendingChangeRequests, approveChangeRequest, rejectChangeRequest,
+    pendingChangeRequests, myChangeRequestHistory, approveChangeRequest, rejectChangeRequest,
   };
 }
 

@@ -9,12 +9,15 @@ const MIN_PASSWORD_LENGTH = 8;
 function createAuthService({
   userRepository,
   refreshTokenRepository,
+  passwordResetTokenRepository,
   userModel,
   hashPassword,
   comparePassword,
   signAccessToken,
   audit,
   roles,
+  sendEmail,
+  logger,
 }) {
   /* Every signup creates a plain default-role account — elevated roles are
      only ever granted afterward, via accountAdminService.changeRole by an
@@ -185,7 +188,88 @@ function createAuthService({
     });
   }
 
-  return { register, login, refresh, logout, getMe, updateProfile, changePassword };
+  function resetPasswordEmailHtml(resetUrl) {
+    return `<p>Someone requested a password reset for your CEAS Portal account.</p>
+<p><a href="${resetUrl}">Click here to reset your password</a>. This link expires in 30 minutes and can only be used once.</p>
+<p>If you didn't request this, you can safely ignore this email — your password hasn't been changed.</p>`;
+  }
+
+  /* Always resolves the same way regardless of whether `email` belongs to a
+     real, active account — the caller (authController) returns one generic
+     "if an account exists, a link was sent" message either way, so this
+     can't be used to enumerate registered emails. A deactivated account is
+     deliberately treated the same as a nonexistent one: it already can't
+     log in with the correct password either (see login() above), so
+     letting it regain access via a reset link would be inconsistent. The
+     email send is awaited but its failure is only logged, never thrown —
+     a Resend outage must not turn into a response that reveals "this
+     address doesn't have an account" by process of elimination (fails
+     fast vs. fails slow), and must not block/error the generic response
+     the caller always gives. */
+  async function forgotPassword({ email, baseUrl, ip }) {
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (!normalizedEmail || !EMAIL_RE.test(normalizedEmail)) {
+      throw new AuthError('Please enter a valid email address.');
+    }
+
+    const user = userRepository.findByEmail(normalizedEmail);
+    if (user && user.is_active) {
+      passwordResetTokenRepository.invalidateAllForUser(user.id);
+      const rawToken = passwordResetTokenRepository.issue(user.id);
+      const resetUrl = `${baseUrl}/login?resetToken=${rawToken}`;
+      // Audited on issuance itself, not gated on the email send succeeding
+      // — issuing a live reset token is the security-relevant event; a
+      // Resend outage shouldn't also mean it goes unaudited.
+      audit.record({ userId: user.id, username: user.email, action: 'user.password_reset_requested', entityType: 'user', entityId: String(user.id), ip });
+
+      // Deliberately not awaited: this function (and the fixed, generic
+      // response authController.forgotPassword always sends either way)
+      // must take the same amount of time whether or not `email` matched a
+      // real, active account. Awaiting a real network round-trip to Resend
+      // only on the "found" branch would leak exactly the signal the
+      // generic response is designed to hide — just via response timing
+      // instead of response content. A failed send is still logged, just
+      // asynchronously.
+      sendEmail({ to: user.email, subject: 'Reset your CEAS Portal password', html: resetPasswordEmailHtml(resetUrl) })
+        .catch((error) => {
+          logger.error('Failed to send password reset email', { userId: user.id, error: error.message });
+        });
+    }
+  }
+
+  function resetPassword({ rawToken, newPassword, transaction, ip }) {
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
+      throw new AuthError(`New password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
+    }
+    const tokenRow = passwordResetTokenRepository.findValid(rawToken);
+    if (!tokenRow) {
+      throw new AuthError('This reset link is invalid or has expired. Please request a new one.');
+    }
+
+    // Re-checked here, not just at request time in forgotPassword above —
+    // the account could have been deactivated in the window between
+    // issuing the token and it being used (e.g. an employee is offboarded
+    // minutes after requesting a reset). Same generic error as an
+    // invalid/expired token, not a distinct message, so this still can't
+    // be used to learn an account's active/deactivated status.
+    const user = userRepository.findById(tokenRow.user_id);
+    if (!user || !user.is_active) {
+      throw new AuthError('This reset link is invalid or has expired. Please request a new one.');
+    }
+
+    // Same revoke-all-sessions behavior as changePassword above, and the
+    // same reason: a session that's still live on another device shouldn't
+    // silently survive a password reset.
+    transaction(() => {
+      userRepository.updatePasswordHash(tokenRow.user_id, hashPassword(newPassword));
+      passwordResetTokenRepository.markUsed(tokenRow.id);
+      refreshTokenRepository.revokeAllForUser(tokenRow.user_id, 'password_reset');
+    });
+
+    audit.record({ userId: tokenRow.user_id, action: 'user.password_reset_completed', entityType: 'user', entityId: String(tokenRow.user_id), ip });
+  }
+
+  return { register, login, refresh, logout, getMe, updateProfile, changePassword, forgotPassword, resetPassword };
 }
 
 module.exports = createAuthService;

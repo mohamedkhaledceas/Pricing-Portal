@@ -18,7 +18,6 @@
 <script src="/shared/departments.js"></script>
 <script src="/shared/accountMenu.js"></script>
 <script src="/shared/accountSettings.js"></script>
-<script src="/shared/teamsDirectory.js"></script>
 </head>
 <body>
 
@@ -58,8 +57,10 @@
     <div class="nav-tabs" id="main-nav">
       <button class="nav-tab active" id="maintab-overview" data-tab="overview">Overview</button>
       <button class="nav-tab" id="maintab-timeoff" data-tab="timeoff">Time Off</button>
+      <button class="nav-tab" id="maintab-requests" data-tab="requests">Requests</button>
       <button class="nav-tab" id="maintab-kpi" data-tab="kpi">KPIs</button>
-      <button class="nav-tab" id="maintab-team" data-tab="team" style="display:none;">My Team</button>
+      <button class="nav-tab" id="maintab-team" data-tab="team">My Team</button>
+      <button class="nav-tab" id="maintab-teams" data-tab="teams">Teams</button>
       <button class="nav-tab" id="maintab-roster" data-tab="roster" style="display:none;">Roster</button>
       <button class="nav-tab" id="maintab-leave-report" data-tab="leave-report" style="display:none;">Leave Report</button>
     </div>
@@ -67,7 +68,6 @@
     <div class="sub-nav-tabs" id="timeoff-subnav" style="display:none;">
       <button class="sub-nav-tab active" id="subtab-new-request" data-subtab="new-request">New Request</button>
       <button class="sub-nav-tab" id="subtab-today" data-subtab="today">Today</button>
-      <button class="sub-nav-tab" id="subtab-history" data-subtab="history">My History</button>
       <button class="sub-nav-tab" id="subtab-rules" data-subtab="rules">Leave Rules</button>
     </div>
 
@@ -89,12 +89,6 @@
           </div>
           <div id="today-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
         </div>
-        <div id="subtab-panel-history" class="tab-panel">
-          <div class="page-header">
-            <div class="page-title">My Request History</div>
-          </div>
-          <div id="history-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
-        </div>
         <div id="subtab-panel-rules" class="tab-panel">
           <div class="page-header">
             <div class="page-title">Leave Rules &amp; SOPs</div>
@@ -102,6 +96,14 @@
           </div>
           <div id="rules-content"></div>
         </div>
+      </div>
+
+      <div id="tab-requests" class="tab-panel">
+        <div class="page-header">
+          <div class="page-title">Requests</div>
+          <div class="page-subtitle">Your own requests (leave &amp; profile changes), searchable — plus any approval queue you have</div>
+        </div>
+        <div id="requests-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
       </div>
 
       <div id="tab-kpi" class="tab-panel">
@@ -115,9 +117,17 @@
       <div id="tab-team" class="tab-panel">
         <div class="page-header">
           <div class="page-title">My Team</div>
-          <div class="page-subtitle">Your manager and teammates, direct-report leave requests, and P&amp;C's company-wide confirmation queue</div>
+          <div class="page-subtitle">Your reporting line, manager, and teammates</div>
         </div>
         <div id="team-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
+      </div>
+
+      <div id="tab-teams" class="tab-panel">
+        <div class="page-header">
+          <div class="page-title">Teams</div>
+          <div class="page-subtitle">Organization chart, and the full company directory by department</div>
+        </div>
+        <div id="teams-content"><div class="empty-state"><div class="loading-spinner"></div>Loading...</div></div>
       </div>
 
       <div id="tab-roster" class="tab-panel">
@@ -146,6 +156,7 @@
 
 <div id="toast" hidden></div>
 
+<script src="/socket.io/socket.io.js"></script>
 <script type="module" src="/employees/js/main.js"></script>
 </body>
 </html>

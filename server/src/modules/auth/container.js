@@ -4,6 +4,7 @@
    index.js below, which only exposes the composed router + middleware). */
 const userRepository = require('./repositories/userRepository');
 const refreshTokenRepository = require('./repositories/refreshTokenRepository');
+const passwordResetTokenRepository = require('./repositories/passwordResetTokenRepository');
 const { transaction } = require('./repositories/unitOfWork');
 const userModel = require('./models/user.model');
 const { hashPassword, comparePassword } = require('./utils/hash');
@@ -11,6 +12,9 @@ const { signAccessToken, verifyAccessToken } = require('./utils/jwt');
 const { setRefreshCookie, clearRefreshCookie, readRefreshCookie } = require('./utils/refreshCookie');
 
 const audit = require('../../common/audit');
+const logger = require('../../common/logger');
+const { sendEmail } = require('../../common/integrations/resendClient');
+const config = require('../../config');
 const { ROLES, ALL_ROLES } = require('../../common/constants/roles');
 const { canManageUsers, canAssignRole, canModifyStatus } = require('../../common/permissions');
 
@@ -24,12 +28,15 @@ const createAuthRouter = require('./routes/index');
 const authService = createAuthService({
   userRepository,
   refreshTokenRepository,
+  passwordResetTokenRepository,
   userModel,
   hashPassword,
   comparePassword,
   signAccessToken,
   audit,
   roles: ROLES,
+  sendEmail,
+  logger,
 });
 
 const accountAdminService = createAccountAdminService({
@@ -60,6 +67,7 @@ const authController = createAuthController({
   clearRefreshCookie,
   readRefreshCookie,
   transaction,
+  appBaseUrl: config.appBaseUrl,
   employeeProvisioning,
 });
 
@@ -70,5 +78,11 @@ const router = createAuthRouter({ authController, accountAdminController, authen
 module.exports = {
   router,
   authenticate,
+  // Exposed so index.js (the composition root) can pass it into
+  // common/realtime's socket handshake auth — common/ must never import
+  // modules/auth directly (would invert the module-boundary direction, and
+  // ADR-0002 already says no other module mints/verifies a session token
+  // itself), so this is injected at wiring time instead of reached for.
+  verifyAccessToken,
   setEmployeeProvisioner(fn) { employeeProvisioning.createEmployeeProfile = fn; },
 };

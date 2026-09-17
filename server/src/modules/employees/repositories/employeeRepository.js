@@ -3,10 +3,13 @@
    users table; see the migration's comment for why). Only SQL here. */
 const db = require('../../../db');
 
-// user_online computed in SQL, not from `new Date(user_last_seen_at)` in JS —
-// SQLite's CURRENT_TIMESTAMP is UTC text with no timezone marker, and Node's
-// Date parser treats that "YYYY-MM-DD HH:MM:SS" shape as local time (see
-// refreshTokenRepository.findRecentlyRevoked's comment for the same gotcha).
+// "Online" used to be a 5-minute last_seen_at heuristic computed here in
+// SQL; replaced by real-time Socket.IO presence (common/realtime,
+// cross-referenced in rosterService.listDirectory by user_id) — see that
+// module's own comment for why. last_seen_at itself is left untouched
+// (still written by userRepository.touchLastSeen on every authenticated
+// request) in case it's useful for something else later; just no longer
+// selected/derived here since nothing reads it anymore.
 const SELECT_WITH_USER = `
   SELECT
     e.*,
@@ -14,9 +17,7 @@ const SELECT_WITH_USER = `
     u.first_name AS user_first_name,
     u.last_name AS user_last_name,
     u.role AS user_role,
-    u.is_active AS user_is_active,
-    u.last_seen_at AS user_last_seen_at,
-    (u.last_seen_at IS NOT NULL AND u.last_seen_at >= datetime('now', '-5 minutes')) AS user_online
+    u.is_active AS user_is_active
   FROM employees e
   JOIN users u ON u.id = e.user_id
 `;

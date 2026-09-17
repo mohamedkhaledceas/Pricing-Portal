@@ -28,6 +28,7 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.delete('/employees/me/photo', rosterController.removeMyPhoto);
   router.get('/employees/directory', rosterController.directory);
   router.get('/employees/profile-change-requests', rosterController.pendingChangeRequests);
+  router.get('/employees/profile-change-requests/mine', rosterController.myChangeRequestHistory);
   router.patch('/employees/profile-change-requests/:id/approve', rosterController.approveChangeRequest);
   router.patch('/employees/profile-change-requests/:id/reject', rosterController.rejectChangeRequest);
   router.get('/employees/team', rosterController.getDirectReports);

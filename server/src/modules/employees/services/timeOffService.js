@@ -127,7 +127,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   }
 
   function listMine(employeeId) {
-    return leaveRequestRepository.findByEmployeeId(employeeId).map(leaveRequestModel.toLeaveRequest);
+    return leaveRequestRepository.findByEmployeeId(employeeId).map(leaveRequestModel.toLeaveRequest).map(withRequestedDays);
   }
 
   // The 'manager' role is company-wide by design (the CEO's account, per
@@ -145,13 +145,23 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return { ...request, conflictWarnings: conflictPairService.findOverlaps({ employeeId: request.employeeId, startDate: request.startDate, endDate: request.endDate }) };
   }
 
+  // Same working-day count (partial_day halved) already used to deduct
+  // from balance — shown to whoever is deciding a request (direct manager
+  // or P&C, regardless of which) so the number they see on the card
+  // matches what will actually count against the employee's balance once
+  // approved, computed fresh from the dates the requester actually entered
+  // rather than trusted from the client.
+  function withRequestedDays(request) {
+    return { ...request, requestedDays: leaveBalanceRules.requestedDaysFor(request, timeOffRules.countWorkingDaysInclusive) };
+  }
+
   function listTeam({ actorEmployee, actorAuthRole }) {
     if (actorAuthRole === roles.MANAGER) {
-      return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings);
+      return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings).map(withRequestedDays);
     }
     if (!actorEmployee) return [];
     const reportIds = employeeRepository.findByManagerId(actorEmployee.id).map((row) => row.id);
-    return leaveRequestRepository.findByEmployeeIds(reportIds).map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings);
+    return leaveRequestRepository.findByEmployeeIds(reportIds).map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings).map(withRequestedDays);
   }
 
   // Non-sensitive operational info — visible to any authenticated employee,
@@ -182,18 +192,28 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     if (actorAuthRole !== roles.PEOPLE_CULTURE) {
       throw new EmployeesError('You do not have permission to view the company-wide approval queue.', 403);
     }
-    return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest).map((r) => ({
-      ...r,
-      requiresDoctorNote: r.leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({
-        startDate: new Date(`${r.startDate}T00:00:00`),
-        endDate: new Date(`${r.endDate}T00:00:00`),
-      }),
-      wfhSubmittedLate: timeOffRules.isWfhLateSameDaySubmission({
-        leaveType: r.leaveType,
-        submittedAt: new Date(r.createdAt),
-        startDate: new Date(`${r.startDate}T00:00:00`),
-      }),
-    }));
+    return leaveRequestRepository.findByStatus('manager_approved').map(leaveRequestModel.toLeaveRequest).map((r) => {
+      // The requester's own current standing for the SPECIFIC leave type
+      // this request is for — not a fixed sick+unpaid pair regardless of
+      // type (per the user's own correction: "the counter of the requested
+      // leave type... as a rule"). null for public_holiday, which has no
+      // balance to show.
+      const balances = getMyBalances(r.employeeId);
+      return {
+        ...r,
+        requiresDoctorNote: r.leaveType === 'sick' && timeOffRules.sickLeaveRequiresDoctorNote({
+          startDate: new Date(`${r.startDate}T00:00:00`),
+          endDate: new Date(`${r.endDate}T00:00:00`),
+        }),
+        leaveTypeUsage: leaveBalanceRules.usageForLeaveType(balances, r.leaveType),
+        requestedDays: leaveBalanceRules.requestedDaysFor(r, timeOffRules.countWorkingDaysInclusive),
+        wfhSubmittedLate: timeOffRules.isWfhLateSameDaySubmission({
+          leaveType: r.leaveType,
+          submittedAt: new Date(r.createdAt),
+          startDate: new Date(`${r.startDate}T00:00:00`),
+        }),
+      };
+    });
   }
 
   // Backs P&C's Overview "policy breach" widget — auto_rejected requests
