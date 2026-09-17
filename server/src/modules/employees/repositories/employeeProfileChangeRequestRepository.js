@@ -33,6 +33,13 @@ function findPendingByEmployeeId(employeeId) {
   return db.prepare(`${SELECT_WITH_NAMES} WHERE r.employee_id = ? AND r.status = 'pending'`).get(employeeId);
 }
 
+// All statuses, not just pending — backs the employee's own "My Requests"
+// history (Requests Center), unlike findPendingByEmployeeId above which
+// only ever needs the single current pending one.
+function findByEmployeeId(employeeId) {
+  return db.prepare(`${SELECT_WITH_NAMES} WHERE r.employee_id = ? ORDER BY r.created_at DESC`).all(employeeId);
+}
+
 function findAllPending() {
   return db.prepare(`${SELECT_WITH_NAMES} WHERE r.status = 'pending' ORDER BY r.created_at ASC`).all();
 }
@@ -46,4 +53,4 @@ function decide(id, { status, reviewedByUserId, decisionNote }) {
   return findById(id);
 }
 
-module.exports = { insert, findById, findPendingByEmployeeId, findAllPending, decide };
+module.exports = { insert, findById, findPendingByEmployeeId, findByEmployeeId, findAllPending, decide };

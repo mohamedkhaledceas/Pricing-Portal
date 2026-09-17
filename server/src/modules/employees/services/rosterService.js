@@ -450,6 +450,14 @@ function createRosterService({
     return row ? profileChangeRequestModel.toChangeRequest(row) : null;
   }
 
+  // Same no-permission-gate reasoning as getMyPendingChangeRequest above —
+  // an employee viewing their own full history (Requests Center), not the
+  // review queue. All statuses, not just pending.
+  function getMyChangeRequestHistory(actorEmployee) {
+    if (!actorEmployee) return [];
+    return employeeProfileChangeRequestRepository.findByEmployeeId(actorEmployee.id).map(profileChangeRequestModel.toChangeRequest);
+  }
+
   function listPendingChangeRequests({ actorAuthRole }) {
     requireCanReviewProfileChanges({ actorAuthRole });
     return employeeProfileChangeRequestRepository.findAllPending().map(profileChangeRequestModel.toChangeRequest);
@@ -548,7 +556,7 @@ function createRosterService({
 
   return {
     canManageRoster, listAll, listDirectory, listTeamHeadsByDepartment, getMine, getDirectReports, getMyTeam,
-    create, update, setActive, setMyPhoto, updateMine, getMyPendingChangeRequest,
+    create, update, setActive, setMyPhoto, updateMine, getMyPendingChangeRequest, getMyChangeRequestHistory,
     listPendingChangeRequests, approveChangeRequest, rejectChangeRequest,
     createForSelfRegistration, listClickupMembers,
   };

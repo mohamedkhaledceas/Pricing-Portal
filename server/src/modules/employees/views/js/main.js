@@ -6,6 +6,7 @@ import { renderOverview } from './overview.js';
 import { renderNewRequestForm, renderRules, switchSubTab } from './timeOff.js';
 import { renderTeam } from './team.js';
 import { renderTeamsDirectory } from './teamsDirectory.js';
+import { renderRequestsCenter } from './requestsCenter.js';
 import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
 import { renderUsersAdmin } from './usersAdmin.js';
@@ -45,6 +46,7 @@ export function switchMainTab(tabId, btn) {
   if (tabId === 'timeoff') switchSubTab(state.subTab, $('#subtab-' + state.subTab));
   if (tabId === 'team') renderTeam();
   if (tabId === 'teams') renderTeamsDirectory();
+  if (tabId === 'requests') renderRequestsCenter();
   if (tabId === 'roster') renderRoster();
   if (tabId === 'kpi') renderKpi();
   if (tabId === 'users') renderUsersAdmin();

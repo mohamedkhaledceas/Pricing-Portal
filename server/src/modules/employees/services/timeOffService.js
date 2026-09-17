@@ -127,7 +127,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   }
 
   function listMine(employeeId) {
-    return leaveRequestRepository.findByEmployeeId(employeeId).map(leaveRequestModel.toLeaveRequest);
+    return leaveRequestRepository.findByEmployeeId(employeeId).map(leaveRequestModel.toLeaveRequest).map(withRequestedDays);
   }
 
   // The 'manager' role is company-wide by design (the CEO's account, per
