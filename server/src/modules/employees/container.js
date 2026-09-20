@@ -86,7 +86,7 @@ const rosterService = createRosterService({
 });
 const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, audit, roles: ROLES });
-const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES });
+const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES, teamMembership });
 const kpiClickupMetricsService = createKpiClickupMetricsService({
   clickupGet: clickupClient.clickupGet, teamId: CLICKUP_TEAM_ID, kpiClickupStatusEventRepository,
 });

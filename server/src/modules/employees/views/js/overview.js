@@ -102,6 +102,27 @@ function whosOffTodaySection(offToday, partnerIds) {
     </div>`;
 }
 
+// Approved-only, name + date range — nothing else (no leave type, no
+// reason). Backed by timeOffService.listUpcomingTeamLeave, which is
+// already scoped server-side to the viewer's own team (teamMembership's
+// direct-reports-union-department definition) and to today-or-later, so
+// this just renders whatever comes back.
+function upcomingLeaveTile(u) {
+  const range = u.startDate === u.endDate ? fmtDate(u.startDate) : `${fmtDate(u.startDate)} → ${fmtDate(u.endDate)}`;
+  return `<div class="team-tile">
+    <div class="team-tile-name">${escapeHtml(u.name)}</div>
+    <div class="team-tile-meta">${range}</div>
+  </div>`;
+}
+
+function upcomingTeamLeaveSection(upcoming) {
+  return `
+    <div class="card section">
+      <div class="card-title">Upcoming Team Leave</div>
+      ${tileGrid(upcoming.map(upcomingLeaveTile), 'No upcoming approved leave for your team')}
+    </div>`;
+}
+
 // online comes from the directory endpoint (open to any authenticated
 // employee — see rosterService.listDirectory) so this widget works the
 // same for a plain employee and for manager/admin/P&C's no-profile
@@ -394,7 +415,7 @@ export async function renderOverview() {
   const role = state.currentUser && state.currentUser.role;
   const isPeopleCulture = role === 'people_culture';
   const isManager = role === 'manager';
-  const [mineRes, balancesRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes, peerReviewStatusRes] = await Promise.all([
+  const [mineRes, balancesRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes, peerReviewStatusRes, upcomingTeamLeaveRes] = await Promise.all([
     apiFetch('/api/employees/leave-requests/mine'),
     apiFetch('/api/employees/leave-requests/balances/mine'),
     apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
@@ -405,6 +426,7 @@ export async function renderOverview() {
     isPeopleCulture ? apiFetch('/api/employees/leave-requests/auto-rejected') : Promise.resolve(null),
     apiFetch('/api/employees/conflict-pairs/mine'),
     apiFetch('/api/employees/kpi/peer-review/my-status').catch(() => null),
+    apiFetch('/api/employees/leave-requests/team/upcoming'),
   ]);
   const myPartnerIds = new Set((myPartnersRes.partners || []).map((p) => p.id));
 
@@ -463,6 +485,7 @@ export async function renderOverview() {
     ${teamAvailabilitySummaryHtml(directory)}
     ${whosOnlineSection(directory)}
     ${whosOffTodaySection(offTodayRes.offToday || [], myPartnerIds)}
+    ${upcomingTeamLeaveSection(upcomingTeamLeaveRes.upcoming || [])}
 
     <div class="card section">
       <div class="card-title">Recent Requests</div>
