@@ -106,3 +106,31 @@ export async function renderUsersAdmin() {
     $('#users-content').innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message || 'Could not load accounts.')}</div></div>`;
   }
 }
+
+// A plain fetch, not apiFetch — the download needs the Authorization
+// header, which a bare <a href> can't carry, and apiFetch always calls
+// res.json() (this response is a CSV blob). Same pattern as the Employees
+// module's own KPI history CSV export (views/js/kpiHistory.js) and
+// commercial-leads' deals export (views/js/deals.js).
+async function downloadUsersCsv() {
+  const res = await fetch('/api/users/export', {
+    headers: { Authorization: 'Bearer ' + state.accessToken },
+  });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `users-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Called once from main.js's bindUi() — the button lives in the tab's
+// static page-header, outside the #users-content markup that
+// renderUsersAdmin() replaces on every tab switch.
+export function bindUsersAdminUi() {
+  $('#btnExportUsers').addEventListener('click', downloadUsersCsv);
+}

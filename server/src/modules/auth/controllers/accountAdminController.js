@@ -39,7 +39,16 @@ function createAccountAdminController({ accountAdminService, transaction }) {
     return res.json({ user });
   }
 
-  return { listUsers, changeRole, deactivate, reactivate };
+  // Same Content-Type/Content-Disposition pattern as the commercial-leads
+  // deals export (dealsController.exportDeals).
+  function exportUsers(req, res) {
+    const csv = accountAdminService.exportUsersCsv({ actorRole: req.user.role });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="users-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.send(csv);
+  }
+
+  return { listUsers, changeRole, deactivate, reactivate, exportUsers };
 }
 
 module.exports = createAccountAdminController;
