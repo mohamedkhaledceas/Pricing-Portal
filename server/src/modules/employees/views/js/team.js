@@ -1,4 +1,4 @@
-import { $, escapeHtml } from './dom.js';
+import { $, escapeHtml, fmtDate } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 
@@ -168,21 +168,44 @@ function myTeamSectionHtml(myTeam) {
   </div>`;
 }
 
+// Same tile markup as Overview's "Upcoming Team Leave" card
+// (overview.js's upcomingLeaveTile) — kept as its own copy rather than a
+// shared import, matching this file's existing precedent of duplicating
+// small card renderers per tab (myTeamCardHtml/reportingLineCardHtml)
+// instead of cross-importing between tab modules.
+function upcomingLeaveTile(u) {
+  const range = u.startDate === u.endDate ? fmtDate(u.startDate) : `${fmtDate(u.startDate)} → ${fmtDate(u.endDate)}`;
+  return `<div class="team-tile">
+    <div class="team-tile-name">${escapeHtml(u.name)}</div>
+    <div class="team-tile-meta">${range}</div>
+  </div>`;
+}
+
+function upcomingTeamLeaveSectionHtml(upcoming) {
+  return `<div class="card section">
+    <div class="card-title">Upcoming Team Leave</div>
+    <div class="team-grid">${upcoming.length
+      ? upcoming.map(upcomingLeaveTile).join('')
+      : `<div class="empty-state" style="grid-column:1/-1;padding:18px;">No upcoming approved leave for your team</div>`}</div>
+  </div>`;
+}
+
 // Approval queues (Pending My Decision, All Requests, Pending P&C
 // Confirmation, Pending Profile Changes) moved to the new Requests Center
 // tab (requestsCenter.js) — gathered there alongside the employee's own
-// request history, per Portal §21. My Team now shows only team-member/org
-// info.
+// request history, per Portal §21. My Team now shows team-member/org info
+// plus Upcoming Team Leave (approved-only, name + date range).
 export async function renderTeam() {
   const container = $('#team-content');
   container.innerHTML = `<div class="empty-state">Loading...</div>`;
 
-  const [, myTeamRes] = await Promise.all([
+  const [, myTeamRes, , upcomingRes] = await Promise.all([
     loadDirectoryIndex(),
     apiFetch('/api/employees/team/mine'),
     window.Departments.load(apiFetch),
+    apiFetch('/api/employees/leave-requests/team/upcoming'),
   ]);
 
-  const sections = [myReportingLineSectionHtml(), myTeamSectionHtml(myTeamRes)].filter(Boolean);
+  const sections = [myReportingLineSectionHtml(), myTeamSectionHtml(myTeamRes), upcomingTeamLeaveSectionHtml(upcomingRes.upcoming || [])].filter(Boolean);
   container.innerHTML = sections.length ? sections.join('') : `<div class="empty-state">No team information available for this account.</div>`;
 }

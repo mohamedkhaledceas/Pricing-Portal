@@ -49,6 +49,7 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.get('/employees/leave-requests/balances/mine', timeOffController.getBalances);
   router.get('/employees/leave-requests/notice-check', timeOffController.checkNotice);
   router.get('/employees/leave-requests/team', timeOffController.listTeam);
+  router.get('/employees/leave-requests/team/upcoming', timeOffController.upcomingTeamLeave);
   router.get('/employees/leave-requests/off-today', timeOffController.offToday);
   router.get('/employees/leave-requests/pending', timeOffController.listPcPending);
   router.get('/employees/leave-requests/auto-rejected', timeOffController.listAutoRejected);

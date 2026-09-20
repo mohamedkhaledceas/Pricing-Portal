@@ -87,6 +87,28 @@ function findApprovedOverlapping(date) {
     .all(date, date);
 }
 
+// Backs "Upcoming Team Leave" (My Team tab, Overview) — approved-only and
+// scoped to a caller-supplied team-member id set (never company-wide,
+// unlike findAll), from fromDate onward by end_date so a request that has
+// already fully elapsed never shows. Same employees/users join as
+// findApprovedOverlapping above, for the display name.
+function findApprovedUpcoming({ employeeIds, fromDate }) {
+  if (!employeeIds.length) return [];
+  const placeholders = employeeIds.map(() => '?').join(',');
+  return db
+    .prepare(
+      `SELECT lr.*, u.first_name AS first_name, u.last_name AS last_name
+       FROM leave_requests lr
+       JOIN employees e ON e.id = lr.employee_id
+       JOIN users u ON u.id = e.user_id
+       WHERE lr.employee_id IN (${placeholders})
+         AND lr.status = 'approved'
+         AND lr.end_date >= ?
+       ORDER BY lr.start_date ASC`
+    )
+    .all(...employeeIds, fromDate);
+}
+
 // WFH's monthly-quota check — yearMonth like '2026-08'. pending +
 // manager_approved + approved all count against the quota (only a
 // rejected/auto_rejected/cancelled request doesn't use up the month).
@@ -137,6 +159,7 @@ module.exports = {
   findByStatus,
   findAll,
   findApprovedOverlapping,
+  findApprovedUpcoming,
   findActiveOverlappingForEmployees,
   countWfhInMonth,
   updateManagerDecision,

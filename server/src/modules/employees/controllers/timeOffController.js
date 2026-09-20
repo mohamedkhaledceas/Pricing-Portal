@@ -46,6 +46,13 @@ function createTimeOffController({ timeOffService }) {
     return res.json({ requests });
   }
 
+  // No requireEmployee — same leniency as rosterController.getMyTeam: no
+  // profile structurally means no team to resolve, so [] is the correct
+  // answer, not a 403.
+  function upcomingTeamLeave(req, res) {
+    return res.json({ upcoming: timeOffService.listUpcomingTeamLeave({ actorEmployee: req.employee }) });
+  }
+
   function offToday(req, res) {
     const date = req.query.date;
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -125,7 +132,7 @@ function createTimeOffController({ timeOffService }) {
     return res.json({ request });
   }
 
-  return { submit, listMine, listTeam, offToday, listPcPending, listAutoRejected, getLeaveBreakdown, getBalances, checkNotice, managerDecision, pcConfirm, cancel };
+  return { submit, listMine, listTeam, upcomingTeamLeave, offToday, listPcPending, listAutoRejected, getLeaveBreakdown, getBalances, checkNotice, managerDecision, pcConfirm, cancel };
 }
 
 module.exports = createTimeOffController;

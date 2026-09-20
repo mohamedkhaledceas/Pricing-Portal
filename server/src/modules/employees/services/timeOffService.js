@@ -13,7 +13,7 @@ function parseDateOnly(value) {
    -> manager decision -> P&C confirmation. timeOffRules holds the pure
    notice-window math; this service is what actually touches the DB and
    enforces who's allowed to do what. */
-function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles }) {
+function createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles, teamMembership }) {
   async function submit({ employeeId, leaveType, startDate, endDate, availability, handoverEmployeeId, reason, actorId, ip }) {
     if (!VALID_LEAVE_TYPES.includes(leaveType)) {
       throw new EmployeesError(`Leave type must be one of: ${VALID_LEAVE_TYPES.join(', ')}.`);
@@ -177,6 +177,35 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
       startDate: row.start_date,
       endDate: row.end_date,
       availability: row.availability,
+    }));
+  }
+
+  // "Upcoming Team Leave" (My Team tab, Overview) — deliberately scoped to
+  // teamMembership's "My Team" definition (direct reports unioned with the
+  // rest of the department — see teamMembership.js), the same set the My
+  // Team tab itself shows, NOT listTeam's narrower "people who report to
+  // me" scoping above (that one exists for approval-decision purposes and
+  // returns [] for anyone without direct reports, which would hide this
+  // from most employees). No employee profile -> no team to resolve, same
+  // leniency as rosterService.getMyTeam. Deliberately returns only
+  // name/date range — a teammate doesn't need the leave type, reason, or
+  // any other detail, just that someone will be out and when.
+  function listUpcomingTeamLeave({ actorEmployee }) {
+    if (!actorEmployee) return [];
+    const directReports = employeeRepository.findByManagerId(actorEmployee.id);
+    const departmentMembers = actorEmployee.department
+      ? employeeRepository.findByDepartment(actorEmployee.department, actorEmployee.id)
+      : [];
+    const { members } = teamMembership.resolveTeamMembership({ directReports, departmentMembers });
+    const memberIds = members.map((m) => m.id);
+    if (!memberIds.length) return [];
+
+    const today = new Date().toISOString().slice(0, 10);
+    return leaveRequestRepository.findApprovedUpcoming({ employeeIds: memberIds, fromDate: today }).map((row) => ({
+      employeeId: row.employee_id,
+      name: `${row.first_name} ${row.last_name}`.trim(),
+      startDate: row.start_date,
+      endDate: row.end_date,
     }));
   }
 
@@ -405,7 +434,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
-  return { submit, listMine, listTeam, listOffToday, listPcPending, listAutoRejected, getLeaveBreakdown, getMyBalances, checkNotice, managerDecision, pcConfirm, cancel };
+  return { submit, listMine, listTeam, listOffToday, listUpcomingTeamLeave, listPcPending, listAutoRejected, getLeaveBreakdown, getMyBalances, checkNotice, managerDecision, pcConfirm, cancel };
 }
 
 module.exports = createTimeOffService;
