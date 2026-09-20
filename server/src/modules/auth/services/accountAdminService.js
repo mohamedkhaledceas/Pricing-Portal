@@ -14,6 +14,15 @@ function createAccountAdminService({
 }) {
   const { canManageUsers, canAssignRole, canModifyStatus, assignableRoles } = permissions;
 
+  // Same quoting rule as the commercial-leads deals CSV export
+  // (dealsService.exportDealsCsv) — names are free text and can contain a
+  // comma, so this can't be skipped the way kpiScoringService's numeric-only
+  // export does.
+  function csvEscape(value) {
+    const str = value === undefined || value === null ? '' : String(value);
+    return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  }
+
   function listUsers({ actorRole }) {
     if (!canManageUsers(actorRole)) {
       throw new AuthError('You do not have permission to view accounts.', 403);
@@ -123,7 +132,25 @@ function createAccountAdminService({
     return userModel.toAccount(updated);
   }
 
-  return { listUsers, changeRole, deactivate, reactivate };
+  // Same three columns shown in the on-screen table minus role-management
+  // controls — name/email/role only, nothing about status or account IDs.
+  function exportUsersCsv({ actorRole }) {
+    if (!canManageUsers(actorRole)) {
+      throw new AuthError('You do not have permission to view accounts.', 403);
+    }
+    const users = userRepository.listAll();
+    const header = ['Name', 'Email', 'Role'];
+    const lines = [header.map(csvEscape).join(',')];
+    users.forEach((u) => {
+      const row = [`${u.first_name} ${u.last_name}`, u.email, u.role];
+      lines.push(row.map(csvEscape).join(','));
+    });
+    // CRLF — same rationale as dealsService.exportDealsCsv: the CSV-standard
+    // line ending, so Excel on Windows doesn't mis-split rows on a bare \n.
+    return lines.join('\r\n');
+  }
+
+  return { listUsers, changeRole, deactivate, reactivate, exportUsersCsv };
 }
 
 module.exports = createAccountAdminService;

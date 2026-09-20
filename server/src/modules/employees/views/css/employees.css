@@ -89,6 +89,12 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .section{margin-bottom:18px}
 .card-title{font-size:13px; font-weight:700; margin-bottom:10px}
 .page-header{margin-bottom:16px}
+/* Modifier, not a change to .page-header itself — every other page-header
+   in this file has page-title/page-subtitle as direct children (stacked by
+   default block flow) and would break if .page-header itself became a flex
+   row. Only headers with an action button (e.g. Users' Export CSV) opt in,
+   with title+subtitle wrapped in their own child div. */
+.page-header-row{display:flex; justify-content:space-between; align-items:flex-start; gap:12px}
 .page-title{font-size:20px; font-weight:750; letter-spacing:-0.01em}
 .page-subtitle{font-size:12.5px; color:var(--muted); margin-top:2px}
 

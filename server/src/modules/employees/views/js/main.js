@@ -9,7 +9,7 @@ import { renderTeamsDirectory } from './teamsDirectory.js';
 import { renderRequestsCenter } from './requestsCenter.js';
 import { renderRoster } from './roster.js';
 import { renderKpi } from './kpi.js';
-import { renderUsersAdmin } from './usersAdmin.js';
+import { renderUsersAdmin, bindUsersAdminUi } from './usersAdmin.js';
 import { renderLeaveReport } from './leaveBreakdown.js';
 import { connectRealtime } from './realtime.js';
 
@@ -69,6 +69,8 @@ function bindUi() {
 
   $all('.nav-tab').forEach((btn) => btn.addEventListener('click', () => switchMainTab(btn.dataset.tab, btn)));
   $all('.sub-nav-tab').forEach((btn) => btn.addEventListener('click', () => switchSubTab(btn.dataset.subtab, btn)));
+
+  bindUsersAdminUi();
 }
 
 (async function init() {
