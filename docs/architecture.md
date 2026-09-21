@@ -1,514 +1,302 @@
 # CEAS Portal — Architecture
 
-Status: **Approved in principle; hardened per Principal Engineer review — pending final sign-off before implementation**
-Supersedes: the root-level `ARCHITECTURE.md` (Phase 2 draft). This is the canonical, current architecture document.
+Status: **describes the system as it actually runs today.** Every claim below was checked directly against the running code (`server/src/index.js`, `server/src/db.js`, `server/src/db/migrations/`, `server/package.json`, and each module's own files) — not against a plan, an ADR, or a prior draft of this document.
 
-This document defines the target architecture for merging Pricing Portal and Employees Portal into a single modular monolith. It is one of several documents under `/docs` — see `docs/adr/` for the reasoning behind individual decisions in more depth, and the sibling documents listed at the bottom for topic-specific detail. `CLAUDE.md` at the repo root is the condensed version of this document for AI-assisted sessions.
-
----
-
-## 1. Folder Structure
-
-```
-src/
-  modules/
-    auth/
-      controllers/
-      services/
-      repositories/
-      models/
-      validators/
-      utils/
-        jwt.js          # token signing/verification — auth-only, never imported elsewhere
-        hash.js          # bcrypt wrappers — auth-only
-      errors.js
-      routes.js
-      container.js       # wires this module's repositories -> services -> controllers
-
-    pricing/
-      controllers/
-      services/
-      repositories/
-      models/
-      validators/
-      errors.js
-      routes.js
-      container.js
-
-    employees/
-      controllers/
-      services/
-      repositories/
-      models/
-      validators/
-      errors.js
-      routes.js
-      container.js
-      jobs/
-        rosterSync.job.js        # scheduled ClickUp -> employee_roster sync + offboarding detection
-      integrations/
-        clickup.client.js        # only place CLICKUP_API_KEY is read/used
-
-  common/
-    logger/logger.js
-    audit/
-      audit.repository.js
-      audit.service.js
-      audit.routes.js             # GET /api/audit-log, admin-only
-    error/
-      AppError.js
-      errorHandler.js
-      catchAsync.js
-    correlation/
-      correlationId.js
-      requestContext.js            # AsyncLocalStorage-based context
-    middleware/
-      authenticate.js
-      authorize.js                  # permission-string based, see §4
-      validate.js
-      requestLogger.js
-      rateLimit.js
-      security.js                    # helmet + CSP wiring
-    constants/
-      roles.js
-      modules.js
-      permissions.js                 # ROLE_PERMISSIONS map, see §4.2
-
-  utils/
-    # intentionally empty at present — reserved for genuinely cross-module
-    # pure functions. Nothing qualifies yet (see ADR-002 for why jwt/hash
-    # moved into modules/auth instead of living here).
-
-  config/
-    index.js        # loads + validates env vars once, exports frozen config object
-    db.js             # Knex/pg connection + pool
-
-  db/
-    migrations/
-    seeds/
-
-  app.js             # express app assembly (middleware pipeline + route + health mounting), no listen()
-  server.js          # imports app, calls listen(), graceful shutdown, signal handling
-
-public/
-  shared/
-    js/   (apiClient.js, auth.js, dom.js, state.js, format.js — see docs/frontend-architecture.md)
-    css/
-  pricing/
-    index.html
-  employees/
-    index.html
-
-tests/
-  unit/modules/{auth,pricing,employees}/...
-  integration/{auth,pricing,employees}/...
-  fixtures/
-  setup.js
-
-.env.example
-package.json
-```
-
-### 1.1 What changed from the Phase 2 draft, and why
-
-| Change | Reasoning |
-|---|---|
-| `jwt.js`, `hash.js` moved from top-level `utils/` into `modules/auth/utils/` | See ADR-002. Prevents any module from bypassing `auth`'s service layer to mint or verify tokens directly — the previous placement made that possible even if unintended. |
-| Added `container.js` per module | See ADR-006. Manual factory-function dependency injection — explicit wiring, no framework. |
-| Added `common/audit/` | See ADR-007. Operational logs and audit logs serve different purposes (debugging vs. accountability) and now have separate homes. |
-| Added `common/constants/permissions.js` | See §4.2. Authorization checks reference permission strings resolved through a static role→permission map, not raw role names scattered through route definitions. |
-| Added `common/middleware/rateLimit.js`, `security.js` | See `docs/security.md`. |
-| `utils/` now explicitly documented as empty-on-purpose | Previously implied to hold `jwt.js`/`hash.js`; now genuinely has no occupants. Documenting this prevents someone "helpfully" moving something there without justification. |
+**A note on why this rewrite exists:** the previous version of this file (and of `docs/database.md`) described a target system — PostgreSQL, Knex, a `modules/pricing/` module, an `employee_roster` table, a full permission-string authorization engine, Zod validators, CI-gated tests — that was planned (`docs/adr/0003`, `docs/migration-plan.md`) but **never built**. The app that actually exists took a different, organically-evolved path: it stayed on `better-sqlite3`, kept the original Pricing/Margin-Planner backend as-is in a single `index.js`, and grew three new modules (`auth`, `employees`, `management`) alongside it with real layering. Both facts are true at once — a real, deliberate decision was made to move to Postgres, and it was never carried out. `docs/migration-plan.md`, `docs/testing.md`, and ADR-0003 are kept as historical record of that decision, not deleted, but they no longer describe this app — see §12.
 
 ---
 
-## 2. Module Boundaries & Dependency Rules
+## 1. What this system actually is
 
-```
-        ┌─────────────┐   ┌──────────────┐   ┌───────────────┐
-        │  auth        │   │  pricing     │   │  employees     │
-        └──────┬───────┘   └──────┬───────┘   └──────┬────────┘
-               │                  │                   │
-               └────────┬─────────┴─────────┬─────────┘
-                         ▼                   ▼
-                    common/               utils/
-           (logger, audit, errors,     (reserved,
-          middleware, correlation,      currently
-               constants)                empty)
-```
+One Express app (`server/src/index.js` as the entry point) serving four browser-facing surfaces and one JSON API, all same-origin, all from one deployable:
 
-**Rules (enforced by code review; see `docs/coding-standards.md` for how this is checked):**
-
-1. `modules/*` may depend on `common/`, `utils/`, `config/`. Never the reverse.
-2. No module imports another module's `services/`, `repositories/`, or `models/` directly. There is no current cross-module data need — if one appears later (e.g. a future CRM module needing a Pricing client name), it is solved explicitly when it's real, not pre-built.
-3. Each module owns its own database tables in the one shared Postgres database. The one intentional exception is documented in §5.3 (`employee_roster.user_id` → `auth.users`).
-4. Each module owns its own `routes.js`, mounted under its own path prefix in `app.js`, and its own `container.js` for internal wiring. `app.js` is the only file aware of all three modules simultaneously.
-
----
-
-## 3. Dependency Injection — Composition Root
-
-**Decision: manual factory-function DI, no framework.** See ADR-006 for full reasoning.
-
-Every repository, service, and controller is a factory function taking its dependencies as explicit parameters:
-
-```js
-// modules/employees/services/leaveRequest.service.js
-module.exports = function createLeaveRequestService({ leaveRequestRepository, employeeRosterRepository, auditService, logger }) {
-  return {
-    async submitRequest(input, actingUser) { /* ... */ },
-    async approve(requestId, actingUser) { /* ... */ },
-  };
-};
-```
-
-Each module's `container.js` wires its own layer once, at startup:
-
-```js
-// modules/employees/container.js
-const db = require('../../config/db');
-const logger = require('../../common/logger/logger');
-const auditService = require('../../common/audit/audit.service');
-
-const leaveRequestRepository = require('./repositories/leaveRequest.repository')(db);
-const leaveRequestService = require('./services/leaveRequest.service')({ leaveRequestRepository, auditService, logger });
-const leaveRequestController = require('./controllers/leaveRequest.controller')({ leaveRequestService });
-
-module.exports = { leaveRequestController, /* ... */ };
-```
-
-`routes.js` imports only from its module's `container.js`, never constructs dependencies itself.
-
-**Why this and not a DI container library:** dependencies are visible in a function signature (readable without tracing decorators/reflection), tests pass plain mock objects directly into factories (no `jest.mock` module-path mocking), and it adds zero new dependencies. It is explicitly *not* automatic/reflective wiring — every wire-up is one visible line in a `container.js`.
-
----
-
-## 4. Authentication Architecture
-
-### 4.1 Identity flow (roster-gated, dual-method self-signup)
-
-```
-ClickUp workspace members
-        │  (scheduled job, server-side, every 15-30 min)
-        ▼
-employee_roster  (name, email, clickup_id, department, location, active)
-        │
-        │  employee visits /employees, clicks "Sign up"
-        ▼
-POST /api/auth/signup/google   or   POST /api/auth/signup/password
-        │
-        ├─ verify identity (Google ID token verified server-side via
-        │   google-auth-library, OR email+password with a fresh bcrypt hash)
-        ├─ look up employee_roster WHERE email = ? AND active = true
-        │     no match  → 403, signup rejected
-        │     match     → create `users` row (transaction, see §5.4), link employee_roster.user_id
-        ▼
-issue access token (15 min, in-memory only) + refresh token (30 days, httpOnly cookie)
-```
-
-### 4.2 Session mechanics — revised for CSRF resistance
-
-**This section revises the Phase 2 draft.** Originally both tokens were described as living in httpOnly cookies. After the security review (see `docs/security.md`, ADR-002), the split is:
-
-- **Access token**: short-lived (15 min) JWT, signed with `JWT_ACCESS_SECRET`, carries `sub` (user id), `role`, and a snapshot of `user_module_access`. Returned in the response body on login/refresh, held in **frontend memory only** (a module-scoped JS variable — never `localStorage`, never a cookie), attached to requests via `Authorization: Bearer <token>`.
-- **Refresh token**: opaque random string, stored **hashed** in `refresh_tokens`, set as an `httpOnly`, `Secure`, `SameSite=Lax` cookie, 30-day expiry. Used only against `POST /api/auth/refresh`.
-
-**Why the split:** an httpOnly cookie protects a token from XSS (JS can't read it) but not CSRF (the browser sends it automatically on any request to that origin, including ones triggered by a malicious page). A JS-memory token protects against CSRF (nothing can attach it to a request except our own code, explicitly) but not XSS (if the page has an XSS bug, injected script can read memory too). Using each mechanism for the token it's actually good at — refresh token (long-lived, high-value, rarely sent) in the CSRF-exposed-but-XSS-safe cookie; access token (short-lived, sent constantly) in the XSS-exposed-but-CSRF-safe memory slot — is standard practice and meaningfully better than picking one mechanism for both.
-
-**This makes frontend XSS-hardening load-bearing, not optional.** If the page has an XSS vulnerability, the access-token-in-memory protection is void (injected script reads it directly). Both current frontends build DOM content via string concatenation into `innerHTML` in multiple places. Auditing and fixing this is required as part of the frontend migration work (see `docs/frontend-architecture.md` §5 and `docs/security.md` §XSS) — not a "nice to have," because it's now a precondition for the auth model actually holding.
-
-- **Refresh rotation**: every `/api/auth/refresh` call issues a new refresh token and marks the old one used. A reused (already-rotated) token is treated as theft: all of that user's refresh tokens are revoked immediately, forcing re-authentication.
-- **Revocation (offboarding, manual revoke)**: sets `users.is_active = false`, revokes all `refresh_tokens` rows for that user. The current access token (if any) remains valid for up to 15 minutes — an accepted tradeoff for keeping access tokens stateless. See `docs/security.md` for the option to harden this later if ever required.
-- **`users.is_active` vs. `employee_roster.active`**: two distinct flags. `users.is_active` is login/access (auth concern, can be revoked independent of employment status — e.g. a security incident). `employee_roster.active` is HR employment status, driven by the ClickUp sync. Offboarding (`employee_roster.active → false`) cascades to revoking access (`users.is_active → false`), but not the reverse — an admin can revoke portal access for someone who is still, per HR records, employed.
-
----
-
-## 5. Authorization Architecture
-
-### 5.1 Role & module-access model
-
-Single flat role enum, orthogonal binary module access (per your Phase 1 decision):
-
-```
-users
-  id, email, password_hash (nullable), google_sub (nullable), role, is_active
-
-user_module_access   (user_id, module_code)   -- PK(user_id, module_code)
-```
-
-`module_code`: `'pricing' | 'employees'`, extendable without a migration (join table, not boolean columns — this is exactly why it was designed as a table).
-
-**Roles:** `admin`, `pricing_user`, `hr_admin`, `manager`, `employee`. Same table as Phase 2 — unchanged.
-
-### 5.2 Permission-string authorization (revised from Phase 2's raw-role checks)
-
-**Decision:** routes and services reference **permission strings**, not role arrays, resolved through a static map:
-
-```js
-// common/constants/permissions.js
-const ROLE_PERMISSIONS = {
-  admin:       ['*'],
-  hr_admin:    ['leave:approve:any', 'leave:reject:any', 'employee:revoke:any', 'employee:manager:assign', 'roster:read', 'audit:read'],
-  manager:     ['leave:approve:team', 'leave:reject:team', 'employee:revoke:any'],
-  employee:    ['leave:request', 'leave:read:own'],
-  pricing_user:['pricing:*'],
-};
-```
-
-```js
-router.put('/leave-requests/:id/approve', authenticate, authorize('leave:approve:team', 'leave:approve:any'), ...);
-```
-
-`authorize(...)` checks whether the resolved permission set for `req.user.role` (plus module access) intersects the required permissions for the route.
-
-**Why this and not full permission-based auth now:** you explicitly chose the simpler role-based model in Phase 1, and a fully granular, per-user, DB-backed permission system would be real over-engineering for 5 roles across 2 modules — there's no current requirement for it. This is the cheap middle ground: call sites already speak in permissions, so if real granular/per-user overrides are needed later, only `ROLE_PERMISSIONS`'s *resolution* changes (static map → DB-backed lookup) — no route or service code changes. See ADR-005.
-
-### 5.3 The `employee_roster` ↔ `users` bridge
-
-```
-employee_roster
-  id, full_name, email (unique), clickup_id (unique), department, location,
-  manager_employee_id  -> employee_roster.id (nullable, self-referencing),
-  active, synced_at,
-  user_id  -> auth.users.id (nullable, unique)
-```
-
-One-directional FK crossing a module boundary: `employees.employee_roster → auth.users`, never the reverse. `auth` has no knowledge `employees` exists, keeping it genuinely reusable by any future module the same way.
-
-`manager_employee_id` is set via a small dedicated "assign manager" screen (P&C/admin), since ClickUp has no standing reporting-line field (confirmed in Phase 1).
-
-### 5.4 Where checks happen
-
-- **`authenticate` middleware**: verifies the access token, populates `req.user = { id, role, moduleAccess }` from the token payload (see §4.2 staleness note).
-- **`authorize(...permissions)` middleware**: coarse-grained — does this user's role resolve to one of the required permissions, and do they have module access? Pure in-memory check, no DB round-trip.
-- **Service layer**: fine-grained, resource-specific — e.g. "is this leave request's `employee_id` the same person as `req.user.id`, or do they report to `req.user.id` (manager scenario)?" Requires loading the actual row, so it cannot be middleware.
-
-**Note on manager scope (carried over from Phase 2, restated):** per your explicit decision, **revoke** is unscoped for `manager` (any employee, not just direct reports). **Approve/reject** defaults to scoped (direct reports only), since it's a routing concept tied to `manager_id`, not a decision I silently reversed — flagged again here for final confirmation before implementation.
-
----
-
-## 6. Database Design
-
-**Engine: PostgreSQL. Query layer: Knex.js** (query builder + migration runner in one dependency — see ADR-003).
-
-### 6.1 Schema (unchanged core shape from Phase 2 — see `docs/database.md` for the living, authoritative version kept in sync with migrations)
-
-- **auth**: `users`, `refresh_tokens`, `user_module_access`
-- **employees**: `employee_roster`, `leave_requests`, `deductions`, `roster_sync_log` (`kpi_scores` deferred to its own milestone — schema not guessed at ahead of reviewing the KPI framework)
-- **common**: `audit_log` (see §8)
-- **pricing**: existing schema, ported to Postgres types, no redesign
-
-### 6.2 Transactions — explicit rule
-
-**Any service method that writes to more than one table wraps those writes in a single Knex transaction.** Repositories accept an optional `trx` parameter (default: the main connection) so the same repository method works standalone or inside a transaction:
-
-```js
-// repository
-exports.create = (data, trx = db) => trx('leave_requests').insert(data).returning('*');
-
-// service
-await db.transaction(async (trx) => {
-  const request = await leaveRequestRepository.create(data, trx);
-  if (autoRejected) await deductionRepository.create({ leaveRequestId: request.id, ... }, trx);
-  await auditService.record({ action: 'leave.submitted', ... }, trx);
-});
-```
-
-**Enumerated transaction boundaries** (the operations that must use this pattern):
-
-| Operation | Tables touched | Why atomic |
+| Surface | Served at | What it is |
 |---|---|---|
-| Signup | `users`, `user_module_access`, `employee_roster` (link) | Partial signup (account without module access) is a broken state |
-| Refresh token rotation | `refresh_tokens` (revoke old, insert new) | No window where neither token is valid, or both are |
-| Leave request submission (auto-rejected path) | `leave_requests`, `deductions` | A logged deduction with no corresponding request (or vice versa) is inconsistent |
-| Revoke user | `users`, `refresh_tokens`, `audit_log` | Access must be fully cut, not partially |
-| Pricing: create project | `projects`, `project_lines`, `direct_costs`, `scenarios` | Same discipline already present in today's `db.transaction()` usage — carried forward |
+| Employees Portal | `/` (and `/employees`, which redirects to `/`) | The landing page for every role. Leave/time-off, KPI scoring, roster, team directory, requests center. The newest, most actively developed part of the app. |
+| Margin Planner | `/planner` | The **original** Pricing Portal — a single 2700+ line HTML file (`margin-planner_1.html`) with its backend still living directly in `index.js`. Never migrated into the module structure the rest of the app uses (see §3.1). |
+| Commercial Lead dashboard | `/commercial-lead` | Live ClickUp-sourced pipeline/deals reporting for the commercial team. |
+| CEO Dashboard | `/ceo` | Manager/admin-only company-health dashboard. Its own `views/js` app. |
+| Login | `/login` | Sign in, self-service two-step signup, forgot/reset password. The one place authentication UI lives; every other surface redirects here on a failed silent-refresh. |
 
-### 6.3 Indexes — explicit rule
-
-**Every foreign key column gets an explicit index.** Postgres does not automatically index the referencing side of a foreign key (only the referenced/primary-key side) — this is a common, easy-to-miss production gap. Additional indexes:
-
-- `users.email`, `users.google_sub` — unique
-- `refresh_tokens.token_hash`, `refresh_tokens.user_id`
-- `employee_roster.email`, `employee_roster.clickup_id` — unique; `employee_roster.manager_employee_id`, `employee_roster.user_id` — unique
-- `leave_requests.employee_id`, `leave_requests.status`; composite `(employee_id, start_date, end_date)` for overlap/clash-rule queries
-- `audit_log.actor_user_id`, `audit_log(target_type, target_id)`, `audit_log.created_at`
-
-### 6.4 Constraints
-
-- CHECK constraints on `TEXT` columns for enums (`role`, `leave_requests.status`, `module_code`) — **not** native Postgres `ENUM` types. Reasoning: enum-type migrations (`ALTER TYPE ... ADD VALUE`) are more disruptive than a CHECK-constraint migration, and this project has already revised its role model more than once during design — additive changes to these value sets are a realistic, recurring need, not a hypothetical.
-- Foreign keys default to `ON DELETE RESTRICT`, given the revoke-not-delete policy — nothing should be able to cascade-destroy retained history. In practice, no code path ever hard-deletes a `users` or `employee_roster` row (revoke is a soft-delete flag), which makes this mostly a defensive guarantee rather than an active concern.
-
-### 6.5 Optimistic locking — targeted, not general
-
-**Decision: no version-column optimistic locking anywhere, as a general mechanism.** At this scale (single company, small team, no reported contention), it's complexity without a current problem to solve.
-
-**Instead:** state-transition writes use a **status-guarded conditional UPDATE** — cheap, targeted, solves the actual realistic race (two managers approving the same pending request simultaneously) without a general-purpose scheme:
-
-```sql
-UPDATE leave_requests SET status = 'approved', ... WHERE id = ? AND status = 'pending'
-```
-
-If the affected-row-count is 0, the request was already acted on — return a 409 conflict. The same pattern already governs refresh-token rotation (§4.2). This is the pattern for any "this action should apply exactly once to a specific state," applied where it's actually needed rather than everywhere.
+Single company (CEAS), no multi-tenancy, roughly 20 real user accounts. That scale is a load-bearing fact for several decisions below (no Redis, no rate limiting beyond auth, no read replica) — they're not oversights, they're sized to reality.
 
 ---
 
-## 7. API Structure & Routing Strategy
-
-See `docs/api-guidelines.md` for the full convention (response envelope, naming, pagination stance, error shape, versioning decision). Summary: `/api/<module>/<resource>`, static frontends at `/pricing` and `/employees`, consistent `{ data }` / `{ error: { message, code, details } }` envelopes across all three modules, no API versioning (single deployable, no independent client release cadence to version against).
-
----
-
-## 8. Audit Logging
-
-**New in this revision.** See ADR-007 for full reasoning; summary here.
-
-Operational logs (§10) answer "what is the system doing and why did it break." Audit logs answer "who did what, to what, when" — a durable, queryable, append-only record distinct from stdout logs, which are typically short-retention and not structured for per-actor queries.
+## 2. Real folder structure
 
 ```
-audit_log
-  id, actor_user_id, action, target_type, target_id, metadata (jsonb), correlation_id, created_at
+server/
+  src/
+    index.js                 # entry point: Express app assembly, AND the entire
+                              # original Pricing/Margin-Planner backend, inline
+                              # (see §3.1 — this is the one real architectural
+                              # inconsistency in an otherwise-layered codebase)
+    db.js                     # better-sqlite3 connection, WAL mode, the base
+                              # inline schema (pre-migration-system tables), and
+                              # runMigrations() on boot
+    config.js                 # the only file allowed to read process.env
+    auth.js, backup.js, create-user.js, seed-owner.js, test-email.js,
+    marginPlannerSummary.js   # small standalone CLI/utility scripts, run via
+                              # npm scripts (npm run seed, npm run backup:snapshot, ...)
+
+    db/
+      migrationRunner.js       # custom, hand-rolled — not Knex, not any library
+      migrations/               # 23 numbered .js files as of this writing, each
+                                  # exporting up(db); tracked in a schema_migrations
+                                  # table; see docs/database.md
+
+    common/                    # shared by every module — see §5
+      audit.js
+      catchAsync.js
+      correlationId.js
+      errorHandler.js
+      errors.js                 # AppError, ValidationError
+      notFoundHandler.js
+      permissions.js             # canManageUsers/canAssignRole/canModifyStatus —
+                                   # small named functions, not a resolved
+                                   # permission-string map (see §6.2)
+      logger.js                   # structured JSON to rotating files on disk
+      constants/roles.js
+      middleware/requireRole.js
+      integrations/                # clickupClient.js, clickupWebhookAuth.js,
+                                     # resendClient.js — every third-party
+                                     # HTTP integration lives here, never inline
+                                     # in a service
+      realtime/                    # Socket.IO wiring (see §9)
+
+    modules/
+      auth/
+        controllers/ services/ repositories/ models/ errors.js routes/ container.js
+        jwt.js, hash.js            # token signing/verification, bcrypt wrappers —
+                                     # live inside auth/, never in common/ or utils/,
+                                     # so no other module can mint or verify a
+                                     # session token directly
+        middleware/authenticate.js
+        views/                      # the /login frontend (see §10)
+
+      employees/
+        controllers/ services/ repositories/ models/ errors.js routes/ container.js
+        views/                      # the / (Employees Portal) frontend
+
+      management/
+        container.js, index.js, routes/    # shared wiring for both dashboards below
+        commercial-leads/
+          controllers/ services/ repositories/ models/ container.js routes/
+          jobs/, views/
+        ceo-dashboard/
+          controllers/ services/ repositories/ models/ container.js routes/
+          views/
+
+  public/
+    logo-light.png, logo-dark.png
+    404.html                        # branded 404 page (server/src/common/notFoundHandler.js)
+    shared/                          # browser code shared across multiple frontends —
+      accountMenu.js, accountMenu.css
+      accountSettings.js
+      orgConstants.js
+      departments.js
+                                     # NOT yet extended to the fetch-wrapper/toast
+                                     # pattern each frontend still reimplements
+                                     # separately (apiClient.js, dom.js) — a real,
+                                     # concrete gap, not a planned omission
+
+  margin-planner_1.html             # the Margin Planner frontend — one large,
+                                     # self-contained HTML file, no module system
+  render.yaml                        # Render deploy config
+  scripts/backup/                     # off-host backup automation (see §11)
+
+docs/
+  adr/                               # real decisions, some carried out, some not —
+                                      # see §12
+  governance/implementation-tracker.md  # the one doc in this repo that stays
+                                          # honestly in sync with what's shipped;
+                                          # read this for current feature status,
+                                          # not this file
 ```
 
-Lives in `common/audit/` (repository + a thin `record()` service), not inside any single module, since it's used by all three. Called **explicitly, inline** from services at the points that matter — no event system (see ADR-008 for why that's deferred):
-
-- Role/module-access changes
-- Salary edits (`pricing` — `team_members.salary`)
-- Leave approvals/rejections
-- User revocations
-- Manager reassignment
-- Any future action matching this shape
-
-A minimal admin-only read endpoint (`GET /api/audit-log`) exposes it for review. Entries are never updated or deleted at the application layer — immutability is part of what makes it an audit trail rather than just another table. Retention policy (how long entries are kept) is a compliance/legal question, not an architecture one — noted as an open policy question, not assumed.
+No `utils/` directory exists at the top level (the old plan reserved one; nothing ever needed it — `common/` covers every actual cross-module need so far). No `app.js`/`server.js` split — `index.js` does both app assembly and `httpServer.listen(...)`.
 
 ---
 
-## 9. Middleware Pipeline
+## 3. Module boundaries & dependency rules
 
+**The rule, and it holds:** a module may depend on `common/`, `config.js`, and its own internals. It may never `require()` another module's `services/`, `repositories/`, or `models/` directly — only that module's top-level barrel export (e.g. `require('../auth')`, which exposes `{ router, authenticate, verifyAccessToken }`, never `require('../auth/services/authService')`).
+
+This was checked directly, not assumed: a repo-wide grep for cross-module `services/`/`repositories/`/`models/` imports across `auth`, `employees`, and `management` (including `management`'s own two sub-apps reaching into each other) found **zero violations**. The two cross-module imports that do exist (`management/ceo-dashboard/container.js` and `management/commercial-leads/container.js`, each doing `require('../../auth')`) both go through auth's public barrel, exactly as intended. This is a genuinely well-kept property of the newer code and worth protecting.
+
+The one intentional cross-module data reference is `employees.employees.user_id → auth.users.id`, one-directional (`auth` has no knowledge `employees` exists).
+
+### 3.1 The one real exception: the legacy Pricing/Margin-Planner backend
+
+Every route under `/api/state`, `/api/team`, `/api/projects`, `/api/expenses`, `/api/settings`, etc. is defined directly in `index.js` — no `controllers/`, no `services/`, no `repositories/`. Request handlers call `db.prepare(...).run()` directly, inline. Business logic (serialization, validation via a hand-rolled `numOrDefault` helper, audit calls) lives at module scope in the same file as the Express route wiring.
+
+This is not a bug — the app works, is used daily, and rewriting working code with no immediate need is exactly the kind of speculative churn this project's own engineering principles argue against. But it is a real, standing exception to the layering rule the rest of this document (and `CLAUDE.md`) states as non-negotiable, and any new engineer reading the codebase top-down will notice the inconsistency immediately. `docs/migration-plan.md` originally planned to port this into `modules/pricing/` — that never happened, and there's no `modules/pricing/` directory today. If this code needs a real change (a new endpoint, a bug that requires touching the write path), that's the natural moment to extract just the touched piece into the standard layering rather than adding another inline handler to `index.js`.
+
+---
+
+## 4. Dependency injection — composition root
+
+**Manual factory-function DI, no framework.** This part of the original plan (ADR-0006) was actually built, and matches every module. Every repository, service, and controller is a factory function taking its dependencies as explicit parameters; each module's `container.js` wires its own layer once, at require-time:
+
+```js
+// modules/employees/container.js (real, current file)
+const employeeRepository = require('./repositories/employeeRepository');
+const leaveRequestRepository = require('./repositories/leaveRequestRepository');
+// ...16 repositories, 5 models, several rule/service modules...
+
+const audit = require('../../common/audit');
+const logger = require('../../common/logger');
+const { authenticate } = require('../auth');           // public barrel, not internals
+
+const timeOffService = require('./services/timeOffService')({
+  leaveRequestRepository, employeeRepository, /* ... */ audit,
+});
+const timeOffController = require('./controllers/timeOffController')({ timeOffService });
+
+module.exports = { router: /* ... */, /* ... */ };
 ```
-1. correlationId          — first; everything after wants the ID
-2. requestContext.init    — opens an AsyncLocalStorage store for this request
-3. helmet()                — security headers (see docs/security.md)
-4. express.json({ limit }) — body parsing, size-limited
-5. cookieParser()           — refresh-token cookie only
-6. requestLogger             — logs request start; logs completion on res 'finish'
-7. rateLimit (auth routes stricter than general API)
-8. [per-route] authenticate → authorize(...) → validate(schema) → controller
-9. /health, /ready          — mounted before auth, unauthenticated
-10. 404 handler
-11. errorHandler             — must be last
-```
 
-Order reasoning unchanged from Phase 2 (`authenticate` before `authorize`, `validate` after `authorize`, `errorHandler` last) — `helmet`/`rateLimit` added per the security review, `/health`/`/ready` explicitly called out as unauthenticated and mounted early.
+`routes/` files import only from their own module's `container.js`, never construct a service or repository inline. This is genuinely followed everywhere, including inside `management`'s two sub-apps.
+
+**Why this over a DI container library:** dependencies are visible in a function signature, tests can pass plain mock objects into a factory directly (no `jest.mock` path-interception), and it adds no new dependency. See ADR-0006 for the full reasoning — this is one of the ADRs that was actually carried out as written.
 
 ---
 
-## 10. Logging Strategy
+## 5. What actually lives in `common/`
 
-Structured JSON to stdout, `LOG_LEVEL`-gated, singleton logger, every line auto-includes `timestamp`, `level`, `message`, `correlationId`, `userId` (via `requestContext`, AsyncLocalStorage — see ADR discussion in the Phase 2 draft, unchanged). **Never logs secrets** — passwords, tokens, and hashes are never passed into logger metadata, even incidentally via a wholesale `req.body` dump on auth routes. Built as a thin wrapper so a transport (Sentry, Datadog) can be swapped in later without call-site changes.
-
----
-
-## 11. Error Handling
-
-`AppError` (`message`, `statusCode`, `isOperational`, plus `code` — see `docs/api-guidelines.md`). Per-module `errors.js` exporting factories, not singletons. `catchAsync(fn)` wraps every controller. Centralized `errorHandler` logs with correlation ID and returns the standard envelope; never leaks internals on non-operational (unexpected) errors.
-
----
-
-## 12. Validation Strategy
-
-Zod schemas in each module's `validators/`. The `validate(schema)` middleware **replaces** `req.body`/`params`/`query` with the parsed (validated, coerced, defaulted) result — that parsed object is the DTO; no separate hand-written DTO class layer, since it would only duplicate what Zod already provides. Controllers pass the parsed object (plus relevant `req.user`/`req.params` context) into services; services never see raw `req`.
-
-**Transport validation** (shape/type/presence) lives in `validators/`. **Business validation** (notice periods, auto-reject conditions, WFH quota, clash pairs, handover-complete gate — anything requiring a DB lookup) lives in the service layer. This is what makes *"the request is validated against the time-off policy before reaching ClickUp"* concrete: that check runs in `employees/services/leaveRequest.service.js`, before anything is written to our DB, let alone (optionally) mirrored to ClickUp.
-
----
-
-## 13. Repository & Service Layer
-
-Unchanged in principle from Phase 2, now expressed as DI factories (§3): repositories are pure data access via Knex (no business logic, no `req`/`res`), services own business logic and are the only layer calling repositories, controllers translate HTTP ↔ service calls and nothing else. "Models" means row-shape mappers and enum-like constants, not ORM classes — no ORM is introduced; this schema doesn't justify one.
-
----
-
-## 14. Security
-
-Full detail in `docs/security.md`. Headline items and why each exists:
-
-| Control | Why |
+| File | Real purpose |
 |---|---|
-| Helmet | Sensible security headers with near-zero effort/risk |
-| Rate limiting (stricter on `/api/auth/*`) | Blunts credential-stuffing/brute-force against login, signup, refresh |
-| Access token in memory, refresh token only in httpOnly cookie | CSRF resistance for the bulk of requests; see §4.2 |
-| **No permissive CORS** (dropping today's `origin: true, credentials: true`) | Same-origin deployment means we don't need cross-origin credentialed requests at all; today's config is a real, existing vulnerability |
-| CSP (nonce-based for the single inline `<script>` per page) | Defense-in-depth against XSS, which the token-in-memory model now depends on |
-| Parameterized queries only (Knex, no raw string interpolation) | SQL injection prevention |
-| Password minimum length (≥10 chars) + bcrypt cost 12 | Hashing strength matters more than composition rules (NIST guidance) |
-| `.env`-only secrets, validated at startup, never logged | Prevents the kind of exposure the current Employees Portal has today |
-| `npm audit` / Dependabot in CI | Catches known-vulnerable dependencies before they ship |
+| `errors.js` | `AppError` (message, statusCode, isOperational) and `ValidationError`. Every module extends `AppError` with its own subclass in its own `errors.js` (e.g. `EmployeesError`) rather than sharing one generic error type. |
+| `errorHandler.js` | The final Express error-handling middleware. Logs the full error + stack + correlation ID server-side; returns `{ error: "<message>" }` to the client — the *exact* message for a known `AppError`, a generic "The request could not be understood." for any other 4xx, and a generic "Internal server error." for anything else. Never leaks a stack trace or raw DB error to the client. |
+| `notFoundHandler.js` | Added during this session's error-handling audit — registered right before `errorHandler`. Unmatched page routes get a branded `public/404.html`; unmatched `/api/*` routes get the same `{ error }` JSON shape every other endpoint uses, instead of Express's bare default `Cannot GET /x` HTML page. |
+| `catchAsync.js` | Wraps an async controller so a rejected promise reaches `errorHandler` via `next(error)`, the same way a synchronous throw already would. |
+| `audit.js` | `record({ userId, username, action, entityType, entityId, details, ip })` — inserts into `audit_log` and *also* mirrors the same event into the structured JSON logs (tagged with the actor's permanent `users.uuid`, not just the per-request correlation ID), so a support investigation can grep logins, actions, and errors for one person in one place. Fire-and-forget: a failed audit write is logged but never fails the request it's describing. |
+| `correlationId.js` | One `crypto.randomUUID()` per request, set on `req.correlationId` and echoed as `X-Correlation-Id`. No `AsyncLocalStorage`-based request-context propagation — correlation ID is passed explicitly where needed, not read from ambient context. |
+| `logger.js` | Structured JSON, written to rotating files on the same persistent disk as the database (`DB_DIR/logs`), 14-day retention. Not a stdout-only logger, and not wired to an external transport (Sentry/Datadog) — everything lives on the Render disk today. |
+| `permissions.js` | Three small named functions (`canManageUsers`, `canAssignRole`, `canModifyStatus`) encoding the "admin can touch anyone; manager/operations can touch anyone except an admin account" rule. Not a resolved permission-string/role→permission map — see §6.2. |
+| `constants/roles.js` | The single source for the six real role strings (see §6.1). |
+| `middleware/requireRole.js` | `requireRole([...roles])` — the only general-purpose authorization middleware in the app. Everything more specific than "is this role in this set" is a service-layer check. |
+| `integrations/` | `clickupClient.js` (the only place `CLICKUP_API_KEY` is read), `clickupWebhookAuth.js` (HMAC signature verification for inbound webhooks), `resendClient.js` (transactional email). |
+| `realtime/` | Socket.IO server, attached to the same `http.createServer(app)` instance `index.js` creates — not a separate process or port. |
+
+No `helmet`, no CSP, no generalized `rateLimit` middleware, no `AsyncLocalStorage` request context, no `common/middleware/validate.js`, no `common/middleware/authorize.js`. None of these are wired anywhere in the running app — see §7 and §8 for what's actually in their place.
 
 ---
 
-## 15. Caching
+## 6. Authentication & authorization — mostly matches the original plan
 
-No caching layer is introduced now. Never cache anything auth/permission-decision-related beyond the already-accepted 15-minute access-token staleness window. Redis/distributed caching is **explicitly out of scope** — current and projected scale (single company, one Postgres instance, single deployable) doesn't justify the operational cost. If a specific hot, expensive, cacheable query is identified later, an in-process TTL map is the first escalation step; Redis becomes justified only if the app ever runs multiple instances needing shared cache state.
+This is the one area where the original architecture document turned out accurate to what was actually built. The access/refresh token split, specifically, is real and correctly implemented:
 
----
+### 6.1 Real identity model
 
-## 16. Health Endpoints
+Self-service signup (no ClickUp-roster gate — that was the plan; reality is simpler): `POST /api/auth/register` creates a `users` row and, in the same flow, an `employees` row via a provisioning callback the `employees` module registers into `auth` at boot (`authModule.setEmployeeProvisioner(...)` in `index.js`) — this is how the two modules cooperate without either importing the other's internals.
 
-- `GET /health` — liveness. Confirms the process is alive and responsive. No dependency checks. Used by the hosting platform to decide whether to restart the process.
-- `GET /ready` — readiness. Confirms the app can serve real traffic (DB pool responds to a trivial query). Relevant once more than one instance or a deploy-time traffic cutover is involved.
+Six real roles, defined once in `common/constants/roles.js` and enforced by a CHECK constraint on `users.role`: `employee`, `manager`, `operations`, `finance`, `admin`, `people_culture`. No `user_module_access` join table, no per-user module grants — role alone gates everything, checked per-route via `requireRole([...])` and per-action via small service-layer functions (`canManageUsers`, `canViewBreakdown`, etc., each named for exactly what it decides).
 
-Both unauthenticated, both return minimal bodies (no internal details).
+### 6.2 Session mechanics — this part is real and correct
 
----
+- **Access token**: short-lived JWT (`JWT_EXPIRES_IN`, 2h in production), returned in the response body, held in **frontend memory only** — a module-scoped JS variable, never `localStorage`, never a cookie — across all four frontends. (The legacy Margin Planner used to keep it in `localStorage`; that was fixed in a prior pass — a one-time `localStorage.removeItem('pricingPortalAuth')` cleanup line still runs on load specifically to purge any token left over from before that fix.)
+- **Refresh token**: opaque token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, scoped to `/api/auth/refresh` only, backed by a `refresh_tokens` table (hashed token, revocation timestamp/reason).
+- **Role and active-status are re-read from the DB on every authenticated request** (`authenticate` middleware), not trusted from the JWT payload — so a deactivation or role change takes effect immediately, not only once a 2-hour-old token expires.
+- **No permissive CORS.** The app is same-origin by design — one deployable serves the API and all four frontends — so no CORS middleware exists at all. (An earlier `cors({ origin: true, credentials: true })` config, which reflected any origin back as allowed, was identified and removed as a real vulnerability, not a hypothetical one.)
 
-## 17. Graceful Shutdown
+### 6.3 What's simpler than planned, and why that's fine
 
-On `SIGTERM`/`SIGINT`:
-1. Stop accepting new connections (`server.close()`).
-2. Cancel the roster-sync cron job (no dangling timers).
-3. Drain in-flight requests, bounded by a timeout (e.g. 10s), after which remaining connections are force-closed.
-4. Close the Knex connection pool.
-5. Exit.
-
-Uncaught exceptions and unhandled promise rejections are logged as non-operational errors, and the process **exits** rather than continuing in an unknown state — under a process manager (Render, etc.) that restarts it, a clean crash-and-restart is safer than limping on.
+No permission-string resolution engine, no `authorize(...)` middleware, no DB-backed per-user overrides. Authorization is: `requireRole([...])` at the route for coarse checks, plus a handful of named, single-purpose functions at the service layer for anything resource-specific ("is this leave request's employee the same person, or their direct manager?"). For six roles across four surfaces with no multi-tenancy, this is proportionate — the original plan's permission-string map would have added a layer of indirection with no current caller that needs it. If a genuine need for per-user, DB-backed permission overrides ever appears, that's a real trigger to revisit; none has appeared yet.
 
 ---
 
-## 18. Deployment Architecture
+## 7. Database — real engine, real migration system
 
-Unchanged from Phase 2: single Express deployable, staging + production environments, managed Postgres, migrations as an explicit deploy step (`npm run migrate`), roster sync via in-process `node-cron` (documented single-instance caveat unchanged — see `docs/operations.md`).
+**Engine: `better-sqlite3` (synchronous SQLite), not PostgreSQL.** The move to Postgres was a real, considered decision (ADR-0003) that was never carried out. WAL mode is enabled. The database is a single file on a mounted Render persistent disk (`DB_DIR`, 1GB).
 
----
+**Migrations are real, just not Knex.** A hand-rolled runner (`server/src/db/migrationRunner.js`) applies numbered `.js` files from `server/src/db/migrations/` (23 as of this writing), each exporting `up(db)`, tracked in a `schema_migrations`-style table. This is a genuine, working, incrementally-evolved schema-versioning system — it just isn't the tool the original plan named.
 
-## 19. Testing Strategy
-
-Unit tests for services (repositories mocked/stubbed via the DI factories — no `jest.mock` needed), integration tests for critical routes via Supertest against the real `app.js`, CI-gated. Full detail in `docs/testing.md`.
+Full table-by-table detail lives in `docs/database.md`, which has had the same rewrite this file has.
 
 ---
 
-## 20. Frontend Architecture
+## 8. API structure & response shape
 
-Full detail in `docs/frontend-architecture.md`. Both frontends remain single HTML files for the initial backend migration (unchanged decision — migration-risk driven). The documented target frontend architecture (vanilla-JS ES modules, no framework, no bundler) is a separate, later initiative once the backend migration is stable.
+`/api/<module-prefix>/...` per module, mounted in `index.js` (`app.use('/api', authRouter)`, etc.). Static frontends at `/`, `/planner`, `/commercial-lead`, `/ceo`, `/login`.
 
----
+**Real error envelope: `{ "error": "<message>" }`** — a flat string, not the nested `{ error: { message, code, details } }` shape the original API guidelines describe. `common/errorHandler.js`'s own comment states this explicitly: the flat shape exists to match `margin-planner_1.html`'s `apiRequest` function, which reads `data.error` as a plain string, and changing it would break every existing frontend caller. **Success responses have no consistent envelope** — different endpoints return `{ team: [...] }`, `{ employees: [...] }`, `{ breakdown: [...] }`, etc., named per-resource rather than wrapped in a common `{ data }` key. This is the one area where `docs/api-guidelines.md` still describes a target that wasn't adopted — worth knowing if that file is consulted, since it isn't accurate to what a new endpoint should actually return (match the existing sibling endpoints in the same module instead).
 
-## 21. Explicit Backlog
-
-Unchanged from Phase 2 — see `docs/migration-plan.md` for how these are sequenced after the initial migration: P&C+manager handover approval workflow, live presence dashboard build-out, location-based work-week calendars, in-portal Pillar A form, automatic Pillar B scoring, leaderboard, onboarding/offboarding notifications, optional ClickUp mirroring of approved requests.
+**No API versioning** — single deployable, no independent client release cadence to version against. This part of the original plan matches reality.
 
 ---
 
-## 22. Related Documents
+## 9. Middleware pipeline — what's actually mounted, in order
 
-- `docs/adr/` — Architecture Decision Records for every major decision referenced above
-- `docs/security.md` — full security control list and reasoning
-- `docs/api-guidelines.md` — REST conventions, envelope, error shape
-- `docs/database.md` — living schema reference, kept in sync with migrations
-- `docs/frontend-architecture.md` — target frontend structure
-- `docs/coding-standards.md` — naming, layering, style
-- `docs/engineering-principles.md` — project philosophy, when to add abstraction
-- `docs/testing.md` — testing strategy detail
-- `docs/operations.md` — deploy/migrate/rollback/secret-rotation runbook
-- `docs/migration-plan.md` — milestone-by-milestone implementation plan
-- `CLAUDE.md` — condensed engineering constitution for AI-assisted sessions
+```
+1. correlationId                     — sets req.correlationId, X-Correlation-Id header
+2. /api/clickup/webhook               — mounted before express.json(), own express.raw()
+3. /api/employees/kpi/clickup-webhook — same reason, separate team-wide webhook
+4. express.json({ limit: '2mb' })
+5. cookieParser()                      — refresh-token cookie only
+6. static file mounts + page routes   — /, /planner, /commercial-lead, /ceo, /login,
+                                          /uploads/employees, shared /public assets
+7. /api routes                         — authRouter, management.router, employeesRouter
+   (each route individually applies authenticate / requireRole([...]) as needed —
+   there is no single blanket "everything under /api needs auth" middleware; a few
+   routes, like health and the ClickUp webhooks, are intentionally public or use
+   their own HMAC check instead of a user session)
+8. notFoundHandler                     — added this session; must run after every
+                                          route/static mount, before errorHandler
+9. errorHandler                        — must be last
+```
+
+No `helmet`, no generalized rate limiting (`express-rate-limit` is applied to exactly two routes: `/api/auth/login`-adjacent endpoints at 120 req/min, and `/api/auth/forgot-password` at 5 req/15min — nowhere else), no request-completion logger middleware, no readiness probe beyond a single `GET /api/health` returning `{ ok: true }` with no dependency checks. No graceful-shutdown handling — no `SIGTERM`/`SIGINT` listener anywhere in the codebase; the process relies entirely on the host (Render) to manage restarts.
+
+---
+
+## 10. Frontend architecture — already at the target state, just never documented as such
+
+The original plan treated "vanilla JS ES modules, no framework, no bundler" as a *future* initiative, separate from and after the backend migration. That's backwards from what happened: **the backend migration (to Postgres/Knex/`modules/pricing`) never happened, but the frontend target architecture already has, for three of the four surfaces.**
+
+- `employees/`, `commercial-leads/`, and `ceo-dashboard/` each have their own `views/js/` app using native `<script type="module">` ES modules — `import`/`export`, no bundler, no framework, no build step. Each has its own `apiClient.js` (fetch wrapper with silent-refresh-on-401 and error-message parsing), `dom.js` (tiny `$`/`escapeHtml`/`toast` helpers), and `state.js`.
+- **That per-app duplication is a real, current cost, not a planned structure.** All three `apiClient.js` files are near-identical hand-copies of each other; two of the three (`commercial-leads`, `ceo-dashboard`) had a real bug — silently discarding the server's actual error message — that existed in both places independently until this session's error-handling audit found and fixed it in both. The fix that already existed correctly in `employees/apiClient.js` simply hadn't been shared.
+- Genuine cross-app sharing already exists and works, via `server/public/shared/`: `accountMenu.js`/`.css`, `accountSettings.js`, `orgConstants.js`, `departments.js` — loaded as plain (non-module) `<script>` tags that attach to `window.*`, included by every frontend. Extending this same directory to cover `apiClient.js`/`dom.js` (or converting those specific shared files to ES modules importable by absolute path, since the browser supports that fine same-origin) is the natural next step, not a new pattern.
+- `/login` (`modules/auth/views/`) follows the same ES-module pattern.
+- `/planner` (`margin-planner_1.html`) is the one true outlier: a single ~2700-line HTML file with an inline `<script>`, no module system at all — the original Pricing Portal frontend, never touched by the ES-module migration the other three surfaces got. It does, correctly, keep its access token in memory only (a `_memoryAuth` module-scoped variable) rather than `localStorage` — that part was fixed even though the rest of the file's structure wasn't.
+
+No framework (React/Vue/etc.) and no bundler anywhere. That absence is a deliberate, ADR-tracked deferral (see `docs/adr/`), not a gap — nothing about this app's scale currently justifies one.
+
+---
+
+## 11. Deployment & operations — real, not planned
+
+Single Render web service (`render.yaml`), Node runtime, `rootDir: server`, `autoDeploy: true` — every push to the watched branch deploys directly to production. **No CI pipeline exists** (`.github/` doesn't exist in this repo) — no automated lint, test, or `npm audit` gate runs between a merge and a production deploy, despite `CLAUDE.md` describing CI as gating every merge. The only gate is manual review before merge.
+
+The database lives on a 1GB Render persistent disk (`DB_DIR=/var/data`). **Backup is a real, working script** (`scripts/backup/run-backup.sh`) using `better-sqlite3`'s online backup API (WAL-safe, unlike a raw file copy) — but it's triggered by `launchd` on one person's personal Mac, polling periodically because that laptop sleeps overnight, with failure notification via a local `osascript` desktop popup. There is no backup path that doesn't depend on that specific machine being powered on, and no external monitoring that would catch backups silently not running at all (as opposed to running and failing).
+
+---
+
+## 12. What the historical planning docs got right vs. wrong
+
+For anyone who reads `docs/adr/`, `docs/migration-plan.md`, or `docs/testing.md` after this file: those documents record a real plan that was made and then not executed, not a set of lies. Specifically:
+
+| Document | What it says | What actually happened |
+|---|---|---|
+| ADR-0003 | Move to PostgreSQL + Knex | Never done. Still `better-sqlite3`, still a hand-rolled migration runner. |
+| ADR-0001 | Three modules: `pricing`, `employees`, `auth` | `pricing` was never extracted (§3.1); a fourth module, `management` (with two sub-apps), was built instead and isn't mentioned in the ADR. |
+| ADR-0005 (authorization) | Resolved permission-string map | Simpler role-array + named-function checks were built instead (§6.3) — proportionate to 6 roles, not a shortfall. |
+| `docs/migration-plan.md` | Milestone-gated rewrite sequence, `employee_roster` table, `user_module_access` | None of this schema or sequencing exists. The real `employees`/`leave_requests`/KPI tables were built directly, incrementally, via the real migration system (§7), without the planned rewrite. |
+| `docs/testing.md` | Unit + integration test strategy, CI-gated | Zero automated tests exist (`npm test` → "Missing script"), and no CI exists to gate anything. |
+| ADR-0006 (manual DI) | Factory-function DI, no framework | **Built exactly as decided** — the one plan that was carried out end-to-end. |
+| ADR-0002 (auth) | Access-token-in-memory / refresh-in-httpOnly-cookie split | **Built exactly as decided** (§6.2). |
+
+Two ADRs matching reality out of the ones checked is not a coincidence worth reading too much into either direction — it reflects that this app grew through real, pressing feature work (leave management, KPI scoring, commercial reporting) rather than through executing the original migration plan in sequence. `docs/governance/implementation-tracker.md` is the document that has stayed honestly current with that growth; treat it, not the planning documents above, as the source for "what does this app actually do today."
+
+---
+
+## 13. Related documents
+
+- `docs/database.md` — real schema, rewritten alongside this file
+- `docs/governance/implementation-tracker.md` — current, living feature-by-feature status; the most reliably up-to-date document in this repo
+- `docs/adr/` — real decision records; §12 above notes which ones match reality
+- `docs/coding-standards.md`, `docs/engineering-principles.md` — naming/layering/philosophy; largely still accurate for the newer modules (§3), not for `index.js` (§3.1)
+- `docs/security.md` — written against the original plan; cross-check specific claims (helmet, CSP, rate limiting) against §5/§9 above before trusting them
+- `docs/api-guidelines.md` — describes the nested envelope that was **not** adopted; see §8 for the real shape
+- `docs/migration-plan.md`, `docs/testing.md`, `docs/frontend-architecture.md` — historical planning documents; see §12 before treating anything in them as current
+- `CLAUDE.md` — repo-root instructions for AI-assisted sessions; still broadly accurate for module layering and security rules, less so for the specific file paths (`validators/`, `common/constants/permissions.js`) it names, which don't exist under those names in the real tree
