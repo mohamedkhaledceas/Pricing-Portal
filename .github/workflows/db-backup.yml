@@ -37,10 +37,18 @@ jobs:
       REMOTE_APP_DIR: /opt/render/project/src/server
     steps:
       - name: Configure SSH
+        # RENDER_BACKUP_SSH_KEY holds the private key base64-encoded as one
+        # line, not the raw multi-line PEM/OpenSSH block — a raw multi-line
+        # secret is prone to silent newline mangling when pasted into
+        # GitHub's secret text box (this is what caused the first run's
+        # "error in libcrypto" / "Permission denied (publickey)" failure).
+        # Base64 has no embedded newlines to lose, so there's nothing for
+        # copy-paste to corrupt.
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.RENDER_BACKUP_SSH_KEY }}" > ~/.ssh/render_backup_ci
+          echo "${{ secrets.RENDER_BACKUP_SSH_KEY }}" | base64 -d > ~/.ssh/render_backup_ci
           chmod 600 ~/.ssh/render_backup_ci
+          ssh-keygen -y -f ~/.ssh/render_backup_ci > /dev/null || (echo "::error::Decoded private key is invalid — check that RENDER_BACKUP_SSH_KEY holds the exact base64 output of the key file, with no extra whitespace." && exit 1)
           ssh-keyscan -H ssh.oregon.render.com >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Take remote snapshot
