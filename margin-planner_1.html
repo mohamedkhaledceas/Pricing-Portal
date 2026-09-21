@@ -234,6 +234,18 @@ body[data-mode="admin"] .bd-only{display:none !important}
 .historyEntry:last-child{border-bottom:none}
 .historyEntry .historyWhen{color:var(--muted); font-size:11.5px}
 #historyPanel[hidden], #historyBackdrop[hidden]{display:none}
+/* Shown when the initial data load fails for a reason other than an
+   actual expired session (a real 401 already redirects to /login via
+   apiRequest's own handling) — covers the app shell, which by this point
+   is already showing default/demo state, not real data, so it must not
+   be left visible looking like the user's real projects. */
+#loadErrorOverlay{
+  position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
+  background:rgba(4,41,64,0.45); padding:24px;
+}
+#loadErrorOverlay[hidden]{display:none}
+#loadErrorOverlay .card{max-width:360px; width:100%; text-align:center; margin-bottom:0}
+#loadErrorOverlay p{margin:0 0 14px}
 #printArea h1{font-size:20pt; margin:0 0 2px}
 #printArea .doc-meta{color:#444; font-size:10.5pt}
 #printArea table{width:100%; border-collapse:collapse; margin-top:14px}
@@ -736,6 +748,13 @@ body[data-mode="admin"] .bd-only{display:none !important}
 </div>
 
 <div id="printArea"></div>
+
+<div id="loadErrorOverlay" hidden>
+  <div class="card">
+    <p>Couldn't load your data.</p>
+    <button id="btnLoadErrorRetry" class="btn primary">Retry</button>
+  </div>
+</div>
 </div>
 
 <script>
@@ -2683,6 +2702,7 @@ function bindNavButtons(){
   $('#btnCommercialLead').addEventListener('click', () => {
     window.location.href = '/commercial-lead';
   });
+  $('#btnLoadErrorRetry').addEventListener('click', () => { window.location.reload(); });
 }
 
 /* ---------- boot ---------- */
@@ -2738,8 +2758,19 @@ $('#fitStart').value = thisMonth();
      a real, editable server id. */
   const ok = await hydrateFromApi();
   if (!ok) {
-    setStoredAuth(null, null);
-    updateLoginUi();
+    /* A real 401 already cleared auth and redirected via apiRequest's own
+       401 handling above — nothing more to do here. Any other failure
+       (a network drop, a 500, a transient hiccup) must NOT clear a still-
+       valid session or force the user back to the login screen: it
+       previously did both unconditionally, silently logging the user out
+       for reasons that had nothing to do with their session actually
+       expiring. Since `state` here is still local sample data, not the
+       user's real projects, block interaction with a retry overlay
+       instead of leaving demo data on screen looking like it's real. */
+    const stillAuthed = !!(getStoredAuth() && getStoredAuth().token);
+    if (stillAuthed) {
+      $('#loadErrorOverlay').hidden = false;
+    }
   }
 })();
 })();
