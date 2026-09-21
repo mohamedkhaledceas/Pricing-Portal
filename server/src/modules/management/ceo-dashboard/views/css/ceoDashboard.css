@@ -268,3 +268,15 @@ button.primary{background:var(--s1); border-color:transparent; color:#fff; font-
 
 #loginGate{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; text-align:center; padding:24px}
 #app{display:none}
+
+/* Same fixed bottom toast used across the other three pages (employees'
+   dom.js `toast()`) — this page had no error-surfacing mechanism at all
+   before switchEntity() needed one. */
+#toast{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+  background:var(--surface-1); border:1px solid var(--border); color:var(--ink);
+  padding:10px 16px; border-radius:8px; box-shadow:var(--shadow);
+  font-size:13px; z-index:50; max-width:400px;
+}
+#toast.toast-danger{border-color:var(--critical); color:var(--critical)}
+#toast.toast-info{border-color:var(--good); color:var(--good-txt)}

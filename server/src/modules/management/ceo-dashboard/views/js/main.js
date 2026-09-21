@@ -1,4 +1,4 @@
-import { $, $$ } from './dom.js';
+import { $, $$, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
 import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
@@ -24,13 +24,26 @@ async function loadEntity(entityKey) {
 }
 
 async function switchEntity(entityKey) {
+  // This had no try/catch at all before — a failed fetch here (unlike the
+  // one in init()) was a plain unhandled promise rejection: the tab looked
+  // selected (aria-pressed already flipped below) but the content never
+  // updated, with nothing telling the user anything went wrong. Revert
+  // both state.entity and the tab selection on failure so the UI doesn't
+  // lie about which entity is actually showing.
+  const previousEntity = state.entity;
   state.entity = entityKey;
   $$('.seg [data-ent]').forEach((o) => o.setAttribute('aria-pressed', String(o.dataset.ent === entityKey)));
-  if (!state.snapshotCache[entityKey]) {
-    await loadEntity(entityKey);
+  try {
+    if (!state.snapshotCache[entityKey]) {
+      await loadEntity(entityKey);
+    }
+    renderAll();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (err) {
+    state.entity = previousEntity;
+    $$('.seg [data-ent]').forEach((o) => o.setAttribute('aria-pressed', String(o.dataset.ent === previousEntity)));
+    toast(err.message || 'Could not load that entity.', 'danger');
   }
-  renderAll();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function bindUi() {
