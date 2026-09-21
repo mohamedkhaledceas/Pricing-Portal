@@ -1,4 +1,4 @@
-import { $, escapeHtml } from './dom.js';
+import { $, escapeHtml, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { statusBadge } from './kpiShared.js';
@@ -10,7 +10,15 @@ async function downloadCsv(employeeId) {
   const res = await fetch(`/api/employees/kpi/${employeeId}/history/export`, {
     headers: { Authorization: 'Bearer ' + state.accessToken },
   });
-  if (!res.ok) return;
+  if (!res.ok) {
+    let message = 'Export failed. Please try again.';
+    try {
+      const body = await res.json();
+      if (body && body.error) message = body.error;
+    } catch (err) {}
+    toast(message, 'danger');
+    return;
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

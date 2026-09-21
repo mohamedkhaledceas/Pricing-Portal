@@ -116,7 +116,15 @@ async function downloadUsersCsv() {
   const res = await fetch('/api/users/export', {
     headers: { Authorization: 'Bearer ' + state.accessToken },
   });
-  if (!res.ok) return;
+  if (!res.ok) {
+    let message = 'Export failed. Please try again.';
+    try {
+      const body = await res.json();
+      if (body && body.error) message = body.error;
+    } catch (err) {}
+    toast(message, 'danger');
+    return;
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
