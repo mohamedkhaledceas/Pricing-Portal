@@ -20,6 +20,7 @@ const logger = require('./common/logger');
 const audit = require('./common/audit');
 const correlationId = require('./common/correlationId');
 const errorHandler = require('./common/errorHandler');
+const notFoundHandler = require('./common/notFoundHandler');
 const { ValidationError } = require('./common/errors');
 const { initRealtime } = require('./common/realtime');
 const requireRole = require('./common/middleware/requireRole');
@@ -892,6 +893,7 @@ app.put('/api/state', authMiddleware, requirePlannerAccess, (req, res) => {
   });
 });
 
+app.use(notFoundHandler);
 app.use(errorHandler);
 
 /* http.createServer(app) instead of app.listen(...) directly — Socket.IO

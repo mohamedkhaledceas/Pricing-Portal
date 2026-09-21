@@ -94,49 +94,60 @@ function bindUi() {
 
   connectRealtime(); // needs state.accessToken, which bootstrapAuth() above just set
 
-  const meRes = await apiFetch('/api/employees/me');
-  state.myEmployee = meRes.employee;
+  // Everything from here down can fail on a transient server hiccup (not
+  // just a real auth problem, which the bootstrapAuth() check above already
+  // handled) — without this try/catch, a failure left the page stuck on
+  // "Checking your session…" forever, since nothing ever hid it or reached
+  // the code that shows #app.
+  try {
+    const meRes = await apiFetch('/api/employees/me');
+    state.myEmployee = meRes.employee;
 
-  // "My Team" and "Teams" are always visible now — every account is
-  // provisioned with an employee profile at signup (no more manual roster
-  // add as a separate step), and renderTeam()/renderTeamsDirectory() both
-  // already degrade gracefully (empty sections, not errors) for the rare
-  // account with no employee record (e.g. one made via create-user.js).
-  // Admin and P&C can both manage the roster with no employee profile at
-  // all — the backend's canManageRoster grants it on auth role alone.
-  const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
-  $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
-  const canSeeLeaveReport = state.currentUser && LEAVE_REPORT_ROLES.includes(state.currentUser.role);
-  $('#maintab-leave-report').style.display = canSeeLeaveReport ? '' : 'none';
-  $('#btnCeoDashboard').hidden = !(state.currentUser && CEO_DASHBOARD_ROLES.includes(state.currentUser.role));
-  $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
-  const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
-  window.AccountMenu.mount($('#accountMenuWrap'), {
-    apiFetch,
-    currentUser: state.currentUser,
-    getAccessToken: () => state.accessToken,
-    canManageUsers,
-    onUsersClick: () => switchMainTab('users'),
-    onLogout: doLogout,
-    setTheme,
-    updateAppearanceControls,
-  });
+    // "My Team" and "Teams" are always visible now — every account is
+    // provisioned with an employee profile at signup (no more manual roster
+    // add as a separate step), and renderTeam()/renderTeamsDirectory() both
+    // already degrade gracefully (empty sections, not errors) for the rare
+    // account with no employee record (e.g. one made via create-user.js).
+    // Admin and P&C can both manage the roster with no employee profile at
+    // all — the backend's canManageRoster grants it on auth role alone.
+    const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
+    $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
+    const canSeeLeaveReport = state.currentUser && LEAVE_REPORT_ROLES.includes(state.currentUser.role);
+    $('#maintab-leave-report').style.display = canSeeLeaveReport ? '' : 'none';
+    $('#btnCeoDashboard').hidden = !(state.currentUser && CEO_DASHBOARD_ROLES.includes(state.currentUser.role));
+    $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
+    const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
+    window.AccountMenu.mount($('#accountMenuWrap'), {
+      apiFetch,
+      currentUser: state.currentUser,
+      getAccessToken: () => state.accessToken,
+      canManageUsers,
+      onUsersClick: () => switchMainTab('users'),
+      onLogout: doLogout,
+      setTheme,
+      updateAppearanceControls,
+    });
 
-  $('#loginGate').style.display = 'none';
-  $('#app').style.display = 'block';
+    $('#loginGate').style.display = 'none';
+    $('#app').style.display = 'block';
 
-  renderNewRequestForm();
-  renderRules();
+    renderNewRequestForm();
+    renderRules();
 
-  // Lets /commercial-lead's own Users menu item deep-link here (this page is
-  // now the landing page at "/") rather than duplicating the Users view.
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('open') === 'users' && canManageUsers) {
-    switchMainTab('users');
-    params.delete('open');
-    const query = params.toString();
-    window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
-  } else {
-    switchMainTab('overview', $('#maintab-overview'));
+    // Lets /commercial-lead's own Users menu item deep-link here (this page is
+    // now the landing page at "/") rather than duplicating the Users view.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('open') === 'users' && canManageUsers) {
+      switchMainTab('users');
+      params.delete('open');
+      const query = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
+    } else {
+      switchMainTab('overview', $('#maintab-overview'));
+    }
+  } catch (err) {
+    $('#loginGateChecking').hidden = true;
+    $('#loginGateError').hidden = false;
+    $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
   }
 })();
