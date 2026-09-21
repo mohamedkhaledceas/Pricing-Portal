@@ -75,6 +75,8 @@ function createTimeOffController({ timeOffService }) {
     const breakdown = timeOffService.getLeaveBreakdown({
       employeeId: Number(req.params.employeeId),
       actorAuthRole: req.user.role,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
     });
     return res.json({ breakdown });
   }

@@ -1,8 +1,10 @@
 import { $, escapeHtml } from './dom.js';
 import { apiFetch } from './apiClient.js';
 import { leaveTypeLabel } from './leaveTypes.js';
+import { mountDateRangeFilter } from './dateRangePicker.js';
 
 let candidates = [];
+let currentRange = null; // { startDate, endDate } | null
 
 // Company-wide for both roles — manager and people_culture already have
 // company-wide reach elsewhere (listTeam/managerDecision unscoping for
@@ -34,7 +36,8 @@ async function renderBreakdown(employeeId) {
   const container = $('#leave-breakdown-content');
   container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
   try {
-    const res = await apiFetch(`/api/employees/leave-requests/${employeeId}/breakdown`);
+    const qs = currentRange ? `?${new URLSearchParams(currentRange).toString()}` : '';
+    const res = await apiFetch(`/api/employees/leave-requests/${employeeId}/breakdown${qs}`);
     const rows = res.breakdown || [];
     container.innerHTML = `
       <div class="table-scroll">
@@ -68,6 +71,7 @@ export async function renderLeaveReport() {
     return;
   }
 
+  currentRange = null;
   container.innerHTML = `
     <div class="card section" style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
       <div class="form-group" style="min-width:220px;">
@@ -76,6 +80,7 @@ export async function renderLeaveReport() {
           ${candidates.map((c) => `<option value="${c.id}">${escapeHtml(c.firstName + ' ' + c.lastName)}${c.department ? ' — ' + escapeHtml(c.department) : ''}</option>`).join('')}
         </select>
       </div>
+      <div class="form-group" id="leave-breakdown-date-range-slot"></div>
     </div>
     <div id="leave-breakdown-content"></div>
   `;
@@ -84,5 +89,11 @@ export async function renderLeaveReport() {
   // "View" button/click needed.
   const refresh = () => renderBreakdown(Number($('#leave-breakdown-employee-select').value));
   $('#leave-breakdown-employee-select').addEventListener('change', refresh);
+  mountDateRangeFilter($('#leave-breakdown-date-range-slot'), {
+    onApply: (range) => {
+      currentRange = range.startDate ? range : null;
+      refresh();
+    },
+  });
   refresh();
 }

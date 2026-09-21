@@ -263,15 +263,35 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   // status comment in migration 002 — the PDF doesn't distinguish them
   // either); pending/manager_approved are "in progress"; cancelled gets its
   // own bucket so every column set sums exactly to `requested`.
-  function getLeaveBreakdown({ employeeId, actorAuthRole }) {
+  function getLeaveBreakdown({ employeeId, actorAuthRole, startDate, endDate }) {
     if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.PEOPLE_CULTURE && actorAuthRole !== roles.ADMIN) {
       throw new EmployeesError('You do not have permission to view leave-request history.', 403);
+    }
+    // Both-or-neither: a half-open range has no sensible default for the
+    // missing side, so treat it as a caller error rather than guessing.
+    if ((startDate && !endDate) || (endDate && !startDate)) {
+      throw new EmployeesError('startDate and endDate must both be provided to filter by date range.');
+    }
+    let rangeStart = null;
+    let rangeEnd = null;
+    if (startDate && endDate) {
+      if (!parseDateOnly(startDate) || !parseDateOnly(endDate)) {
+        throw new EmployeesError('startDate and endDate must be valid dates in YYYY-MM-DD format.');
+      }
+      if (endDate < startDate) {
+        throw new EmployeesError('End date cannot be before start date.');
+      }
+      rangeStart = startDate;
+      rangeEnd = endDate;
     }
     const byType = {};
     VALID_LEAVE_TYPES.forEach((type) => {
       byType[type] = { leaveType: type, requested: 0, approved: 0, rejected: 0, inProgress: 0, cancelled: 0 };
     });
     leaveRequestRepository.findByEmployeeId(employeeId).forEach((row) => {
+      // Overlap, not "starts inside the range" — a multi-day request that
+      // merely spans into the selected window should still show up in it.
+      if (rangeStart && (row.start_date > rangeEnd || row.end_date < rangeStart)) return;
       const bucket = byType[row.leave_type];
       if (!bucket) return;
       bucket.requested += 1;
