@@ -12,9 +12,10 @@ name: Database backup
 # Flow, identical in spirit to the old script: SSH to Render -> take an
 # online backup with better-sqlite3 into /tmp on the remote (never the
 # persistent disk itself) -> download it here -> delete the remote temp
-# copy -> verify integrity -> keep it as a workflow artifact for 14 days
-# (matching the old script's RETENTION_DAYS), which GitHub prunes
-# automatically — no manual `find -mtime +N -delete` step needed.
+# copy -> verify integrity -> keep it as a workflow artifact for 1 day
+# (a rolling ~24 hourly snapshots, given the hourly schedule below),
+# which GitHub prunes automatically — no manual `find -mtime +N -delete`
+# step needed.
 #
 # On failure: GitHub itself emails whoever last edited this workflow file
 # whenever a scheduled run fails — a real inbox, not a desktop notification
@@ -91,5 +92,5 @@ jobs:
         with:
           name: db-backup-${{ env.TIMESTAMP }}
           path: backup-${{ env.TIMESTAMP }}.db
-          retention-days: 14
+          retention-days: 1
           if-no-files-found: error
