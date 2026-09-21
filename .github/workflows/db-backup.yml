@@ -4,7 +4,10 @@ name: Database backup
 # (launchd on a single personal Mac, which meant backups silently stopped
 # whenever that laptop was off). Runs on GitHub's own infrastructure
 # instead — same flow, same script, same destination service, just fired
-# reliably regardless of anyone's hardware.
+# reliably regardless of anyone's hardware. Hourly rather than daily
+# since Actions minutes/artifact storage are unbilled on this public
+# repo and the source DB is small (~1MB) — cheap enough to shrink the
+# recovery-point window from a day to an hour.
 #
 # Flow, identical in spirit to the old script: SSH to Render -> take an
 # online backup with better-sqlite3 into /tmp on the remote (never the
@@ -19,7 +22,7 @@ name: Database backup
 
 on:
   schedule:
-    - cron: '0 2 * * *'   # 02:00 UTC daily (~04:00/05:00 Africa/Cairo, off-hours)
+    - cron: '0 * * * *'   # every hour, on the hour
   workflow_dispatch: {}    # lets anyone with write access trigger a run on demand
 
 concurrency:
