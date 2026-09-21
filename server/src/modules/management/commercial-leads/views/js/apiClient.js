@@ -9,7 +9,20 @@ export async function apiFetch(path, options, _isRetry) {
     const ok = await bootstrapAuth();
     if (ok) return apiFetch(path, options, true);
   }
-  if (!res.ok) throw new Error('Request failed: ' + path + ' -> ' + res.status);
+  if (!res.ok) {
+    // Reads the server's real `{ error }` message when there is one (see
+    // employees/views/js/apiClient.js, which already does this) rather than
+    // a bare status code — callers branch on `error.status` for auth vs.
+    // everything-else, but still want a real message to show either way.
+    let message = 'Request failed: ' + path + ' -> ' + res.status;
+    try {
+      const body = await res.json();
+      if (body && body.error) message = body.error;
+    } catch (err) {}
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
 }
 

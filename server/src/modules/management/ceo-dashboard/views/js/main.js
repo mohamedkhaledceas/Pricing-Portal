@@ -36,6 +36,7 @@ async function switchEntity(entityKey) {
 function bindUi() {
   $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
   $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
+  $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
   $$('.seg [data-ent]').forEach((b) => b.addEventListener('click', () => { switchEntity(b.dataset.ent); }));
 
   const bh = $('#briefhead');
@@ -88,12 +89,20 @@ function bindUi() {
     await loadEntity(state.entity);
     renderAll();
   } catch (err) {
-    /* Most commonly a 403 — authenticated, but not manager (requireRole on
-       the server). Falls back to the same "Unauthorized" state as a failed
-       login rather than an empty, broken-looking dashboard. */
+    // A real 401/403 means authenticated but not manager (requireRole on
+    // the server) — that's genuinely "Unauthorized". Anything else (a 500,
+    // a network drop) is a load failure, not a permissions problem, and
+    // showing "Unauthorized" for it misleads whoever's debugging — this
+    // now tells the two apart instead of always falling back to the same
+    // screen as a failed login.
     $('#app').style.display = 'none';
     $('#loginGate').style.display = 'flex';
     $('#loginGateChecking').hidden = true;
-    $('#loginGateFail').hidden = false;
+    if (err.status === 401 || err.status === 403) {
+      $('#loginGateFail').hidden = false;
+    } else {
+      $('#loginGateError').querySelector('p').textContent = err.message || "Couldn't load the dashboard.";
+      $('#loginGateError').hidden = false;
+    }
   }
 })();

@@ -57,6 +57,7 @@ function bindUi() {
   // would just fail again with the same session gone, right back to an
   // "Unauthorized" screen instead of anywhere useful.
   $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
+  $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
   bindDealsUi();
   bindQuarterlyUi();
 }
@@ -95,15 +96,22 @@ function bindUi() {
   try {
     await loadAll();
   } catch (err) {
-    /* Most commonly a 403 — authenticated, but not manager/operations/admin
-       (requireRole on the server, see modules/management/commercial-leads/
-       routes/index.js). Falls back to the same "Unauthorized" state as an
-       outright failed login rather than leaving the skeletons stuck
-       loading forever with no explanation. */
+    // A real 401/403 means authenticated but not manager/operations/admin
+    // (requireRole on the server, see modules/management/commercial-leads/
+    // routes/index.js) — that's genuinely "Unauthorized". Anything else
+    // (a 500, a network drop, ClickUp sync being mid-run) is a load
+    // failure, not a permissions problem, and showing "Unauthorized" for
+    // it misleads whoever's debugging — this now tells the two apart
+    // instead of leaving the skeletons stuck loading with no explanation.
     $('#app').style.display = 'none';
     $('#loginGate').style.display = 'flex';
     $('#loginGateChecking').hidden = true;
-    $('#loginGateFail').hidden = false;
+    if (err.status === 401 || err.status === 403) {
+      $('#loginGateFail').hidden = false;
+    } else {
+      $('#loginGateError').querySelector('p').textContent = err.message || "Couldn't load the dashboard.";
+      $('#loginGateError').hidden = false;
+    }
     return;
   }
   connectSocket({ onEvent: scheduleStatsRefresh });
