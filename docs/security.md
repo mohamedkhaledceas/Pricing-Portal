@@ -10,11 +10,13 @@ Internal tool, single company, small trusted user base, but handling genuinely s
 
 ---
 
-## 2. Transport & headers
+## 2. Transport & headers — planned, not implemented
 
-**Helmet** (`app.use(helmet())`) — sets `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and other baseline headers. Near-zero cost, meaningful default hardening. No reason to skip it.
+**This whole section describes a control that was never built**, not one that's in place. It was written during the docs-only planning phase (2026-08-10, before any migration code existed) and never revisited as the real system took shape — confirmed via `git log -S`: no commit has ever touched `helmet`, `Content-Security-Policy`, or `nonce` anywhere in `server/`. There is no `helmet` dependency and no CSP header set today, by any mechanism.
 
-**Content Security Policy** — configured explicitly (Helmet's CSP module), not left at Helmet's default:
+**Helmet** (`app.use(helmet())`) — would set `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and other baseline headers. Near-zero cost, meaningful default hardening. No reason to skip it — this is still worth adding, it just isn't there yet.
+
+**Content Security Policy** — the policy this doc originally proposed:
 ```
 default-src 'self'
 script-src 'self' https://accounts.google.com 'nonce-<per-request>'
@@ -24,7 +26,7 @@ connect-src 'self'
 frame-ancestors 'none'
 object-src 'none'
 ```
-**The tension worth naming:** both frontends keep a single inline `<script>` block per the Phase 2 decision to preserve them as single HTML files. A strict CSP normally forbids inline scripts. The resolution: `app.js` serves these two HTML pages through a tiny per-request render (read the file, inject a generated nonce into both the CSP header and the `<script nonce="...">` tag) rather than a raw `res.sendFile()`. This is a small, one-time change to how two files are served — not a framework, not a build step — and it closes the CSP gap properly instead of falling back to `'unsafe-inline'` (which would defeat much of the point). `connect-src 'self'` matters specifically because ClickUp calls are now server-side only — the frontend has no legitimate reason to reach any external API directly anymore.
+The inline-script/nonce reasoning behind it is now stale on top of being unimplemented: it was framed around "both frontends keep a single inline `<script>` block per the Phase 2 decision to preserve them as single HTML files" — but per `docs/frontend-architecture.md`, all five current frontend surfaces (`employees`, `commercial-leads`, `ceo-dashboard`, `pricing`, `auth`) load their logic via external `<script type="module" src="...">` files, not one big inline block; each `index.html` does still carry one or two small inline `<script>` blocks (theme pre-paint, to avoid a flash of the wrong theme before the module loads) that a real CSP would still need to account for, via a nonce or by moving that logic into the external module too. `connect-src 'self'` would still matter for the same reason as before: ClickUp calls are server-side only, so the frontend has no legitimate reason to reach any external API directly.
 
 ---
 
