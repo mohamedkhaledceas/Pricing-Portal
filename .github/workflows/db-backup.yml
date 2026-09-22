@@ -62,14 +62,29 @@ jobs:
           echo "REMOTE_TMP=/tmp/pp-backup-$TIMESTAMP.db" >> "$GITHUB_ENV"
 
       - name: Snapshot on Render
+        # Exit 255 from ssh/scp means the connection dropped, not that the
+        # remote command failed (a remote failure propagates its own exit
+        # code instead) — a transient blip talking to Render's SSH gateway,
+        # seen once in ~10 runs. Retry a couple of times before failing the
+        # job, rather than losing an hourly snapshot to a one-off network hiccup.
         run: |
-          ssh -i ~/.ssh/render_backup_ci -o BatchMode=yes "$SSH_HOST" \
-            "cd '$REMOTE_APP_DIR' && DB_DIR=/var/data node src/backup.js '$REMOTE_TMP'"
+          for attempt in 1 2 3; do
+            ssh -i ~/.ssh/render_backup_ci -o BatchMode=yes -o ConnectTimeout=15 "$SSH_HOST" \
+              "cd '$REMOTE_APP_DIR' && DB_DIR=/var/data node src/backup.js '$REMOTE_TMP'" && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "::warning::Snapshot attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done
 
       - name: Download snapshot
         run: |
-          scp -i ~/.ssh/render_backup_ci -o BatchMode=yes \
-            "$SSH_HOST:$REMOTE_TMP" "backup-$TIMESTAMP.db"
+          for attempt in 1 2 3; do
+            scp -i ~/.ssh/render_backup_ci -o BatchMode=yes -o ConnectTimeout=15 \
+              "$SSH_HOST:$REMOTE_TMP" "backup-$TIMESTAMP.db" && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "::warning::Download attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done
 
       - name: Delete remote temp copy
         if: always()
