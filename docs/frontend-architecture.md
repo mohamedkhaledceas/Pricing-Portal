@@ -1,57 +1,68 @@
 # Frontend Architecture
 
-The backend gets a full layered architecture in this migration. The frontend does not get rebuilt in the same pass — both `pricing/index.html` and `employees/index.html` stay single HTML files for the initial migration, per an explicit decision made during Phase 1: the priority was minimizing regression risk on two UIs people use daily, not a frontend rewrite. That decision still stands.
-
-This document defines the **target** frontend architecture — what "modular, as Pricing and Employees continue growing" actually looks like — and is explicit about the fact that migrating either frontend into this structure is its **own later initiative**, separate from and not blocking the backend migration milestones in `docs/migration-plan.md`.
+This document originally defined a **target** frontend architecture to migrate toward, separate from and not blocking the backend module migration in `docs/migration-plan.md`. That target has since been reached: as of 2026-09-22, all four browser-facing surfaces — `employees`, `commercial-leads`, `ceo-dashboard`, and `pricing` (plus the `auth` module's `/login` page) — use the same `views/{index.html, css/*.css, js/*.js}` structure described below. `docs/architecture.md` §10 has the up-to-date, authoritative summary and the history of how each surface got there (`pricing` was the last holdout, a single ~2,779-line file until 2026-09-21/22); this document describes the resulting conventions in more detail. If the two ever disagree, `docs/architecture.md` wins.
 
 ---
 
-## 1. Guiding constraint: no framework, no bundler, yet
+## 1. Guiding constraint: no framework, no bundler
 
-Both current apps are vanilla JS. Introducing React/Vue/Svelte now would be a much bigger scope change than anything else in this migration, and nothing about the current UI complexity demands it — the apps are large but not architecturally complex (form handling, list rendering, tab switching). **Decision: native ES modules (`<script type="module">`), no bundler, no framework**, for now. Modern browsers support ES modules natively; this gets real file-based modularity without adding build tooling. If module count or performance ever genuinely demands a bundler (esbuild is the lightweight option if that day comes) or a framework, that's a deliberate future decision with its own trigger condition — not something to reach for preemptively.
+All five surfaces are vanilla JS. Introducing React/Vue/Svelte would be a much bigger scope change than anything else in this app, and nothing about the current UI complexity demands it — every surface is large but not architecturally complex (form handling, list rendering, tab switching). **Decision: native ES modules (`<script type="module">`), no bundler, no framework.** Modern browsers support ES modules natively; this gets real file-based modularity without adding build tooling. If module count or performance ever genuinely demands a bundler (esbuild is the lightweight option if that day comes) or a framework, that's a deliberate future decision with its own trigger condition (§9) — not something to reach for preemptively.
 
 ---
 
 ## 2. Folder organization
 
+Each browser-facing module owns its frontend under its own `views/` directory — there is no top-level `public/pricing/`, `public/employees/`, etc.:
+
 ```
-public/
-  shared/
-    js/
-      apiClient.js   # fetch wrapper: base URL, Authorization header, 401 -> silent refresh -> retry
-      auth.js          # login/signup/logout calls, in-memory access-token holder, page-load silent refresh
-      dom.js             # escapeHtml(), small safe DOM helpers, setLoading()
-      state.js             # minimal pub/sub helper (not a framework) for page-scoped state
-      format.js              # currency/date formatting shared across pricing/employees
-    css/
-      base.css              # shared tokens/reset, if/when visual consistency across the two apps matters
-
-  pricing/
+server/src/modules/
+  auth/views/
     index.html
-    js/
-      main.js            # entry point: imports shared/*, wires up the page
-      team.js, projects.js, quotes.js, capacity.js, ...   # feature-scoped modules
+    css/login.css
+    js/{main,dom,theme}.js
 
-  employees/
+  employees/views/
     index.html
-    js/
-      main.js
-      overview.js, timeOff.js, today.js, history.js, kpi.js, ...
+    css/employees.css
+    js/{main,apiClient,dom,state,theme,overview,timeOff,team,roster,...}.js   # 20 feature-scoped modules
+
+  management/commercial-leads/views/
+    index.html
+    css/commercialLeads.css
+    js/{main,apiClient,dom,state,theme,deals,charts,quarterlyKpis,...}.js
+
+  management/ceo-dashboard/views/
+    index.html
+    css/ceoDashboard.css
+    js/{main,apiClient,dom,state,theme,charts,render}.js
+
+  pricing/views/
+    index.html
+    css/pricing.css
+    js/{main,apiClient,dom,state,theme,calc,recompute,team,expenses,projects,scenarios,quote,dashboard,capacity,settingsPanel,users,history,format}.js
+
+server/public/
+  shared/            # genuinely cross-app, non-module <script> widgets — see §3
+    accountMenu.js, accountMenu.css, accountSettings.js, orgConstants.js, departments.js
+  logo-light.png, logo-dark.png, 404.html
 ```
 
-Feature modules are organized by UI section (mirroring the tabs/pages each app already has), not by an attempt to mirror the backend's module boundary one-to-one — the frontend's natural seams are pages/sections, not domains.
+Each module's routes file serves its `views/index.html` at its own path and mounts the rest of `views/` as a static directory (e.g. `app.get('/planner', ...)` + `express.static('.../pricing/views')`), the same pattern for all five.
+
+Feature modules within a `js/` directory are organized by UI section (mirroring the tabs/pages each surface already has), not by an attempt to mirror the backend's `routes/controllers/services/repositories` layering — the frontend's natural seams are pages/sections, not domains.
 
 ---
 
-## 3. API client organization
+## 3. API client organization — one per surface, not shared, by design so far
 
-One `apiClient.js`, shared between both apps (identical concerns: auth header, refresh, error normalization):
+Each surface has its **own** `apiClient.js` — five near-identical hand-copies, not five callers of one shared module. This is a real, current cost, not a planned structure: two of them (`commercial-leads`, `ceo-dashboard`) independently had the same bug — silently discarding the server's actual error message — until an earlier audit found and fixed it in both places. `employees/apiClient.js` already had the fix; it simply hadn't been shared. Every copy follows the same shape:
 
-- Holds the access token as a **module-scoped variable** — not `window.*`, not `localStorage` (see `docs/security.md` for why: this is the design that makes the access token CSRF-resistant, and it's void if the token gets written somewhere else "for convenience").
+- Holds the access token as a **module-scoped variable** — not `window.*`, not `localStorage` (see `docs/security.md`: this is what makes the access token CSRF-resistant, and it's void if the token gets written somewhere else "for convenience").
 - Wraps `fetch`: attaches `Authorization: Bearer <token>` automatically.
-- On a `401`, attempts exactly one silent `POST /api/auth/refresh` (cookie-based, no explicit token needed), retries the original request once with the new token. If refresh also fails, clears in-memory state and redirects to login.
-- **On page load**, always attempts a silent refresh first. This is what makes "seamless while the session is valid" actually work across page reloads: the access token lives only in memory and is lost on every reload, but the httpOnly refresh cookie persists, so the very first thing the page does is silently exchange it for a fresh access token.
-- Normalizes every response into the backend's envelope shape (`docs/api-guidelines.md` §5) so UI code always branches on `{ data }` / `{ error: { code } }`, never on ad-hoc per-endpoint shapes.
+- On a `401`, attempts exactly one silent `POST /api/auth/refresh` (cookie-based), retries the original request once with the new token. If refresh also fails, clears in-memory state and (on `pricing`, deliberately) redirects to `/login` from anywhere, not just at boot — see the `setSessionExpiredHandler()` injectable-callback pattern in `pricing/views/js/apiClient.js`/`dom.js` for why that one differs from the others' weaker "just throw and let the caller handle it."
+- Parses the backend's real response shape: a flat `{ error: "<message>" }` string on failure (see `docs/architecture.md` §8 — **not** the nested `{ error: { message, code, details } }` shape `docs/api-guidelines.md` describes; that guideline was never adopted). Success responses have no consistent envelope either — each endpoint returns its own resource key (`{ team: [...] }`, `{ employees: [...] }`, etc.), so UI code branches per-endpoint, not on a common `{ data }` key.
+
+**Genuine cross-app sharing already exists**, just not for this layer: `server/public/shared/` (`accountMenu.js`/`.css`, `accountSettings.js`, `orgConstants.js`, `departments.js`) is loaded as plain non-module `<script>` tags that attach to `window.*`, included by every frontend for the account menu, org-wide constants, and department lists. Extending this same directory to cover `apiClient.js`/`dom.js` (or converting those specific files to ES modules importable by absolute path — same-origin, so the browser supports that fine) is the natural next step if the five-copy duplication ever causes a real bug again, not a new pattern to invent.
 
 ---
 
@@ -78,41 +89,40 @@ Logout
   → render login screen
 ```
 
-`auth.js` owns this state machine; feature modules never touch tokens directly, they only call `apiClient` methods and handle the `data`/`error` result.
+Each surface's own `apiClient.js` (plus `main.js`'s boot sequence) owns this state machine; feature modules never touch tokens directly — they only call `apiClient` functions and handle the result.
 
 ---
 
 ## 5. XSS discipline (see also `docs/security.md` §5)
 
-Because the access token lives in frontend memory, an XSS bug is no longer just a UI defacement risk — it's a session-takeover risk. `dom.js` provides `escapeHtml()` and prefers `textContent`-based helpers over raw `innerHTML` interpolation. **Auditing and fixing the existing `innerHTML` string-concatenation patterns in both current apps (e.g. `managerRequestCard`, `kpiRow`) is part of migrating a page into this structure** — not a follow-up ticket. A feature module isn't considered migrated until its dynamic rendering goes through the safe helpers.
+Because the access token lives in frontend memory, an XSS bug is a session-takeover risk, not just a defacement risk. Every surface's `dom.js` provides an `escapeHtml()`/`esc()` helper, and dynamic rendering goes through it rather than raw `innerHTML` string interpolation of unescaped values. An earlier session's audit fixed the `innerHTML` concatenation patterns that predated this convention (`managerRequestCard`, `kpiRow`, and others); new feature modules are expected to use the safe helper from the start, not as a follow-up.
 
 ---
 
 ## 6. Routing
 
-Neither app needs a client-side router. Employees Portal's "tabs" (Overview / Time Off / Today / History / Leave Rules / KPI) are DOM show/hide within a single page, not real navigation — that pattern is kept as-is. If deep-linking to a specific tab becomes a real requirement, simple hash-based routing (`#overview`, `#time-off`) is sufficient without pulling in a router library.
+No surface needs a client-side router. Tabs (e.g. Employees' Overview / Time Off / Today / History / Leave Rules / KPI, or Pricing's 8 nav tabs) are DOM show/hide within a single page, not real navigation. `pricing` and a couple of others support a `?open=...` query-param deep link into a specific panel/modal on load, handled directly in `main.js` — the closest thing to routing any surface has, and sufficient so far. If real hash-based deep-linking (`#overview`, `#time-off`) becomes a hard requirement, that's enough without pulling in a router library.
 
 ---
 
 ## 7. State management
 
-No Redux, no global store library. Each page's `main.js` owns one plain state object for that page; feature modules read/write it and re-render the DOM sections they own. `state.js` provides a minimal pub/sub helper (a few dozen lines — subscribe/publish, nothing more) for the cases where one module's state change needs to trigger a re-render in another (e.g. approving a leave request in the manager panel should update the overview counts). This formalizes a pattern both current apps already use informally (a global `state` object plus `render*()` functions) rather than introducing a new paradigm — lower risk, lower learning curve, matches the existing mental model.
+No Redux, no pub/sub framework, no shared `state.js`. Each surface's own `state.js` exports one plain mutable object (e.g. `export const state = { accessToken: null, currentUser: null, mainTab: 'overview', ... }`); feature modules import it directly, mutate the fields they own, and call that surface's own `render*()`/`recompute()` functions to reflect the change — no publish/subscribe indirection. This is simpler than the pub/sub helper originally envisioned here, and matches what every surface actually converged on independently. Where one feature module's state change needs to trigger another module's re-render without a circular import between them, the established solution is an **injectable-handler pattern**: the dependent function (e.g. `pricing`'s `recompute()`, `applyMode()`, `renderAllStructures()`) is exposed from a shared low-level file (that surface's `dom.js`) as a plain function whose real implementation is registered once, at boot, by whichever file actually owns it. See `pricing/views/js/dom.js` for the concrete pattern if introducing a new cross-module trigger elsewhere.
 
 ---
 
 ## 8. Loading states & error handling
 
-Shared conventions via `dom.js`:
-- `setLoading(container, boolean)` — shows/hides a loading indicator for an async region. Both current apps already have ad-hoc versions of this (`showLoading`/`hideLoading` in Employees Portal) — formalized into one shared helper.
-- Errors surface via a shared toast/banner helper that reads the backend's `{ error: { message, code } }` shape. UI code can branch on `code` for specific handling (e.g. `CONFLICT` on an approve action means "someone else already acted on this, refresh the list") while falling back to displaying `message` for anything it doesn't specifically handle.
+No shared helper file for this — each surface's own `dom.js`/inline handlers implement it locally (e.g. a `showSaveError`/`showSaveOk` pair, or a skeleton-block helper for list loading), following the same shape without importing from one another. Errors surface from whatever the backend's flat `{ error: "<message>" }` string says (§3) — there is no `code` field to branch on; UI code shows the message as-is or maps a small number of known strings to friendlier copy where that already existed.
 
 ---
 
 ## 9. Future scalability
 
-This structure scales by adding feature modules as pages grow — no architectural ceiling within "vanilla JS app with a few dozen focused files." The explicit trigger conditions for revisiting the no-framework/no-bundler decision:
+This structure scales by adding feature modules as pages grow — no architectural ceiling within "vanilla JS app with a few dozen focused files per surface" (`pricing`, the largest, has 17). The explicit trigger conditions for revisiting the no-framework/no-bundler decision:
 - Module count or interdependency grows to where manual DOM diffing/re-rendering becomes error-prone (a sign a reactive framework would pay for itself).
 - Real client-side routing/deep-linking becomes a hard requirement across many views.
 - Bundle-time concerns (many small files, no HTTP/2 multiplexing in some deployment context) make a lightweight bundler (esbuild) worth the added build step.
+- The five near-identical `apiClient.js`/`dom.js` copies (§3) drift into a third independently-discovered bug — the trigger for finally promoting them into `server/public/shared/`.
 
-None of these apply today. Documenting them here so the decision to introduce a framework later is made deliberately, against a stated trigger, not reactively mid-feature.
+None of these apply today. Documenting them here so a decision to introduce a framework, router, bundler, or shared client layer later is made deliberately, against a stated trigger, not reactively mid-feature.
