@@ -2,7 +2,7 @@
 
 Status: **describes the system as it actually runs today.** Every claim below was checked directly against the running code (`server/src/index.js`, `server/src/db.js`, `server/src/db/migrations/`, `server/package.json`, and each module's own files) — not against a plan, an ADR, or a prior draft of this document.
 
-**A note on why this rewrite exists:** the previous version of this file (and of `docs/database.md`) described a target system — PostgreSQL, Knex, a `modules/pricing/` module, an `employee_roster` table, a full permission-string authorization engine, Zod validators, CI-gated tests — that was planned (`docs/adr/0003`, `docs/migration-plan.md`) but **never built**. The app that actually exists took a different, organically-evolved path: it stayed on `better-sqlite3`, kept the original Pricing/Margin-Planner backend as-is in a single `index.js`, and grew three new modules (`auth`, `employees`, `management`) alongside it with real layering. Both facts are true at once — a real, deliberate decision was made to move to Postgres, and it was never carried out. `docs/migration-plan.md`, `docs/testing.md`, and ADR-0003 are kept as historical record of that decision, not deleted, but they no longer describe this app — see §12.
+**A note on why this rewrite exists:** the previous version of this file (and of `docs/database.md`) described a target system — PostgreSQL, Knex, a `modules/pricing/` module, an `employee_roster` table, a full permission-string authorization engine, Zod validators, CI-gated tests — that was planned (`docs/adr/0003`, `docs/migration-plan.md`) but **never built**. The app that actually exists took a different, organically-evolved path: it stayed on `better-sqlite3`, kept the original Pricing/Margin-Planner backend inline in `index.js` for a long stretch, and grew three new modules (`auth`, `employees`, `management`) alongside it with real layering. A real, deliberate decision was made to move to Postgres, and it was never carried out — `docs/migration-plan.md`, `docs/testing.md`, and ADR-0003 are kept as historical record of that decision, not deleted, but they still don't describe this app's database layer (still better-sqlite3, no Knex — see §7). The layering gap itself, however, was closed on 2026-09-21: the Pricing/Margin-Planner backend is now `modules/pricing/`, a fourth fully-layered module, built directly on the stack that actually exists rather than waiting on the Postgres cutover — see §3.1.
 
 ---
 
@@ -13,7 +13,7 @@ One Express app (`server/src/index.js` as the entry point) serving four browser-
 | Surface | Served at | What it is |
 |---|---|---|
 | Employees Portal | `/` (and `/employees`, which redirects to `/`) | The landing page for every role. Leave/time-off, KPI scoring, roster, team directory, requests center. The newest, most actively developed part of the app. |
-| Margin Planner | `/planner` | The **original** Pricing Portal — a single 2700+ line HTML file (`margin-planner_1.html`) with its backend still living directly in `index.js`. Never migrated into the module structure the rest of the app uses (see §3.1). |
+| Margin Planner | `/planner` | The **original** Pricing Portal — this app's namesake feature. Was a single ~2700-line HTML file with its backend living directly in `index.js`; both were extracted into `modules/pricing/` (backend) and `modules/pricing/views/` (frontend, ES modules matching the other three surfaces) on 2026-09-21/22 — see §3.1. |
 | Commercial Lead dashboard | `/commercial-lead` | Live ClickUp-sourced pipeline/deals reporting for the commercial team. |
 | CEO Dashboard | `/ceo` | Manager/admin-only company-health dashboard. Its own `views/js` app. |
 | Login | `/login` | Sign in, self-service two-step signup, forgot/reset password. The one place authentication UI lives; every other surface redirects here on a failed silent-refresh. |
@@ -27,10 +27,10 @@ Single company (CEAS), no multi-tenancy, roughly 20 real user accounts. That sca
 ```
 server/
   src/
-    index.js                 # entry point: Express app assembly, AND the entire
-                              # original Pricing/Margin-Planner backend, inline
-                              # (see §3.1 — this is the one real architectural
-                              # inconsistency in an otherwise-layered codebase)
+    index.js                 # entry point: Express app assembly only — bootstrap,
+                              # static/page routes, module mounting. No business
+                              # logic (see §3.1 — this used to be the one real
+                              # architectural inconsistency; closed 2026-09-21)
     db.js                     # better-sqlite3 connection, WAL mode, the base
                               # inline schema (pre-migration-system tables), and
                               # runMigrations() on boot
@@ -38,6 +38,9 @@ server/
     auth.js, backup.js, create-user.js, seed-owner.js, test-email.js,
     marginPlannerSummary.js   # small standalone CLI/utility scripts, run via
                               # npm scripts (npm run seed, npm run backup:snapshot, ...)
+                              # — marginPlannerSummary.js reads Planner data via
+                              # modules/pricing's readCompanyCostInputs() export,
+                              # not db.js directly
 
     db/
       migrationRunner.js       # custom, hand-rolled — not Knex, not any library
@@ -87,6 +90,20 @@ server/
           controllers/ services/ repositories/ models/ container.js routes/
           views/
 
+      pricing/
+        controllers/ services/ repositories/ models/ errors.js routes/ container.js
+                                    # the former inline Margin Planner backend
+                                    # (see §3.1) — company_settings/team_members/
+                                    # expenses/projects + their 4 child tables,
+                                    # fully layered with targeted per-row SQL
+                                    # (no ORM/Knex here either, same as every
+                                    # other module — see §7)
+        views/                      # the /planner (Margin Planner) frontend —
+                                    # 17 feature-scoped ES modules (dom/state/
+                                    # apiClient/theme/format/calc + one per
+                                    # tab), same shape as employees'/
+                                    # commercial-leads' own views/js/
+
   public/
     logo-light.png, logo-dark.png
     404.html                        # branded 404 page (server/src/common/notFoundHandler.js)
@@ -100,8 +117,6 @@ server/
                                      # separately (apiClient.js, dom.js) — a real,
                                      # concrete gap, not a planned omission
 
-  margin-planner_1.html             # the Margin Planner frontend — one large,
-                                     # self-contained HTML file, no module system
   render.yaml                        # Render deploy config
   scripts/backup/                     # off-host backup automation (see §11)
 
@@ -122,15 +137,15 @@ No `utils/` directory exists at the top level (the old plan reserved one; nothin
 
 **The rule, and it holds:** a module may depend on `common/`, `config.js`, and its own internals. It may never `require()` another module's `services/`, `repositories/`, or `models/` directly — only that module's top-level barrel export (e.g. `require('../auth')`, which exposes `{ router, authenticate, verifyAccessToken }`, never `require('../auth/services/authService')`).
 
-This was checked directly, not assumed: a repo-wide grep for cross-module `services/`/`repositories/`/`models/` imports across `auth`, `employees`, and `management` (including `management`'s own two sub-apps reaching into each other) found **zero violations**. The two cross-module imports that do exist (`management/ceo-dashboard/container.js` and `management/commercial-leads/container.js`, each doing `require('../../auth')`) both go through auth's public barrel, exactly as intended. This is a genuinely well-kept property of the newer code and worth protecting.
+This was checked directly, not assumed: a repo-wide grep for cross-module `services/`/`repositories/`/`models/` imports across `auth`, `employees`, `management`, and `pricing` (including `management`'s own two sub-apps reaching into each other) found **zero violations**. The cross-module imports that do exist (`management/ceo-dashboard/container.js`, `management/commercial-leads/container.js`, and `pricing/container.js`, each doing `require('../../auth')` or `require('../auth')`) all go through auth's public barrel, exactly as intended. This is a genuinely well-kept property of the newer code and worth protecting.
 
 The one intentional cross-module data reference is `employees.employees.user_id → auth.users.id`, one-directional (`auth` has no knowledge `employees` exists).
 
-### 3.1 The one real exception: the legacy Pricing/Margin-Planner backend
+### 3.1 The legacy Pricing/Margin-Planner backend — extracted 2026-09-21
 
-Every route under `/api/state`, `/api/team`, `/api/projects`, `/api/expenses`, `/api/settings`, etc. is defined directly in `index.js` — no `controllers/`, no `services/`, no `repositories/`. Request handlers call `db.prepare(...).run()` directly, inline. Business logic (serialization, validation via a hand-rolled `numOrDefault` helper, audit calls) lives at module scope in the same file as the Express route wiring.
+Until 2026-09-21, every route under `/api/state`, `/api/team`, `/api/projects`, `/api/expenses`, `/api/settings`, etc. was defined directly in `index.js` — no `controllers/`, no `services/`, no `repositories/`. Request handlers called `db.prepare(...).run()` directly, inline, and every mutating write (even editing one project line) went through a single `replaceWholeState()` function that deleted and re-inserted every row in every Planner table. That was a real, standing exception to the layering rule the rest of this document (and `CLAUDE.md`) states as non-negotiable — `docs/migration-plan.md` originally planned to port this into `modules/pricing/`, but that plan (Postgres, Knex, the ADR-0009 response envelope, a `user_module_access` grant model) was never carried out, same as the rest of the never-executed cutover this document's intro describes.
 
-This is not a bug — the app works, is used daily, and rewriting working code with no immediate need is exactly the kind of speculative churn this project's own engineering principles argue against. But it is a real, standing exception to the layering rule the rest of this document (and `CLAUDE.md`) states as non-negotiable, and any new engineer reading the codebase top-down will notice the inconsistency immediately. `docs/migration-plan.md` originally planned to port this into `modules/pricing/` — that never happened, and there's no `modules/pricing/` directory today. If this code needs a real change (a new endpoint, a bug that requires touching the write path), that's the natural moment to extract just the touched piece into the standard layering rather than adding another inline handler to `index.js`.
+This has now been extracted into `modules/pricing/` (see the module list above), following the exact same pattern as `auth`/`employees`/`management` — but **on the stack that actually exists** (better-sqlite3, targeted per-row SQL, the flat `{ error: string }` response shape every other module uses today), not the never-built Postgres/Knex/envelope target `docs/migration-plan.md` describes. `index.js` is now 172 lines of pure bootstrap: app assembly, static/page routes, module mounting — no business logic anywhere in it. See `docs/governance/implementation-tracker.md`'s 2026-09-21 entries for the full record of what changed and how it was verified, including a targeted fix for a real latent bug this extraction closed: `projects.quote_json` and the `quote_lines` table were redundant and only stayed in sync as a side effect of the old full-state rewrite — `quote_lines` is now the sole source of truth for quote line items.
 
 ---
 
@@ -250,15 +265,15 @@ No `helmet`, no generalized rate limiting (`express-rate-limit` is applied to ex
 
 ---
 
-## 10. Frontend architecture — already at the target state, just never documented as such
+## 10. Frontend architecture — already at the target state, all four surfaces
 
-The original plan treated "vanilla JS ES modules, no framework, no bundler" as a *future* initiative, separate from and after the backend migration. That's backwards from what happened: **the backend migration (to Postgres/Knex/`modules/pricing`) never happened, but the frontend target architecture already has, for three of the four surfaces.**
+The original plan treated "vanilla JS ES modules, no framework, no bundler" as a *future* initiative, separate from and after the backend migration. That's backwards from what happened: **the backend migration (to Postgres/Knex/`modules/pricing`) never happened as originally planned, but the frontend target architecture has — for all four surfaces, as of 2026-09-22.**
 
-- `employees/`, `commercial-leads/`, and `ceo-dashboard/` each have their own `views/js/` app using native `<script type="module">` ES modules — `import`/`export`, no bundler, no framework, no build step. Each has its own `apiClient.js` (fetch wrapper with silent-refresh-on-401 and error-message parsing), `dom.js` (tiny `$`/`escapeHtml`/`toast` helpers), and `state.js`.
-- **That per-app duplication is a real, current cost, not a planned structure.** All three `apiClient.js` files are near-identical hand-copies of each other; two of the three (`commercial-leads`, `ceo-dashboard`) had a real bug — silently discarding the server's actual error message — that existed in both places independently until this session's error-handling audit found and fixed it in both. The fix that already existed correctly in `employees/apiClient.js` simply hadn't been shared.
+- `employees/`, `commercial-leads/`, `ceo-dashboard/`, and `pricing/` each have their own `views/js/` app using native `<script type="module">` ES modules — `import`/`export`, no bundler, no framework, no build step. Each has its own `apiClient.js` (fetch wrapper with silent-refresh-on-401 and error-message parsing), `dom.js` (tiny `$`/`escapeHtml`/`toast` helpers), and `state.js`.
+- **That per-app duplication is a real, current cost, not a planned structure.** All four `apiClient.js` files are near-identical hand-copies of each other; two of the four (`commercial-leads`, `ceo-dashboard`) had a real bug — silently discarding the server's actual error message — that existed in both places independently until an earlier session's error-handling audit found and fixed it in both. The fix that already existed correctly in `employees/apiClient.js` simply hadn't been shared.
 - Genuine cross-app sharing already exists and works, via `server/public/shared/`: `accountMenu.js`/`.css`, `accountSettings.js`, `orgConstants.js`, `departments.js` — loaded as plain (non-module) `<script>` tags that attach to `window.*`, included by every frontend. Extending this same directory to cover `apiClient.js`/`dom.js` (or converting those specific shared files to ES modules importable by absolute path, since the browser supports that fine same-origin) is the natural next step, not a new pattern.
 - `/login` (`modules/auth/views/`) follows the same ES-module pattern.
-- `/planner` (`margin-planner_1.html`) is the one true outlier: a single ~2700-line HTML file with an inline `<script>`, no module system at all — the original Pricing Portal frontend, never touched by the ES-module migration the other three surfaces got. It does, correctly, keep its access token in memory only (a `_memoryAuth` module-scoped variable) rather than `localStorage` — that part was fixed even though the rest of the file's structure wasn't.
+- `/planner` (`modules/pricing/views/`) was the one outlier — a single ~2,779-line HTML file with an inline `<script>`, no module system at all, the original Pricing Portal frontend — until it was decomposed into 17 feature-scoped ES modules on 2026-09-21/22, following the exact precedent `commercial-lead.html`'s own earlier migration set (see `docs/governance/implementation-tracker.md`'s entries for that date for the full record, including two confirmed pre-existing bugs found and fixed during the port: a broken `<script src="/shared/teamsDirectory.js">` include, and a `?open=accountSettings` deep link calling a function that was never defined anywhere in the file). It already correctly kept its access token in memory only (a module-scoped variable, carried over unchanged into the new `apiClient.js`) rather than `localStorage` — that part was fixed in an earlier session even before the rest of the file's structure was.
 
 No framework (React/Vue/etc.) and no bundler anywhere. That absence is a deliberate, ADR-tracked deferral (see `docs/adr/`), not a gap — nothing about this app's scale currently justifies one.
 

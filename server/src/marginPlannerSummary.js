@@ -1,4 +1,4 @@
-const db = require('./db');
+const pricing = require('./modules/pricing');
 
 /* Server-side port of margin-planner_1.html's own company()/personCalc()/
    expMonthly()/toBase() math (search that file for the same function names
@@ -9,7 +9,11 @@ const db = require('./db');
    one and only server-side copy; anything that needs the company-wide cost
    rollup (currently just the CEO Dashboard, see
    modules/management/ceo-dashboard/repositories/mockSnapshotRepository.js)
-   should call getCompanyCostSummary() rather than re-deriving it. */
+   should call getCompanyCostSummary() rather than re-deriving it.
+
+   settings/team/expenses come from modules/pricing's own narrow
+   readCompanyCostInputs() export (not db.js directly) now that Planner data
+   is owned by that module — see its container.js. */
 
 function num(v) {
   const n = parseFloat(v);
@@ -55,9 +59,7 @@ function expMonthly(settings, expense) {
    4-category list is replaced by whatever's actually been entered in the
    Planner's Fixed expenses tab. */
 function getCompanyCostSummary() {
-  const settings = db.readCompanySettings();
-  const team = db.readTeam();
-  const expenses = db.readExpenses();
+  const { settings, team, expenses } = pricing.readCompanyCostInputs();
 
   let payroll = 0;
   let billableHours = 0;

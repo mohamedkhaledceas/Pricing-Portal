@@ -12,19 +12,28 @@ Internal tool, single company, small trusted user base, but handling genuinely s
 
 ## 2. Transport & headers
 
-**Helmet** (`app.use(helmet())`) — sets `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and other baseline headers. Near-zero cost, meaningful default hardening. No reason to skip it.
+**Helmet** (`app.use(helmet({ contentSecurityPolicy: {...} }))`, `server/src/index.js`, mounted first — before `correlationId`, before any route) — sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Strict-Transport-Security`, and Helmet's other baseline headers, plus an explicit CSP (below). Implemented 2026-09-22, replacing an earlier version of this section that had described this control since 2026-08-10 without it actually existing (confirmed at the time via `git log -S`: no commit had ever touched `helmet`/CSP/`nonce`).
 
-**Content Security Policy** — configured explicitly (Helmet's CSP module), not left at Helmet's default:
+**Content Security Policy** — audited from what the app actually uses (all five frontend surfaces' HTML/CSS/JS read directly, not assumed), not copied from a generic template:
 ```
 default-src 'self'
-script-src 'self' https://accounts.google.com 'nonce-<per-request>'
-style-src 'self' https://fonts.googleapis.com 'unsafe-inline'
-font-src https://fonts.gstatic.com
+script-src 'self' 'sha256-<hash>' 'sha256-<hash>' ...
+style-src 'self' 'unsafe-inline'
+img-src 'self'
+font-src 'self'
 connect-src 'self'
-frame-ancestors 'none'
 object-src 'none'
+base-uri 'self'
+form-action 'self'
+frame-ancestors 'none'
 ```
-**The tension worth naming:** both frontends keep a single inline `<script>` block per the Phase 2 decision to preserve them as single HTML files. A strict CSP normally forbids inline scripts. The resolution: `app.js` serves these two HTML pages through a tiny per-request render (read the file, inject a generated nonce into both the CSP header and the `<script nonce="...">` tag) rather than a raw `res.sendFile()`. This is a small, one-time change to how two files are served — not a framework, not a build step — and it closes the CSP gap properly instead of falling back to `'unsafe-inline'` (which would defeat much of the point). `connect-src 'self'` matters specifically because ClickUp calls are now server-side only — the frontend has no legitimate reason to reach any external API directly anymore.
+Narrower than the version originally proposed here: no external script/style/font hosts are allow-listed anywhere because the audit found none in actual use — no Google Sign-In SDK, no Google Fonts, no third-party CDN (auth is email/password only, handled entirely server-side; every `fetch()`/`socket.io` call in every frontend targets a relative, same-origin path).
+
+**Inline `<script>` blocks (theme pre-paint, run before the main module script loads so there's no flash of the wrong theme) are allow-listed by sha256 hash of their exact content, not a nonce.** The content is static per file — it doesn't change per request — so a nonce (which exists specifically to authorize content generated fresh on every response) would be solving a problem that doesn't exist here, at the cost of switching every page from `res.sendFile()` to a per-request template render. A hash needs none of that: `server/src/common/csp.js`'s `inlineScriptHashes()` reads each page's real HTML file and computes the hashes **at server boot**, so they can never go stale relative to what's actually being served — unlike a hand-copied hash string, an edited script is automatically re-hashed on the next restart rather than silently mismatching in production. This is also why the placeholder hashes above aren't filled in: they're computed, not authored, and copying today's values into this doc would just create a second place for them to go stale.
+
+**`style-src` includes `'unsafe-inline'`, deliberately, for now.** Zero inline `<style>` blocks exist, but `pricing`'s markup alone has ~90 inline `style="..."` attributes (mostly one-off `height`/`cursor` declarations) — eliminating those is a real but separate frontend cleanup, out of scope for adding CSP. Style-based injection is a much lower-severity CSP gap than script-based (no arbitrary JS execution path through a `style` attribute in any current browser), so this is a deliberate, scoped trade-off, not an oversight.
+
+**Verified live in a real browser** (not just "should work"): both `/planner` and `/` (employees), across Dashboard/Settings/Quotation-with-live-preview and Overview/KPIs respectively — zero console errors, zero CSP violation reports, every asset (external scripts, `/shared/*` widgets, `socket.io`, the logo image) loading normally.
 
 ---
 
@@ -49,13 +58,13 @@ Cookie-based auth is CSRF-prone because browsers attach cookies to requests auto
 
 Because the access token lives in JS memory (§4 above), an XSS vulnerability doesn't just deface a page — it lets injected script read the token directly or make authenticated requests as the victim. This raises XSS from "should fix" to "precondition for the auth model."
 
-**Known risk in the source code:** both current frontends build DOM content by concatenating strings into `innerHTML` in multiple places (e.g. `managerRequestCard`, `kpiRow` in the Employees Portal). Any place user-supplied free text (leave request reasons, KPI comments, names) flows into `innerHTML` unescaped is a stored-XSS vector.
+**Historical risk, since audited and fixed:** the early Employees Portal frontend built DOM content by concatenating strings into `innerHTML` in multiple places (e.g. `managerRequestCard`, `kpiRow`) — any user-supplied free text (leave request reasons, KPI comments, names) flowing into `innerHTML` unescaped is a stored-XSS vector. An earlier session audited and fixed this across the frontends that existed at the time; surfaces migrated since (`pricing`) followed the same discipline from the start. See `docs/frontend-architecture.md` §5 for the current state.
 
 **Rule going forward:**
 - Prefer `textContent` over `innerHTML` for any plain-text content.
-- Where HTML structure is genuinely needed around dynamic text, build the DOM with `createElement`/`textContent` rather than template-string interpolation, or run dynamic text through a small `escapeHtml()` helper (`common/dom.js` on the frontend, see `docs/frontend-architecture.md`) before interpolating.
+- Where HTML structure is genuinely needed around dynamic text, build the DOM with `createElement`/`textContent` rather than template-string interpolation, or run dynamic text through the small `escapeHtml()`/`esc()` helper every surface's own `dom.js` provides (each surface has its own copy, not one shared file — see `docs/frontend-architecture.md` §3) before interpolating.
 - **Escape late, not early**: sanitize/escape at the render boundary, not at input/storage time. Storing pre-escaped data makes it harder to reuse correctly elsewhere (e.g. in an export, a different rendering context, or an email) and is a common source of double-escaping bugs.
-- Auditing and fixing existing `innerHTML` usage is part of the frontend migration work, not a deferred nice-to-have — see `docs/frontend-architecture.md`.
+- Any new dynamic-rendering code is held to this from the start, not audited in later — see `docs/frontend-architecture.md` §5.
 
 ---
 
