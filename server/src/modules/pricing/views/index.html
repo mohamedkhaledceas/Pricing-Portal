@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Cost & Margin Planner</title>
+<script>
+/* Applied before body paint to avoid a flash of the wrong theme on load —
+   the alternative (waiting for the main module script at the end of body)
+   would briefly show light mode even when dark was the saved choice. */
+(function(){
+  try{
+    var t = localStorage.getItem('pricingPortalTheme');
+    if(t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  }catch(err){}
+})();
+</script>
+<link rel="stylesheet" href="/planner/css/pricing.css">
+<link rel="stylesheet" href="/shared/accountMenu.css">
+<script src="/shared/orgConstants.js"></script>
+<script src="/shared/accountMenu.js"></script>
+<script src="/shared/accountSettings.js"></script>
+</head>
+<body>
+
+<div id="appShell" style="display:none;">
+<header class="top">
+  <img id="brandLogo" alt="Back to planner" title="Back to planner" style="height:38px; width:auto; cursor:pointer">
+  <div>
+    <h1 id="appTitle">Cost &amp; Margin Planner</h1>
+    <div class="sub" id="appSub">Salaries → true hourly cost → project margins</div>
+  </div>
+  <div class="spacer"></div>
+  <label class="admin-only" style="display:flex; gap:6px; align-items:center; font-size:12px; color:var(--ink-2)">
+    Show figures in <select id="dispCur" style="padding:5px 7px"></select>
+  </label>
+  <span class="mode-badge bd-only"><span class="light" style="background:var(--s4)"></span>Team view</span>
+  <button id="btnUnlock" class="bd-only ghost">Unlock owner view</button>
+  <button id="btnLock" class="admin-only ghost">Switch to team view</button>
+  <button id="btnEmployees" class="ghost">Employees</button>
+  <button id="btnCommercialLead" class="ghost" hidden>Commercial Lead</button>
+  <button id="btnLogin" class="primary">Log in</button>
+  <input type="file" id="fileInput" accept="application/json" style="display:none">
+  <div id="accountMenuWrap"></div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" class="admin-only" data-tab="dashboard" aria-selected="true">Dashboard</button>
+  <button role="tab" class="admin-only" data-tab="team" aria-selected="false">Team &amp; salaries</button>
+  <button role="tab" class="admin-only" data-tab="expenses" aria-selected="false">Fixed expenses</button>
+  <button role="tab" data-tab="projects" aria-selected="false">Project estimator</button>
+  <button role="tab" class="admin-only" data-tab="scenarios" aria-selected="false">Scenarios</button>
+  <button role="tab" class="admin-only" data-tab="capacity" aria-selected="false">Capacity</button>
+  <button role="tab" class="admin-only" data-tab="quote" aria-selected="false">Quotation</button>
+  <button role="tab" class="admin-only" data-tab="settings" aria-selected="false">Settings</button>
+</nav>
+
+<main>
+  <!-- DASHBOARD -->
+  <section class="tabpanel" id="tab-dashboard">
+    <div class="card">
+      <h2>Where the money goes each month</h2>
+      <p class="hint">Everything below is calculated from your team, your fixed expenses and your project list. Change any of those and these numbers move.</p>
+      <div class="tiles">
+        <div class="tile"><div class="k">Monthly burn</div><div class="v" data-out="d.burn">—</div><div class="n" data-out="d.burnNote">—</div></div>
+        <div class="tile"><div class="k">Billable capacity</div><div class="v" data-out="d.cap">—</div><div class="n" data-out="d.capNote">—</div></div>
+        <div class="tile"><div class="k">True cost per billable hour</div><div class="v" data-out="d.blended">—</div><div class="n">Salaries + overhead, blended across the team</div></div>
+        <div class="tile"><div class="k">Break-even day rate</div><div class="v" data-out="d.dayrate">—</div><div class="n">Per person-day (8h) just to cover costs</div></div>
+      </div>
+
+      <h3>Cost structure</h3>
+      <div class="stack" id="stackBurn"></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--s1)"></span>Salaries &amp; staff cost <b data-out="d.payroll">—</b></span>
+        <span><span class="sw" style="background:var(--s2)"></span>Fixed expenses <b data-out="d.fixed">—</b></span>
+      </div>
+
+      <h3>Capacity booked</h3>
+      <div class="meter"><div id="meterCap" style="width:0%"></div></div>
+      <div class="legend"><span data-out="d.capacityLine">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Pipeline &amp; margins</h2>
+      <p class="hint">Every project you have entered in the estimator, with the price you set against its true cost.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Project</th><th>Client</th><th class="num">Hours</th><th class="num">True cost</th>
+            <th class="num">Price</th><th class="num">Profit</th><th class="num">Margin</th><th>Status</th>
+          </tr></thead>
+          <tbody id="pipelineBody"></tbody>
+          <tfoot id="pipelineFoot"></tfoot>
+        </table>
+      </div>
+      <h3>Profitability check</h3>
+      <div class="kv"><span class="lab">Revenue from all projects</span><span data-out="d.pipeRev">—</span></div>
+      <div class="kv"><span class="lab">True cost of delivering them</span><span data-out="d.pipeCost">—</span></div>
+      <div class="kv total"><span class="lab">Blended margin</span><span data-out="d.pipeMargin">—</span></div>
+    </div>
+  </section>
+
+  <!-- TEAM -->
+  <section class="tabpanel" id="tab-team" hidden>
+    <div class="card">
+      <h2>Team &amp; salaries</h2>
+      <p class="hint">Enter each person's gross monthly salary and any extra monthly employer cost (insurance, taxes, allowances, transport). <b>Working hrs</b> is their contracted hours per month; <b>billable %</b> is the share of that time actually charged to client work — the rest (admin, pitching, holidays) is real cost that has to be recovered from the billable hours. Leave <b>Cost/hr override</b> empty to let it calculate, or type a number for freelancers and part-timers.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="min-width:130px">Name</th><th style="min-width:120px">Role</th>
+            <th>Paid in</th>
+            <th class="num">Monthly salary</th><th class="num">Extra cost/mo</th>
+            <th class="num">Working hrs</th><th class="num">Billable %</th>
+            <th class="num">Cost/hr override</th>
+            <th class="num">Billable hrs</th>
+            <th class="num">Cost/hr used <span class="muted" data-out="cur.disp"></span></th><th></th>
+          </tr></thead>
+          <tbody id="teamBody"></tbody>
+          <tfoot id="teamFoot"></tfoot>
+        </table>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="addPerson" class="primary">+ Add person</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- EXPENSES -->
+  <section class="tabpanel" id="tab-expenses" hidden>
+    <div class="card">
+      <h2>Fixed expenses</h2>
+      <p class="hint">Everything the company pays whether or not a project is running: rent, utilities, software, accounting, bank fees, cleaning, marketing retainers. Enter the amount and how often it is paid — the monthly equivalent is worked out for you.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="min-width:150px">Expense</th><th style="min-width:120px">Category</th>
+            <th>Cur</th><th class="num">Amount</th><th>Paid</th>
+            <th class="num">Per month <span class="muted" data-out="cur.disp"></span></th><th></th>
+          </tr></thead>
+          <tbody id="expBody"></tbody>
+          <tfoot id="expFoot"></tfoot>
+        </table>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="addExpense" class="primary">+ Add expense</button>
+      </div>
+      <h3>How this reaches your projects</h3>
+      <div class="kv"><span class="lab">Total fixed expenses per month</span><span data-out="e.total">—</span></div>
+      <div class="kv"><span class="lab">Total billable hours the team can sell per month</span><span data-out="e.hours">—</span></div>
+      <div class="kv total"><span class="lab">Overhead added to every hour you sell</span><span data-out="e.perHour">—</span></div>
+    </div>
+  </section>
+
+  <!-- PROJECTS -->
+  <section class="tabpanel" id="tab-projects" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div class="field" style="min-width:260px">
+          <label for="projSelect">Project</label>
+          <select id="projSelect"></select>
+        </div>
+        <div class="row">
+          <button id="addProject" class="primary">+ New project</button>
+          <button id="dupProject">Duplicate</button>
+          <button id="btnHistory">History</button>
+          <button id="delProject" class="danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="projPanel">
+      <div class="card">
+        <h2>Project details</h2>
+        <div class="row">
+          <div class="field"><label>Project name</label><input id="p_name" style="min-width:220px"></div>
+          <div class="field"><label>Client</label><input id="p_client" style="min-width:180px"></div>
+          <div class="field"><label>Starts</label><input id="p_start" type="month" style="width:150px"></div>
+          <div class="field"><label>Delivered over (months)</label><input id="p_months" type="number" min="0.25" step="0.25" style="width:110px"></div>
+          <div class="field"><label>Status</label>
+            <select id="p_status">
+              <option>Quoting</option><option>Won</option><option>In progress</option><option>Lost</option><option>Archived</option>
+            </select>
+          </div>
+          <div class="field"><label>Quote client in</label><select id="p_cur" style="width:90px"></select></div>
+        </div>
+        <p class="hint" style="margin:10px 0 0" data-out="p.fxNote"></p>
+
+        <h3>Who works on it, and for how many hours</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="min-width:180px">Person</th><th class="num">Hours</th>
+              <th class="num admin-only">Cost/hr</th><th class="num admin-only">Labour cost</th>
+              <th class="num admin-only">Overhead</th><th class="num admin-only">Line total</th>
+              <th class="num bd-only">Rate/hr</th><th class="num bd-only">Line price</th><th></th>
+            </tr></thead>
+            <tbody id="lineBody"></tbody>
+            <tfoot id="lineFoot"></tfoot>
+          </table>
+        </div>
+        <div class="row" style="margin-top:12px"><button id="addLine">+ Add person to project</button></div>
+
+        <h3>Direct costs (things you buy for this project only)</h3>
+        <p class="hint">Freelancers, printing, media buy, props, travel, licensed footage, stock images.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th style="min-width:220px">Item</th><th>Cur</th><th class="num">Cost</th><th></th></tr></thead>
+            <tbody id="dcBody"></tbody>
+            <tfoot id="dcFoot"></tfoot>
+          </table>
+        </div>
+        <div class="row" style="margin-top:12px"><button id="addDC">+ Add direct cost</button></div>
+      </div>
+
+      <div class="card bd-only">
+        <h2>Price</h2>
+        <p class="hint">This price already covers the team's time, the overheads and the company's margin. If the client negotiates, type the new figure and watch the signal below.</p>
+        <div class="row" style="gap:28px; align-items:flex-start">
+          <div>
+            <div class="k" style="font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600">Recommended price</div>
+            <div class="big-price" data-out="b.recommended">—</div>
+          </div>
+          <div class="field">
+            <label>Price you want to quote (before VAT) <span class="muted" data-out="cur.quote"></span></label>
+            <input id="b_price" type="number" min="0" step="100" style="max-width:220px; font-size:17px; padding:10px">
+          </div>
+        </div>
+        <div class="signal" id="b_signal">
+          <span class="lamp" style="background:var(--good)"></span>
+          <span><b data-out="b.signalTitle">—</b><span data-out="b.signalNote" class="muted"></span></span>
+        </div>
+        <div style="margin-top:14px">
+          <div class="kv"><span class="lab">Total team hours</span><span data-out="b.hours">—</span></div>
+          <div class="kv"><span class="lab">Third-party costs included</span><span data-out="b.direct">—</span></div>
+          <div class="kv"><span class="lab">Average rate you are selling per hour</span><span data-out="b.effRate">—</span></div>
+        </div>
+      </div>
+
+      <div class="grid2 admin-only">
+        <div class="card">
+          <h2>Cost build-up</h2>
+          <div class="kv"><span class="lab">Labour (team hours × their cost)</span><span data-out="p.labour">—</span></div>
+          <div class="kv"><span class="lab">Overhead absorbed (<span data-out="p.ohRate">—</span> × <span data-out="p.hours">—</span>)</span><span data-out="p.overhead">—</span></div>
+          <div class="kv"><span class="lab">Direct costs</span><span data-out="p.direct">—</span></div>
+          <div class="kv"><span class="lab">Contingency
+              <input id="p_cont" type="number" min="0" step="1" style="width:62px; margin:0 4px">%</span>
+            <span data-out="p.contAmt">—</span></div>
+          <div class="kv total"><span class="lab">True cost to deliver</span><span data-out="p.cost">—</span></div>
+          <h3>Breakdown</h3>
+          <div class="stack" id="stackProject"></div>
+          <div class="legend" id="legendProject"></div>
+        </div>
+
+        <div class="card">
+          <h2>Your price</h2>
+          <div class="row">
+            <div class="field"><label>Target margin %</label><input id="p_target" type="number" min="0" max="95" step="1" style="width:100px"></div>
+            <div class="field"><label>Suggested price at that margin</label><input id="p_sugg" readonly style="width:170px"></div>
+            <div class="field"><label>Use suggested</label><button id="useSugg">↩︎ Copy across</button></div>
+          </div>
+          <div class="field" style="margin-top:14px">
+            <label>Price you will quote (before VAT) <span class="muted" data-out="cur.quote"></span></label>
+            <input id="p_price" type="number" min="0" step="100" style="max-width:220px; font-size:17px; padding:10px">
+          </div>
+          <div style="margin-top:16px">
+            <div class="big-price" data-out="p.profit">—</div>
+            <div class="muted">profit on this project</div>
+          </div>
+          <div style="margin-top:14px">
+            <div class="kv"><span class="lab">Margin</span><span><span data-out="p.margin">—</span> <span id="p_marginPill"></span></span></div>
+            <div class="kv"><span class="lab">Mark-up on cost</span><span data-out="p.markup">—</span></div>
+            <div class="kv"><span class="lab">Effective rate you are selling per hour</span><span data-out="p.effRate">—</span></div>
+            <div class="kv"><span class="lab">Lowest price you can accept (break-even)</span><span data-out="p.floor">—</span></div>
+            <div class="kv"><span class="lab">Share of one month's company capacity</span><span data-out="p.capShare">—</span></div>
+          </div>
+          <p class="hint" id="p_advice" style="margin-top:14px"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCENARIOS -->
+  <section class="tabpanel" id="tab-scenarios" hidden>
+    <div class="card">
+      <h2>Compare scenarios</h2>
+      <p class="hint">Same project, different assumptions — useful when a client pushes back on price, or when you suspect the job will take longer than estimated. <b>Hours ×</b> scales every person's hours (120 = 20% more time than planned). Leave <b>Price</b> empty to use the project price.</p>
+      <div class="row" style="margin-bottom:12px">
+        <div class="field" style="min-width:260px"><label>Project</label><select id="scenProjSelect"></select></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="min-width:170px">Scenario</th><th class="num">Hours ×%</th>
+            <th class="num">Extra direct cost <span class="muted" data-out="cur.base"></span></th>
+            <th class="num">Price <span class="muted" data-out="cur.quote"></span></th>
+            <th class="num">Cost <span class="muted" data-out="cur.disp"></span></th>
+            <th class="num">Profit</th><th class="num">Margin</th>
+            <th class="num">Sell rate/hr <span class="muted" data-out="cur.quote"></span></th><th></th>
+          </tr></thead>
+          <tbody id="scenBody"></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:12px"><button id="addScen" class="primary">+ Add scenario</button></div>
+    </div>
+  </section>
+
+  <!-- CAPACITY -->
+  <section class="tabpanel" id="tab-capacity" hidden>
+    <div class="card">
+      <h2>Can the team actually deliver this?</h2>
+      <p class="hint">Every project's hours are spread evenly across the months it runs, from the date it starts, and set against what each person can realistically bill. Anything over 100% means that month is oversold — you would need a freelancer, a longer timeline, or a later start.</p>
+      <div class="row" style="margin-bottom:14px">
+        <label style="display:flex; gap:8px; align-items:center; font-size:13px">
+          <input type="checkbox" id="capQuoting" checked style="width:auto"> Include projects still at quoting stage
+        </label>
+        <div class="field"><label>Months to show</label>
+          <select id="capWindow" style="width:120px">
+            <option value="3">3</option><option value="6" selected>6</option><option value="12">12</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap"><table id="capTable"></table></div>
+      <div class="legend" style="margin-top:12px">
+        <span><span class="sw" style="background:var(--s1)"></span>Comfortable</span>
+        <span><span class="sw" style="background:var(--s4)"></span>Tight — over 85%</span>
+        <span><span class="sw" style="background:var(--critical)"></span>Oversold — over 100%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>What the free time is worth</h2>
+      <p class="hint">Unsold hours cost you the same as sold ones — the salaries are paid either way. This is what the gap is worth if you filled it at your normal pricing.</p>
+      <div class="tiles">
+        <div class="tile"><div class="k">Free hours in the window</div><div class="v" data-out="c.free">—</div><div class="n" data-out="c.freeNote">—</div></div>
+        <div class="tile"><div class="k">Value of that free time</div><div class="v" data-out="c.value">—</div><div class="n">Sold at your average rate and target margin</div></div>
+        <div class="tile"><div class="k">Months oversold</div><div class="v" data-out="c.over">—</div><div class="n" data-out="c.overNote">—</div></div>
+      </div>
+      <h3>Fit test — a job you are considering</h3>
+      <p class="hint">Type the hours and timing of a job that is not in the list yet and see whether it fits on top of everything else.</p>
+      <div class="row">
+        <div class="field"><label>Hours</label><input id="fitHours" type="number" min="0" step="10" value="0" style="width:110px"></div>
+        <div class="field"><label>Starts</label><input id="fitStart" type="month" style="width:150px"></div>
+        <div class="field"><label>Over (months)</label><input id="fitMonths" type="number" min="1" step="1" value="1" style="width:110px"></div>
+      </div>
+      <div class="signal" id="fitSignal">
+        <span class="lamp" style="background:var(--axis)"></span>
+        <span><b data-out="c.fitTitle">—</b><span data-out="c.fitNote" class="muted"></span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUOTE -->
+  <section class="tabpanel" id="tab-quote" hidden>
+    <div class="card">
+      <h2>Client quotation</h2>
+      <p class="hint">Builds a clean client-facing quote from the project you pick. Press <b>Print / Save as PDF</b> and choose "Save as PDF" in the print dialog. The internal cost figures never appear on it.</p>
+      <div class="row">
+        <div class="field" style="min-width:240px"><label>Project</label><select id="quoteProjSelect"></select></div>
+        <div class="field"><label>Quote number</label><input id="q_num" style="width:140px"></div>
+        <div class="field"><label>Date</label><input id="q_date" type="date"></div>
+        <div class="field"><label>Valid for (days)</label><input id="q_valid" type="number" min="1" step="1" style="width:100px"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="field"><label>Show lines as</label>
+          <select id="q_detail">
+            <option value="lump">One total (recommended)</option>
+            <option value="role">By role / person</option>
+            <option value="phase">Custom lines you write</option>
+          </select>
+        </div>
+        <div class="field"><label>Discount %</label><input id="q_disc" type="number" min="0" max="100" step="1" style="width:90px"></div>
+        <div class="field"><label>VAT %</label><input id="q_vat" type="number" min="0" step="0.5" style="width:90px"></div>
+      </div>
+      <div id="q_customWrap" style="margin-top:14px" hidden>
+        <h3>Custom lines</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th style="min-width:260px">Description</th><th class="num">Amount</th><th></th></tr></thead>
+            <tbody id="qlBody"></tbody>
+            <tfoot id="qlFoot"></tfoot>
+          </table>
+        </div>
+        <div class="row" style="margin-top:10px"><button id="addQL">+ Add line</button></div>
+      </div>
+      <div class="field" style="margin-top:14px"><label>Scope / description shown to the client</label>
+        <textarea id="q_scope" rows="4" style="width:100%"></textarea></div>
+      <div class="field" style="margin-top:10px"><label>Payment terms &amp; notes</label>
+        <textarea id="q_terms" rows="3" style="width:100%"></textarea></div>
+      <div class="row" style="margin-top:14px">
+        <button id="btnPrint" class="primary">Print / Save as PDF</button>
+        <span class="muted" data-out="q.check">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Preview</h2>
+      <div id="quotePreview" style="background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:20px"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="tabpanel" id="tab-settings" hidden>
+    <div class="card">
+      <h2>Company defaults</h2>
+      <div class="row">
+        <div class="field"><label>Company name (shown on quotes)</label><input id="s_company" style="min-width:240px"></div>
+        <div class="field"><label>Base currency (everything is costed in this)</label><select id="s_currency" style="width:110px"></select></div>
+      </div>
+      <h3>Exchange rates</h3>
+      <p class="hint">How many <span data-out="cur.base">EGP</span> one unit is worth. Salaries, expenses and third-party costs can each be entered in their own currency, and any project can be quoted to the client in another — but the cost and the margin are always worked out in <span data-out="cur.base">EGP</span>, so a weak month for the pound never flatters a quote. Use the rate your bank actually gives you, not the mid-market rate.</p>
+      <div class="row" id="rateRow"></div>
+      <div class="row" style="margin-top:10px">
+        <div class="field"><label>Rates last checked</label><input id="s_ratesDate" type="date" style="width:170px"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="field"><label>Default working hrs / month</label><input id="s_hours" type="number" min="1" step="1" style="width:130px"></div>
+        <div class="field"><label>Default billable %</label><input id="s_util" type="number" min="1" max="100" step="1" style="width:130px"></div>
+        <div class="field"><label>Default target margin %</label><input id="s_margin" type="number" min="0" max="95" step="1" style="width:150px"></div>
+        <div class="field"><label>Default contingency %</label><input id="s_cont" type="number" min="0" step="1" style="width:150px"></div>
+        <div class="field"><label>Minimum acceptable margin %</label><input id="s_floor" type="number" min="0" max="95" step="1" style="width:170px"></div>
+      </div>
+      <p class="hint" style="margin-top:8px">The minimum margin is the line the team view will not let anyone cross quietly: price above target shows green, between target and minimum shows amber, below the minimum shows red. Neither the cost nor the margin figure is ever displayed in that view.</p>
+      <h3>How people's hourly cost is calculated</h3>
+      <div class="field">
+        <select id="s_basis" style="max-width:520px">
+          <option value="recovery">Recovery rate — salary ÷ billable hours (recommended)</option>
+          <option value="raw">Raw rate — salary ÷ all working hours</option>
+        </select>
+      </div>
+      <p class="hint" style="margin-top:8px">The recovery rate is the honest one: if a designer costs 20,000/month and only 120 of her 176 hours are sellable, every sellable hour has to carry 20,000 ÷ 120 = 167, not 20,000 ÷ 176 = 114. Using the raw rate quietly loses you the difference on every quote.</p>
+      <h3>Logo</h3>
+      <p class="hint">Used in the header and at the top of every quotation. Your logo is already built in — upload a new file only if it changes.</p>
+      <div class="row">
+        <img id="logoPreview" alt="" style="height:40px; width:auto; background:var(--panel); padding:6px 10px; border:1px solid var(--border); border-radius:8px">
+        <button id="btnLogo">Upload a different logo</button>
+        <button id="btnLogoReset">Back to the built-in one</button>
+        <input type="file" id="logoInput" accept="image/png,image/jpeg,image/svg+xml" style="display:none">
+      </div>
+      <label style="display:flex; gap:8px; align-items:center; font-size:13px; margin-top:12px">
+        <input type="checkbox" id="s_logoQuote" style="width:auto"> Show the logo on quotations
+      </label>
+
+      <h3>Team (BD) view</h3>
+      <p class="hint">Set a PIN, then switch to the team view before handing the file to anyone. In that view only the estimator is visible: salaries, expenses, costs, margins and the dashboard are all hidden, and the PIN is needed to come back here.</p>
+      <div class="row">
+        <div class="field"><label>PIN</label><input id="s_pin" type="text" inputmode="numeric" placeholder="e.g. 4917" style="width:130px"></div>
+        <button id="btnSetPin" class="primary">Set / change PIN</button>
+        <button id="btnClearPin">Remove PIN</button>
+        <span class="muted" id="pinState"></span>
+      </div>
+      <p class="hint" style="margin-top:10px"><b>Please read this once.</b> The PIN hides the owner view, it does not encrypt the file. Someone who opens this page in a text editor can still read the salary figures. It is the right tool for keeping numbers out of sight in a shared file; it is not protection against someone determined to look. If you ever want a version where the salaries are physically absent from the file the team holds, ask me and I will add a "Save team copy" button that strips them out.</p>
+
+      <h3>Data</h3>
+      <div class="row">
+        <button id="btnSave2" class="primary">Save to file</button>
+        <button id="btnLoad2">Load file</button>
+        <button id="btnClear" class="danger">Clear everything and start empty</button>
+        <button id="btnSample">Reload sample data</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>How the numbers work</h2>
+      <p class="hint" style="max-width:none">
+        <b>Cost per hour</b> = (salary + extra employer cost) ÷ billable hours per month.<br>
+        <b>Overhead per hour</b> = all fixed expenses ÷ all billable hours the team can sell in a month. Every project hour carries this, so rent and software are paid for by the work.<br>
+        <b>True project cost</b> = labour + overhead + direct costs + contingency.<br>
+        <b>Suggested price</b> = true cost ÷ (1 − target margin). Note this is a <i>margin</i>, not a mark-up: to keep 35% you divide by 0.65, you do not add 35%.<br>
+        <b>Margin</b> = (price − true cost) ÷ price. <b>Mark-up</b> = (price − true cost) ÷ true cost.<br>
+        <b>Capacity</b> = each project's hours spread evenly across the months it runs, from its start date, against each person's billable hours. Over 100% in a month means that month is oversold.<br>
+        <b>Break-even</b> = your monthly burn. Any month you bill less than that, the company is losing money regardless of how good individual project margins look.
+      </p>
+    </div>
+  </section>
+
+  <!-- USERS -->
+  <section class="tabpanel" id="tab-users" hidden>
+    <div class="card">
+      <h2>Users</h2>
+      <p class="hint">Manage account roles and access.</p>
+      <div id="usersError" role="alert" hidden style="color:var(--critical); font-size:12.5px; margin-bottom:12px;"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="saveErrorToast" role="alert" hidden></div>
+<div id="saveOkToast" role="status" hidden></div>
+
+<div id="historyBackdrop" hidden></div>
+<div id="historyPanel" hidden role="dialog" aria-label="Project history">
+  <div class="historyHead">
+    <h2>History</h2>
+    <button id="btnHistoryClose" class="ghost" aria-label="Close">✕</button>
+  </div>
+  <div id="historyList"></div>
+</div>
+
+<div id="printArea"></div>
+
+<div id="loadErrorOverlay" hidden>
+  <div class="card">
+    <p>Couldn't load your data.</p>
+    <button id="btnLoadErrorRetry" class="btn primary">Retry</button>
+  </div>
+</div>
+</div>
+
+<script type="module" src="/planner/js/main.js"></script>
+</body>
+</html>
