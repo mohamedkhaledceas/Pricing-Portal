@@ -49,13 +49,13 @@ Cookie-based auth is CSRF-prone because browsers attach cookies to requests auto
 
 Because the access token lives in JS memory (§4 above), an XSS vulnerability doesn't just deface a page — it lets injected script read the token directly or make authenticated requests as the victim. This raises XSS from "should fix" to "precondition for the auth model."
 
-**Known risk in the source code:** both current frontends build DOM content by concatenating strings into `innerHTML` in multiple places (e.g. `managerRequestCard`, `kpiRow` in the Employees Portal). Any place user-supplied free text (leave request reasons, KPI comments, names) flows into `innerHTML` unescaped is a stored-XSS vector.
+**Historical risk, since audited and fixed:** the early Employees Portal frontend built DOM content by concatenating strings into `innerHTML` in multiple places (e.g. `managerRequestCard`, `kpiRow`) — any user-supplied free text (leave request reasons, KPI comments, names) flowing into `innerHTML` unescaped is a stored-XSS vector. An earlier session audited and fixed this across the frontends that existed at the time; surfaces migrated since (`pricing`) followed the same discipline from the start. See `docs/frontend-architecture.md` §5 for the current state.
 
 **Rule going forward:**
 - Prefer `textContent` over `innerHTML` for any plain-text content.
-- Where HTML structure is genuinely needed around dynamic text, build the DOM with `createElement`/`textContent` rather than template-string interpolation, or run dynamic text through a small `escapeHtml()` helper (`common/dom.js` on the frontend, see `docs/frontend-architecture.md`) before interpolating.
+- Where HTML structure is genuinely needed around dynamic text, build the DOM with `createElement`/`textContent` rather than template-string interpolation, or run dynamic text through the small `escapeHtml()`/`esc()` helper every surface's own `dom.js` provides (each surface has its own copy, not one shared file — see `docs/frontend-architecture.md` §3) before interpolating.
 - **Escape late, not early**: sanitize/escape at the render boundary, not at input/storage time. Storing pre-escaped data makes it harder to reuse correctly elsewhere (e.g. in an export, a different rendering context, or an email) and is a common source of double-escaping bugs.
-- Auditing and fixing existing `innerHTML` usage is part of the frontend migration work, not a deferred nice-to-have — see `docs/frontend-architecture.md`.
+- Any new dynamic-rendering code is held to this from the start, not audited in later — see `docs/frontend-architecture.md` §5.
 
 ---
 
