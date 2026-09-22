@@ -2,6 +2,7 @@ require('dotenv').config();
 const path = require('path');
 const http = require('http');
 const express = require('express');
+const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const authModule = require('./modules/auth');
 const management = require('./modules/management');
@@ -23,6 +24,7 @@ const notFoundHandler = require('./common/notFoundHandler');
 const { initRealtime } = require('./common/realtime');
 const requireRole = require('./common/middleware/requireRole');
 const { USER_MANAGER_ROLES } = require('./common/permissions');
+const { inlineScriptHashes } = require('./common/csp');
 
 /* The Margin Planner's own API previously checked authMiddleware only —
    any authenticated user of any role could read/write salary and cost
@@ -50,6 +52,50 @@ const HOST = process.env.HOST || '0.0.0.0';
    silently breaks both express-rate-limit's per-client accounting and the
    IP recorded on every audit log entry below. */
 app.set('trust proxy', 1);
+
+/* Hoisted so both the CSP setup below and each page's own app.get(...)
+   handler further down reference the same path — no duplicate
+   path.join() calls. */
+const employeesHtmlPath = path.join(__dirname, 'modules', 'employees', 'views', 'index.html');
+const plannerHtmlPath = path.join(__dirname, 'modules', 'pricing', 'views', 'index.html');
+const commercialLeadHtmlPath = path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views', 'index.html');
+const ceoDashboardHtmlPath = path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views', 'index.html');
+const loginHtmlPath = path.join(__dirname, 'modules', 'auth', 'views', 'index.html');
+
+/* Content-Security-Policy — see docs/security.md §2 for the full audit
+   this is based on. Narrow by construction, not by exception list: no
+   external script/style/font hosts are allow-listed because none are
+   actually used anywhere in the app (no Google Sign-In SDK, no Google
+   Fonts, no third-party CDN — confirmed by reading every frontend, not
+   assumed). The handful of small inline <script> blocks (theme pre-paint,
+   run before the main module script loads so there's no flash of the
+   wrong theme) are allow-listed by sha256 hash of their real file
+   content rather than 'unsafe-inline' or a per-request nonce — the
+   content is static per file, so this needs no change to how these
+   pages are served, and can never go silently stale (see
+   common/csp.js). style-src needs 'unsafe-inline' for now: the pricing
+   frontend alone has ~90 inline style="" attributes, and migrating
+   those off is a separate, much larger effort than adding CSP. */
+const inlineScriptHashesAllowed = Array.from(new Set(
+  [employeesHtmlPath, plannerHtmlPath, commercialLeadHtmlPath, ceoDashboardHtmlPath, loginHtmlPath]
+    .flatMap(inlineScriptHashes),
+));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", ...inlineScriptHashesAllowed],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+}));
 
 /* Frontend and API are served from this same Express app on the same origin —
    there is no legitimate cross-origin caller, so no CORS middleware is needed
@@ -79,7 +125,6 @@ app.use(cookieParser());
    /planner (still linked from Employees' own header for manager/operations/
    admin, see modules/employees/views/js/main.js). /employees is kept only
    as a redirect to '/' so there's one canonical URL for this content. */
-const employeesHtmlPath = path.join(__dirname, 'modules', 'employees', 'views', 'index.html');
 app.get('/', (req, res) => {
   res.sendFile(employeesHtmlPath);
 });
@@ -94,7 +139,6 @@ app.use('/employees', express.static(path.join(__dirname, 'modules', 'employees'
    ~2,779-line self-contained file (margin-planner_1.html) until this
    migration; see docs/governance/implementation-tracker.md's 2026-09-21/22
    entries for the full record. */
-const plannerHtmlPath = path.join(__dirname, 'modules', 'pricing', 'views', 'index.html');
 app.get('/planner', (req, res) => {
   res.sendFile(plannerHtmlPath);
 });
@@ -102,14 +146,12 @@ app.use('/planner', express.static(path.join(__dirname, 'modules', 'pricing', 'v
 
 /* Relocated from the old repo-root commercial-lead.html into the module
    that now owns it. */
-const commercialLeadHtmlPath = path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views', 'index.html');
 app.get('/commercial-lead', (req, res) => {
   res.sendFile(commercialLeadHtmlPath);
 });
 app.use('/commercial-lead', express.static(path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views')));
 
 /* CEO dashboard — manager-role-only, see modules/management/ceo-dashboard/. */
-const ceoDashboardHtmlPath = path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views', 'index.html');
 app.get('/ceo', (req, res) => {
   res.sendFile(ceoDashboardHtmlPath);
 });
@@ -119,7 +161,6 @@ app.use('/ceo', express.static(path.join(__dirname, 'modules', 'management', 'ce
    redirects here when a silent refresh fails; on success this page's own
    JS redirects to '/' and lets the destination page pull a fresh access
    token into its own memory (see modules/auth/views/js/main.js). */
-const loginHtmlPath = path.join(__dirname, 'modules', 'auth', 'views', 'index.html');
 app.get('/login', (req, res) => {
   res.sendFile(loginHtmlPath);
 });

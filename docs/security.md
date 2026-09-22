@@ -10,23 +10,30 @@ Internal tool, single company, small trusted user base, but handling genuinely s
 
 ---
 
-## 2. Transport & headers — planned, not implemented
+## 2. Transport & headers
 
-**This whole section describes a control that was never built**, not one that's in place. It was written during the docs-only planning phase (2026-08-10, before any migration code existed) and never revisited as the real system took shape — confirmed via `git log -S`: no commit has ever touched `helmet`, `Content-Security-Policy`, or `nonce` anywhere in `server/`. There is no `helmet` dependency and no CSP header set today, by any mechanism.
+**Helmet** (`app.use(helmet({ contentSecurityPolicy: {...} }))`, `server/src/index.js`, mounted first — before `correlationId`, before any route) — sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Strict-Transport-Security`, and Helmet's other baseline headers, plus an explicit CSP (below). Implemented 2026-09-22, replacing an earlier version of this section that had described this control since 2026-08-10 without it actually existing (confirmed at the time via `git log -S`: no commit had ever touched `helmet`/CSP/`nonce`).
 
-**Helmet** (`app.use(helmet())`) — would set `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and other baseline headers. Near-zero cost, meaningful default hardening. No reason to skip it — this is still worth adding, it just isn't there yet.
-
-**Content Security Policy** — the policy this doc originally proposed:
+**Content Security Policy** — audited from what the app actually uses (all five frontend surfaces' HTML/CSS/JS read directly, not assumed), not copied from a generic template:
 ```
 default-src 'self'
-script-src 'self' https://accounts.google.com 'nonce-<per-request>'
-style-src 'self' https://fonts.googleapis.com 'unsafe-inline'
-font-src https://fonts.gstatic.com
+script-src 'self' 'sha256-<hash>' 'sha256-<hash>' ...
+style-src 'self' 'unsafe-inline'
+img-src 'self'
+font-src 'self'
 connect-src 'self'
-frame-ancestors 'none'
 object-src 'none'
+base-uri 'self'
+form-action 'self'
+frame-ancestors 'none'
 ```
-The inline-script/nonce reasoning behind it is now stale on top of being unimplemented: it was framed around "both frontends keep a single inline `<script>` block per the Phase 2 decision to preserve them as single HTML files" — but per `docs/frontend-architecture.md`, all five current frontend surfaces (`employees`, `commercial-leads`, `ceo-dashboard`, `pricing`, `auth`) load their logic via external `<script type="module" src="...">` files, not one big inline block; each `index.html` does still carry one or two small inline `<script>` blocks (theme pre-paint, to avoid a flash of the wrong theme before the module loads) that a real CSP would still need to account for, via a nonce or by moving that logic into the external module too. `connect-src 'self'` would still matter for the same reason as before: ClickUp calls are server-side only, so the frontend has no legitimate reason to reach any external API directly.
+Narrower than the version originally proposed here: no external script/style/font hosts are allow-listed anywhere because the audit found none in actual use — no Google Sign-In SDK, no Google Fonts, no third-party CDN (auth is email/password only, handled entirely server-side; every `fetch()`/`socket.io` call in every frontend targets a relative, same-origin path).
+
+**Inline `<script>` blocks (theme pre-paint, run before the main module script loads so there's no flash of the wrong theme) are allow-listed by sha256 hash of their exact content, not a nonce.** The content is static per file — it doesn't change per request — so a nonce (which exists specifically to authorize content generated fresh on every response) would be solving a problem that doesn't exist here, at the cost of switching every page from `res.sendFile()` to a per-request template render. A hash needs none of that: `server/src/common/csp.js`'s `inlineScriptHashes()` reads each page's real HTML file and computes the hashes **at server boot**, so they can never go stale relative to what's actually being served — unlike a hand-copied hash string, an edited script is automatically re-hashed on the next restart rather than silently mismatching in production. This is also why the placeholder hashes above aren't filled in: they're computed, not authored, and copying today's values into this doc would just create a second place for them to go stale.
+
+**`style-src` includes `'unsafe-inline'`, deliberately, for now.** Zero inline `<style>` blocks exist, but `pricing`'s markup alone has ~90 inline `style="..."` attributes (mostly one-off `height`/`cursor` declarations) — eliminating those is a real but separate frontend cleanup, out of scope for adding CSP. Style-based injection is a much lower-severity CSP gap than script-based (no arbitrary JS execution path through a `style` attribute in any current browser), so this is a deliberate, scoped trade-off, not an oversight.
+
+**Verified live in a real browser** (not just "should work"): both `/planner` and `/` (employees), across Dashboard/Settings/Quotation-with-live-preview and Overview/KPIs respectively — zero console errors, zero CSP violation reports, every asset (external scripts, `/shared/*` widgets, `socket.io`, the logo image) loading normally.
 
 ---
 
