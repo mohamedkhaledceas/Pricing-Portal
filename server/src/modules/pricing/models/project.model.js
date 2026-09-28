@@ -1,5 +1,12 @@
-function toProjectLine(row) {
-  return { id: row.id, personId: row.person_id, hours: Number(row.hours || 0) };
+/* Replaces toProjectLine/project_lines — employeeId is a real employees.id
+   now (migration 030, tracker §4 item 8), not team_members' free-text
+   person_id. Deliberately renamed the field, not just the source table:
+   calling this personId would misrepresent it as compatible with the old
+   shape, which it isn't (different id space entirely) — the pre-existing
+   frontend will need its own rework to match, which is expected, not an
+   oversight (see the tracker's own item 8b note). */
+function toProjectAssignment(row) {
+  return { id: row.id, employeeId: row.employee_id, hours: Number(row.hours || 0), roleOnProject: row.role_on_project || null };
 }
 
 function toDirectCost(row) {
@@ -54,11 +61,11 @@ function toProject(row, { lines = [], directCosts = [], scenarios = [], quoteLin
     cont: Number(row.contingency || 0),
     target: Number(row.target || 35),
     price: row.price === null || row.price === undefined ? null : Number(row.price),
-    lines: lines.map(toProjectLine),
+    lines: lines.map(toProjectAssignment),
     direct: directCosts.map(toDirectCost),
     scenarios: scenarios.map(toScenario),
     quote: { ...toQuoteMeta(row.quote_json), lines: quoteLines.map(toQuoteLine) },
   };
 }
 
-module.exports = { toProject, toProjectLine, toDirectCost, toScenario, toQuoteLine, toQuoteMeta };
+module.exports = { toProject, toProjectAssignment, toDirectCost, toScenario, toQuoteLine, toQuoteMeta };

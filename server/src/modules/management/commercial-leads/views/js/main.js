@@ -8,7 +8,7 @@ import { renderQuarterlyKpis, bindQuarterlyUi } from './quarterlyKpis.js';
 import { renderPipelineTable, renderActiveClientsTable, bindDealsUi } from './deals.js';
 import { connectSocket } from './realtime.js';
 
-const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
+const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
 
 function renderDashboardSkeletons() {
   $('#qkGrid').innerHTML = Array.from({ length: 8 }, () => `

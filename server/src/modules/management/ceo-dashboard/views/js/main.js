@@ -4,14 +4,14 @@ import { apiFetch, bootstrapAuth } from './apiClient.js';
 import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderAll } from './render.js';
 
-/* Server-side enforcement is requireRole([ROLES.MANAGER, ROLES.ADMIN]) on
+/* Server-side enforcement is requireRole([ROLES.CEO, ROLES.ADMIN]) on
    every /api/ceo-dashboard/* route (see ../../routes/index.js) — this is
    defense in depth for the UI only. Anyone outside this set who reaches
    this page gets the same "Unauthorized" loginGate state as a failed
    login, driven by the 403 the API calls below will actually throw. */
-const CEO_VIEW_ROLES = ['manager', 'admin'];
+const CEO_VIEW_ROLES = ['ceo', 'admin'];
 // Matches every other surface's own Users-menu-item gate.
-const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
+const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
 
 async function loadEntity(entityKey) {
   const [snapRes, briefRes] = await Promise.all([

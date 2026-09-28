@@ -130,8 +130,8 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestRepository.findByEmployeeId(employeeId).map(leaveRequestModel.toLeaveRequest).map(withRequestedDays);
   }
 
-  // The 'manager' role is company-wide by design (the CEO's account, per
-  // Overview's COMPANY_OVERVIEW_ROLES) — explicitly unscoped from
+  // The 'ceo' role (renamed from 'manager' in migration 024) is company-wide
+  // by design (per Overview's COMPANY_OVERVIEW_ROLES) — explicitly unscoped from
   // manager_employee_id routing on the user's decision, not the
   // direct-reports-only default docs/architecture.md §5.4 originally
   // flagged for confirmation. Anyone else (e.g. a department lead with
@@ -156,7 +156,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   }
 
   function listTeam({ actorEmployee, actorAuthRole }) {
-    if (actorAuthRole === roles.MANAGER) {
+    if (actorAuthRole === roles.CEO) {
       return leaveRequestRepository.findAll().map(leaveRequestModel.toLeaveRequest).map(withConflictWarnings).map(withRequestedDays);
     }
     if (!actorEmployee) return [];
@@ -264,7 +264,7 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
   // either); pending/manager_approved are "in progress"; cancelled gets its
   // own bucket so every column set sums exactly to `requested`.
   function getLeaveBreakdown({ employeeId, actorAuthRole, startDate, endDate }) {
-    if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.PEOPLE_CULTURE && actorAuthRole !== roles.ADMIN) {
+    if (actorAuthRole !== roles.CEO && actorAuthRole !== roles.PEOPLE_CULTURE && actorAuthRole !== roles.ADMIN) {
       throw new EmployeesError('You do not have permission to view leave-request history.', 403);
     }
     // Both-or-neither: a half-open range has no sensible default for the

@@ -23,7 +23,7 @@ function myTeamCardHtml(e, roleLabel) {
   const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
   const dept = e.department ? window.Departments.labelFor(e.department) : null;
   return `
-    <div class="team-directory-card" id="my-team-card-${e.id}" role="button" tabindex="0" onclick="myTeamToggleCard(${e.id})">
+    <div class="team-directory-card" id="my-team-card-${e.id}" role="button" tabindex="0" data-card-toggle="my-team" data-id="${e.id}">
       <div class="team-directory-card-summary">
         <div class="team-directory-card-avatar">${avatarHtml}</div>
         <div>
@@ -42,13 +42,13 @@ function myTeamCardHtml(e, roleLabel) {
 }
 // Accordion, not independent toggles — opening a card closes whichever
 // other one was open, so at most one is ever expanded at a time.
-window.myTeamToggleCard = function (id) {
+function myTeamToggleCard(id) {
   const detail = document.getElementById('my-team-detail-' + id);
   if (!detail) return;
   const wasHidden = detail.hidden;
   document.querySelectorAll('[id^="my-team-detail-"]').forEach((d) => { d.hidden = true; });
   detail.hidden = !wasHidden;
-};
+}
 
 // Same clickable-card look as My Team's cards (myTeamCardHtml above) —
 // own id namespace (reporting-line-card-/reporting-line-detail-) since
@@ -62,7 +62,7 @@ function reportingLineCardHtml(e, badges) {
   const dept = e.department ? window.Departments.labelFor(e.department) : null;
   const badgeHtml = badges.map((b) => ` <span class="badge badge-approved">${escapeHtml(b)}</span>`).join('');
   return `
-    <div class="team-directory-card" id="reporting-line-card-${e.id}" role="button" tabindex="0" onclick="reportingLineToggleCard(${e.id})">
+    <div class="team-directory-card" id="reporting-line-card-${e.id}" role="button" tabindex="0" data-card-toggle="reporting-line" data-id="${e.id}">
       <div class="team-directory-card-summary">
         <div class="team-directory-card-avatar">${avatarHtml}</div>
         <div>
@@ -80,13 +80,29 @@ function reportingLineCardHtml(e, badges) {
     </div>`;
 }
 // Accordion, not independent toggles — same rule as My Team's cards.
-window.reportingLineToggleCard = function (id) {
+function reportingLineToggleCard(id) {
   const detail = document.getElementById('reporting-line-detail-' + id);
   if (!detail) return;
   const wasHidden = detail.hidden;
   document.querySelectorAll('[id^="reporting-line-detail-"]').forEach((d) => { d.hidden = true; });
   detail.hidden = !wasHidden;
-};
+}
+
+// Delegated on #team-content — a fresh element's innerHTML is set once per
+// renderTeam() call (no sub-view switching within this tab, unlike KPI), so
+// no double-bind guard is needed here; call this once, right after
+// container.innerHTML is set. Replaces onclick="..." attributes, which the
+// CSP's script-src-attr 'none' silently blocks (confirmed live, 2026-09-28,
+// on the sibling Overview-page/Team-Reviews bugs — same root cause).
+function bindTeamUi(container) {
+  container.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-card-toggle]');
+    if (!card) return;
+    const id = Number(card.dataset.id);
+    if (card.dataset.cardToggle === 'my-team') myTeamToggleCard(id);
+    if (card.dataset.cardToggle === 'reporting-line') reportingLineToggleCard(id);
+  });
+}
 
 // My Reporting Line — the requirement doc's "Reporting line (full chain)"
 // bullet (Portal §2), distinct from the Organization Chart on the Teams
@@ -208,4 +224,5 @@ export async function renderTeam() {
 
   const sections = [myReportingLineSectionHtml(), myTeamSectionHtml(myTeamRes), upcomingTeamLeaveSectionHtml(upcomingRes.upcoming || [])].filter(Boolean);
   container.innerHTML = sections.length ? sections.join('') : `<div class="empty-state">No team information available for this account.</div>`;
+  bindTeamUi(container);
 }

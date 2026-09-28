@@ -22,13 +22,13 @@ function quoteMetaJson(quote) {
 }
 
 function createProjectService({
-  projectRepository, projectLineRepository, directCostRepository, scenarioRepository,
+  projectRepository, projectAssignmentRepository, directCostRepository, scenarioRepository,
   quoteLineRepository, appStateRepository, auditLogRepository, unitOfWork,
   projectModel, historyEntryModel, audit, generateId,
 }) {
   function compose(row) {
     return projectModel.toProject(row, {
-      lines: projectLineRepository.findByProjectId(row.id),
+      lines: projectAssignmentRepository.findByProjectId(row.id),
       directCosts: directCostRepository.findByProjectId(row.id),
       scenarios: scenarioRepository.findByProjectId(row.id),
       quoteLines: quoteLineRepository.findByProjectId(row.id),
@@ -63,12 +63,16 @@ function createProjectService({
         quoteJson,
       });
 
-      (Array.isArray(data.lines) ? data.lines : []).forEach((line) => {
-        projectLineRepository.insert({
-          id: line.id || generateId('line'),
+      // employee_id is a real, required FK now (migration 030) — unlike the
+      // old person_id, it can't be left null "to fill in later", so a line
+      // with no employeeId is simply not created rather than inserted with
+      // a bad reference.
+      (Array.isArray(data.lines) ? data.lines : []).filter((line) => line.employeeId).forEach((line) => {
+        projectAssignmentRepository.insert({
           projectId: id,
-          personId: line.personId || null,
+          employeeId: line.employeeId,
           hours: numOrDefault(line.hours, 0, 'hours'),
+          roleOnProject: line.roleOnProject || null,
         });
       });
 
@@ -173,31 +177,37 @@ function createProjectService({
 
   // ---- project lines ----
 
+  // employeeId is required (project_assignments.employee_id is a real,
+  // non-nullable FK — migration 030) — checked explicitly here for a clear
+  // error rather than letting a raw SQLite NOT NULL failure surface.
   function createLine({ projectId, data, actorId, actorEmail, ip }) {
     requireProject(projectId);
-    const created = projectLineRepository.insert({
-      id: data.id || generateId('line'),
+    if (!data.employeeId) throw new PricingError('employeeId is required.', 400);
+    const created = projectAssignmentRepository.insert({
       projectId,
-      personId: data.personId || null,
+      employeeId: data.employeeId,
       hours: numOrDefault(data.hours, 0, 'hours'),
+      roleOnProject: data.roleOnProject || null,
     });
-    const line = projectModel.toProjectLine(created);
-    audit.record({ userId: actorId, username: actorEmail, action: 'project_line.create', entityType: 'project_line', entityId: line.id, details: { projectId, after: line }, ip });
+    const line = projectModel.toProjectAssignment(created);
+    audit.record({ userId: actorId, username: actorEmail, action: 'project_assignment.create', entityType: 'project_assignment', entityId: line.id, details: { projectId, after: line }, ip });
     return line;
   }
 
   function updateLine({ projectId, id, patch, actorId, actorEmail, ip }) {
     requireProject(projectId);
-    const existingRow = projectLineRepository.findById(id);
-    if (!existingRow || existingRow.project_id !== projectId) throw new PricingError('Project line not found.', 404);
-    const before = projectModel.toProjectLine(existingRow);
+    const existingRow = projectAssignmentRepository.findById(id);
+    if (!existingRow || existingRow.project_id !== projectId) throw new PricingError('Project assignment not found.', 404);
+    const before = projectModel.toProjectAssignment(existingRow);
     const merged = { ...before, ...patch };
-    const updatedRow = projectLineRepository.update(id, {
-      personId: merged.personId,
+    if (!merged.employeeId) throw new PricingError('employeeId is required.', 400);
+    const updatedRow = projectAssignmentRepository.update(id, {
+      employeeId: merged.employeeId,
       hours: numOrDefault(merged.hours, 0, 'hours'),
+      roleOnProject: merged.roleOnProject || null,
     });
-    const after = projectModel.toProjectLine(updatedRow);
-    audit.record({ userId: actorId, username: actorEmail, action: 'project_line.update', entityType: 'project_line', entityId: id, details: { projectId, before, after }, ip });
+    const after = projectModel.toProjectAssignment(updatedRow);
+    audit.record({ userId: actorId, username: actorEmail, action: 'project_assignment.update', entityType: 'project_assignment', entityId: id, details: { projectId, before, after }, ip });
     return after;
   }
 
@@ -207,12 +217,12 @@ function createProjectService({
   // ever see this project's own array).
   function removeLine({ projectId, id, actorId, actorEmail, ip }) {
     requireProject(projectId);
-    const existingRow = projectLineRepository.findById(id);
+    const existingRow = projectAssignmentRepository.findById(id);
     const belongsHere = !!existingRow && existingRow.project_id === projectId;
-    const before = belongsHere ? projectModel.toProjectLine(existingRow) : null;
-    if (belongsHere) projectLineRepository.remove(id);
-    audit.record({ userId: actorId, username: actorEmail, action: 'project_line.delete', entityType: 'project_line', entityId: id, details: { projectId, before }, ip });
-    return projectLineRepository.findByProjectId(projectId).map(projectModel.toProjectLine);
+    const before = belongsHere ? projectModel.toProjectAssignment(existingRow) : null;
+    if (belongsHere) projectAssignmentRepository.remove(id);
+    audit.record({ userId: actorId, username: actorEmail, action: 'project_assignment.delete', entityType: 'project_assignment', entityId: id, details: { projectId, before }, ip });
+    return projectAssignmentRepository.findByProjectId(projectId).map(projectModel.toProjectAssignment);
   }
 
   // ---- direct costs ----

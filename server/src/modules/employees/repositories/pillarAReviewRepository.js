@@ -16,6 +16,14 @@ function listQuartersWithData(employeeId) {
     .map((row) => row.quarter);
 }
 
+// Every aggregated row for a quarter — backs the Team Reviews results
+// report (CSV + in-app table), joined against active employees by the
+// service layer. Never returned directly from a controller: feedback_json
+// still needs parsing and the numeric columns still need rounding.
+function findAllForQuarter(quarter) {
+  return db.prepare('SELECT * FROM kpi_pillar_a_reviews WHERE quarter = ?').all(quarter);
+}
+
 // Active employees with a kpi_profile assigned but no Pillar A review yet
 // this quarter — backs Required Actions (item 12) for P&C.
 function findMissingForQuarter(quarter) {
@@ -62,4 +70,4 @@ function upsert({ employeeId, quarter, communication, collaboration, reliability
   return findByEmployeeAndQuarter(employeeId, quarter);
 }
 
-module.exports = { findByEmployeeAndQuarter, upsert, listQuartersWithData, findMissingForQuarter };
+module.exports = { findByEmployeeAndQuarter, upsert, listQuartersWithData, findMissingForQuarter, findAllForQuarter };

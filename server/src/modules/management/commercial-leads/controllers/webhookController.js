@@ -5,11 +5,12 @@
    — promoted there once the employees module's KPI webhook needed the
    identical, commercial-leads-agnostic logic. */
 const logger = require('../../../../common/logger');
+const config = require('../../../../config');
 const { verifyClickupSignature } = require('../../../../common/integrations/clickupWebhookAuth');
 
 function createWebhookController({ clickupSyncService }) {
   function receive(req, res) {
-    const secret = process.env.CLICKUP_WEBHOOK_SECRET;
+    const secret = config.clickupWebhookSecret;
     if (!secret) {
       logger.error('CLICKUP_WEBHOOK_SECRET is not configured — rejecting ClickUp webhook.', {
         correlationId: req.correlationId,

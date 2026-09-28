@@ -2,8 +2,8 @@ import { $, esc } from './dom.js';
 import { USER_MANAGER_ROLES } from './state.js';
 import { apiRequest, getStoredAuth } from './apiClient.js';
 
-const ASSIGNABLE_ROLES = ['employee', 'manager', 'operations', 'finance', 'admin', 'people_culture'];
-const ROLE_LABELS = { employee: 'Employee', manager: 'Manager', operations: 'Operations', finance: 'Finance', admin: 'Admin', people_culture: 'People & Culture' };
+const ASSIGNABLE_ROLES = ['employee', 'ceo', 'operations', 'finance', 'admin', 'people_culture', 'commercial', 'account_management'];
+const ROLE_LABELS = { employee: 'Employee', ceo: 'CEO', operations: 'Operations', finance: 'Finance', admin: 'Admin', people_culture: 'People & Culture', commercial: 'Commercial', account_management: 'Account Management' };
 
 /* Mirrors the server's canAssignRole in common/permissions.js — this is only
    for hiding/disabling controls that would fail anyway; the server is what

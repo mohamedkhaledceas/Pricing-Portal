@@ -30,11 +30,11 @@ const { inlineScriptHashes } = require('./common/csp');
    any authenticated user of any role could read/write salary and cost
    data. That never matched intent: modules/employees/views/js/main.js
    already only shows the "Margin Planner" nav link to
-   MARGIN_PLANNER_ROLES = ['manager','operations','admin'], and the
+   MARGIN_PLANNER_ROLES = ['ceo','operations','admin'], and the
    Planner's own client-side "Team (BD) view" PIN toggle is explicitly
    documented in-app as UI-only, not a security boundary. This enforces
    server-side what was already the intended access list, using the same
-   USER_MANAGER_ROLES set (admin/manager/operations) commercial-leads
+   USER_MANAGER_ROLES set (admin/ceo/operations) commercial-leads
    already gates its own user-management endpoints with. */
 const requirePlannerAccess = requireRole(USER_MANAGER_ROLES);
 

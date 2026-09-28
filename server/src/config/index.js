@@ -1,11 +1,12 @@
 require('dotenv').config();
 
 /* The only file this pass reads process.env in for the pieces it touches
-   (auth, the database connection). clickup.js/clickupReconcile.js/
-   clickupWebhook.js/backup.js/seed-owner.js still read process.env directly
-   for now — deliberately out of scope here, since centralizing those belongs
-   with the Commercial Lead relocation pass that already has to touch every
-   one of those files' require paths, not this one.
+   (auth, the database connection, the two inbound-webhook signature
+   secrets). common/integrations/clickupClient.js (the outbound
+   CLICKUP_API_KEY) and backup.js/seed-owner.js still read process.env
+   directly for now — deliberately out of scope here; that's a wider
+   refactor already tracked in docs/governance/business-portal-tracker.md,
+   not something to do piecemeal alongside an unrelated change.
 
    Deliberately does NOT validate JWT_SECRET's presence here — index.js's
    existing startup check (logger.error + process.exit(1), a clean
@@ -49,4 +50,13 @@ module.exports = Object.freeze({
   // rejected regardless of the API key being valid.
   resendApiKey: process.env.RESEND_API_KEY,
   emailFrom: process.env.EMAIL_FROM,
+  // Inbound webhook signature secrets (HMAC verification in
+  // common/integrations/clickupWebhookAuth.js) — two separate ClickUp
+  // webhook registrations, see commercial-leads/controllers/
+  // webhookController.js and employees/controllers/
+  // kpiClickupWebhookController.js for why. Unset means that controller
+  // fails closed (rejects every webhook with a 500), not a silent no-op —
+  // see each controller's own check.
+  clickupWebhookSecret: process.env.CLICKUP_WEBHOOK_SECRET,
+  clickupKpiWebhookSecret: process.env.CLICKUP_KPI_WEBHOOK_SECRET,
 });

@@ -99,6 +99,11 @@ function update(id, {
   clickupUserId, department, kpiProfile, managerEmployeeId,
   jobTitle, employmentType, joiningDate, workLocation, status,
   isTeamHead, profileLocked,
+  // Compensation fields (migrations 028-029) — written only via
+  // plannerExportService.updateCompensation, which is the only caller that
+  // ever resolves canEditCompensation(actorRole) first. This function
+  // itself has no permission awareness, same as every other field here.
+  salary, currency, defaultHours, defaultUtilizationPct, overrideRate,
 }) {
   const sets = [];
   const values = [];
@@ -113,6 +118,11 @@ function update(id, {
   if (status !== undefined) { sets.push('status = ?'); values.push(status || 'active'); }
   if (isTeamHead !== undefined) { sets.push('is_team_head = ?'); values.push(isTeamHead ? 1 : 0); }
   if (profileLocked !== undefined) { sets.push('profile_locked = ?'); values.push(profileLocked ? 1 : 0); }
+  if (salary !== undefined) { sets.push('salary = ?'); values.push(salary); }
+  if (currency !== undefined) { sets.push('currency = ?'); values.push(currency || null); }
+  if (defaultHours !== undefined) { sets.push('default_hours = ?'); values.push(defaultHours); }
+  if (defaultUtilizationPct !== undefined) { sets.push('default_utilization_pct = ?'); values.push(defaultUtilizationPct); }
+  if (overrideRate !== undefined) { sets.push('override_rate = ?'); values.push(overrideRate); }
   if (sets.length === 0) return findById(id);
 
   sets.push('updated_at = CURRENT_TIMESTAMP');

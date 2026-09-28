@@ -1,7 +1,7 @@
 function createStateController({ stateService }) {
   function get(req, res, next) {
     try {
-      return res.json(stateService.getFullState());
+      return res.json(stateService.getFullState({ actorRole: req.user.role }));
     } catch (err) {
       return next(err);
     }

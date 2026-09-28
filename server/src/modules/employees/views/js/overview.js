@@ -2,6 +2,26 @@ import { $, escapeHtml, fmtDate, fmtDateTime, skeletonBlock } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { leaveTypeLabel, availabilityLabel } from './leaveTypes.js';
+import { switchMainTab } from './main.js';
+
+// #ov-content is a static element present from page load (see index.html)
+// — its innerHTML gets replaced on every render, but the element itself
+// never does, so one delegated listener bound here (via bindOverviewUi,
+// called once at app init) keeps working across every future re-render.
+// Replaces onclick="switchMainTab(...)" attributes, which the CSP's
+// script-src-attr 'none' silently blocks — confirmed live (2026-09-28):
+// calling switchMainTab directly via JS worked, but clicking the actual
+// rendered button did nothing at all, no console error.
+export function bindOverviewUi() {
+  const container = $('#ov-content');
+  if (!container) return;
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-goto-tab]');
+    if (!btn) return;
+    const tab = btn.dataset.gotoTab;
+    switchMainTab(tab, document.getElementById('maintab-' + tab), { kpiView: btn.dataset.gotoKpiView });
+  });
+}
 
 function todayIso() {
   const d = new Date();
@@ -185,9 +205,9 @@ const STATUS_LABELS = {
   rejected: 'Rejected', auto_rejected: 'Auto-Rejected', cancelled: 'Cancelled',
 };
 
-// Manager-only — company-wide status shape, not just the raw pending count
+// CEO-only — company-wide status shape, not just the raw pending count
 // already shown elsewhere. Requests are already fetched company-wide for
-// 'manager' via listTeam (see timeOffService.listTeam), so this is a pure
+// 'ceo' via listTeam (see timeOffService.listTeam), so this is a pure
 // client-side group-by, no new endpoint.
 function statusBreakdownCard(requests) {
   const counts = {};
@@ -250,7 +270,7 @@ function statusMismatchCard(roster) {
       </div>
       <div class="muted small mt-8">Employment status and login access disagree — likely an incomplete offboarding or reactivation.</div>
       <div class="mt-8">
-        <button onclick="switchMainTab('roster', document.getElementById('maintab-roster'))"
+        <button data-goto-tab="roster"
           style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
           Review Roster →
         </button>
@@ -265,17 +285,17 @@ function statusMismatchCard(roster) {
 // onboards them. Built from existing pieces only: off-today is already
 // role-agnostic, and the roster list is reachable to all three roles via
 // rosterService.canManageRoster.
-const COMPANY_OVERVIEW_ROLES = { manager: 'Manager (CEO)', admin: 'Admin', people_culture: 'People & Culture' };
+const COMPANY_OVERVIEW_ROLES = { ceo: 'CEO', admin: 'Admin', people_culture: 'People & Culture' };
 
 // Own-queue widget for whoever a request is actually waiting on right now —
 // role-agnostic on purpose: any employee can end up with direct reports via
-// manager_employee_id regardless of their auth role, and 'manager' role
+// manager_employee_id regardless of their auth role, and the 'ceo' role
 // always gets it shown (even at 0) the same way P&C's action card always
 // shows. Reuses /api/employees/leave-requests/team, which now returns []
 // instead of 403 when the viewer has no employee profile of their own.
 //
 // A decision is always scoped to actual direct reports, for every role
-// including the company-wide `manager` role — see team.js's own
+// including the company-wide `ceo` role — see team.js's own
 // isMyDirectReport for the same rule applied to the actionable list itself;
 // this just keeps the count consistent with what My Team will actually let
 // this account act on. directory/myEmployeeId let it compute that without
@@ -288,14 +308,14 @@ function pendingMyDecisionCard(teamRequests, role, directory, myEmployeeId) {
     return !!target && !!myEmployeeId && target.managerEmployeeId === myEmployeeId;
   };
   const myPending = teamRequests.filter((r) => r.status === 'pending' && isMyDirectReport(r));
-  if (!myPending.length && !teamRequests.length && role !== 'manager') return '';
+  if (!myPending.length && !teamRequests.length && role !== 'ceo') return '';
   const title = 'Pending My Decision';
   return statCard(title, myPending.length
     ? `<div class="stat-row mt-8">
         <span class="stat-num" style="font-size:22px;">${myPending.length}</span><span class="stat-lbl">awaiting your decision</span>
       </div>
       <div class="mt-8">
-        <button onclick="switchMainTab('team', document.getElementById('maintab-team'))"
+        <button data-goto-tab="team"
           style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
           Go to Team →
         </button>
@@ -308,7 +328,7 @@ async function renderManagerOverview(role) {
   const isPeopleCulture = role === 'people_culture';
   container.innerHTML = `<div class="cards-row section">${Array.from({ length: 2 }, () => statCard('', skeletonBlock('60%', '30px'))).join('')}</div>`;
 
-  const isManager = role === 'manager';
+  const isManager = role === 'ceo';
   const [rosterRes, offTodayRes, pendingRes, directoryRes, teamRes, autoRejectRes] = await Promise.all([
     apiFetch('/api/employees'),
     apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
@@ -343,7 +363,7 @@ async function renderManagerOverview(role) {
           <span class="stat-num" style="font-size:22px;">${inactive}</span><span class="stat-lbl">Inactive</span>
         </div>
         <div class="mt-8">
-          <button onclick="switchMainTab('roster', document.getElementById('maintab-roster'))"
+          <button data-goto-tab="roster"
             style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
             Manage Roster →
           </button>
@@ -380,7 +400,7 @@ function pcActionCards(pending, roster) {
           </div>
           <div class="muted small mt-8">Oldest: ${fmtDateTime(pending[0].createdAt)}</div>
           <div class="mt-8">
-            <button onclick="switchMainTab('team', document.getElementById('maintab-team'))"
+            <button data-goto-tab="team"
               style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
               Go to Queue →
             </button>
@@ -391,7 +411,7 @@ function pcActionCards(pending, roster) {
             <span class="stat-num" style="font-size:22px;">${missingKpi}</span><span class="stat-lbl">missing a KPI profile</span>
           </div>
           <div class="mt-8">
-            <button onclick="switchMainTab('roster', document.getElementById('maintab-roster'))"
+            <button data-goto-tab="roster"
               style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">
               Manage Roster →
             </button>
@@ -414,7 +434,7 @@ export async function renderOverview() {
 
   const role = state.currentUser && state.currentUser.role;
   const isPeopleCulture = role === 'people_culture';
-  const isManager = role === 'manager';
+  const isManager = role === 'ceo';
   const [mineRes, balancesRes, offTodayRes, pendingRes, rosterRes, directoryRes, teamRes, autoRejectRes, myPartnersRes, peerReviewStatusRes, upcomingTeamLeaveRes] = await Promise.all([
     apiFetch('/api/employees/leave-requests/mine'),
     apiFetch('/api/employees/leave-requests/balances/mine'),
@@ -451,8 +471,8 @@ export async function renderOverview() {
     ${peerReviewPending ? `
       <div class="alert alert-warn section">
         <div>
-          <strong>Team reviews are open</strong> — you've submitted ${peerReview.submitted} of ${peerReview.expected}.
-          <button onclick="switchMainTab('kpi', document.getElementById('maintab-kpi'))"
+          <strong>Team reviews are open</strong> — you have not submitted your team review yet.
+          <button data-goto-tab="kpi" data-goto-kpi-view="peerReview"
             style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;margin-left:8px;">
             Go to Team Reviews →
           </button>

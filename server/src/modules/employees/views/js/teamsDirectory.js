@@ -66,20 +66,20 @@ function groupByDepartment(entries) {
 
 function directoryCardHtml(e) {
   return `
-    <div class="team-directory-card" id="teams-tab-card-${e.id}" role="button" tabindex="0" onclick="teamsTabToggleCard(${e.id})">
+    <div class="team-directory-card" id="teams-tab-card-${e.id}" role="button" tabindex="0" data-card-toggle="teams-tab" data-id="${e.id}">
       ${cardBodyHtml(e)}
       <div class="team-directory-card-detail" id="teams-tab-detail-${e.id}" hidden>${cardDetailHtml(e)}</div>
     </div>`;
 }
 
 // Accordion, not independent toggles.
-window.teamsTabToggleCard = function (id) {
+function teamsTabToggleCard(id) {
   const detail = document.getElementById('teams-tab-detail-' + id);
   if (!detail) return;
   const wasHidden = detail.hidden;
   document.querySelectorAll('[id^="teams-tab-detail-"]').forEach((d) => { d.hidden = true; });
   detail.hidden = !wasHidden;
-};
+}
 
 function departmentSectionsHtml(entries) {
   const groups = groupByDepartment(entries);
@@ -97,8 +97,8 @@ function departmentSectionsHtml(entries) {
 
 // ── Organization chart ────────────────────────────────────────────────
 // Deliberately not a pure managerEmployeeId tree (team.js's old version
-// was): the root is always the one 'manager'-role account (this org's CEO
-// — see employee.model.js's toDirectoryEntry comment) regardless of that
+// was): the root is always the one 'ceo'-role account (this org's single
+// top-level exec — see employee.model.js's toDirectoryEntry comment) regardless of that
 // account's own managerEmployeeId, and every team head sits directly under
 // the root as its own flat tier regardless of their managerEmployeeId too
 // — team heads are the company's real org units and shouldn't nest under
@@ -106,19 +106,34 @@ function departmentSectionsHtml(entries) {
 // else nests recursively under their real manager, same as before.
 function orgChartCardHtml(e) {
   return `
-    <div class="team-directory-card" id="org-chart-card-${e.id}" role="button" tabindex="0" onclick="orgChartToggleCard(${e.id})">
+    <div class="team-directory-card" id="org-chart-card-${e.id}" role="button" tabindex="0" data-card-toggle="org-chart" data-id="${e.id}">
       ${cardBodyHtml(e)}
       <div class="team-directory-card-detail" id="org-chart-detail-${e.id}" hidden>${cardDetailHtml(e)}</div>
     </div>`;
 }
 
-window.orgChartToggleCard = function (id) {
+function orgChartToggleCard(id) {
   const detail = document.getElementById('org-chart-detail-' + id);
   if (!detail) return;
   const wasHidden = detail.hidden;
   document.querySelectorAll('[id^="org-chart-detail-"]').forEach((d) => { d.hidden = true; });
   detail.hidden = !wasHidden;
-};
+}
+
+// Delegated on #teams-content, bound once per renderTeamsDirectory() call
+// (no sub-view switching within this tab, so no double-bind guard needed).
+// Replaces onclick="..." attributes, which the CSP's script-src-attr 'none'
+// silently blocks (confirmed live, 2026-09-28, on the sibling
+// Overview-page/Team-Reviews bugs — same root cause).
+function bindTeamsDirectoryUi(container) {
+  container.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-card-toggle]');
+    if (!card) return;
+    const id = Number(card.dataset.id);
+    if (card.dataset.cardToggle === 'teams-tab') teamsTabToggleCard(id);
+    if (card.dataset.cardToggle === 'org-chart') orgChartToggleCard(id);
+  });
+}
 
 function orgChartNodeHtml(e, childrenByManager) {
   const kids = childrenByManager[e.id] || [];
@@ -169,7 +184,7 @@ function orgChartSectionHtml(entries) {
     childrenByManager[rootManager.id] = secondTier;
     tree = orgChartNodeHtml(rootManager, childrenByManager);
   } else {
-    // No 'manager'-role account in the directory — shouldn't happen in
+    // No 'ceo'-role account in the directory — shouldn't happen in
     // practice, but fall back to every team head/orphan as its own root
     // rather than rendering nothing.
     tree = secondTier.map((r) => orgChartNodeHtml(r, childrenByManager)).join('');
@@ -188,4 +203,5 @@ export async function renderTeamsDirectory() {
   const [res] = await Promise.all([apiFetch('/api/employees/directory'), window.Departments.load(apiFetch)]);
   const entries = res.employees || [];
   container.innerHTML = departmentSectionsHtml(entries) + orgChartSectionHtml(entries);
+  bindTeamsDirectoryUi(container);
 }

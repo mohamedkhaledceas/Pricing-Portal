@@ -30,17 +30,6 @@ function findRevieweeIdsByReviewer(reviewerEmployeeId, quarter) {
   `).all(reviewerEmployeeId, quarter).map((r) => r.reviewee_employee_id);
 }
 
-// Distinct reviewer count per reviewee this quarter — completion tracking
-// for P&C (counts only, never content — see kpiPeerReviewService).
-function countReviewersByReviewee(quarter) {
-  return db.prepare(`
-    SELECT reviewee_employee_id, COUNT(*) AS n
-    FROM kpi_peer_review_responses
-    WHERE quarter = ?
-    GROUP BY reviewee_employee_id
-  `).all(quarter);
-}
-
 function upsert({ reviewerEmployeeId, revieweeEmployeeId, quarter, workedWith, communication, collaboration, reliability, attitude, contribution, growth, comment }) {
   db.prepare(`
     INSERT INTO kpi_peer_review_responses
@@ -70,4 +59,4 @@ function upsert({ reviewerEmployeeId, revieweeEmployeeId, quarter, workedWith, c
   return findOne(reviewerEmployeeId, revieweeEmployeeId, quarter);
 }
 
-module.exports = { findOne, findByReviewee, findRevieweeIdsByReviewer, countReviewersByReviewee, upsert };
+module.exports = { findOne, findByReviewee, findRevieweeIdsByReviewer, upsert };

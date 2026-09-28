@@ -238,11 +238,6 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
     return res.status(201).json({ response: { id: response.id, revieweeEmployeeId: response.reviewee_employee_id, quarter: response.quarter } });
   }
 
-  function getPeerReviewCompletion(req, res) {
-    const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
-    return res.json({ quarter, completion: kpiPeerReviewService.getCompletion({ quarter, actorAuthRole: req.user.role }) });
-  }
-
   function getPeerReviewCounter(req, res) {
     const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
     return res.json({ quarter, ...kpiPeerReviewService.getSubmissionCounter({ quarter, actorAuthRole: req.user.role }) });
@@ -257,6 +252,24 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
   function getMyPeerReviewStatus(req, res) {
     const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
     return res.json({ quarter, ...kpiPeerReviewService.getMyStatus({ actorEmployee: req.employee, quarter }) });
+  }
+
+  function getPeerReviewReportStatus(req, res) {
+    const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
+    return res.json({ quarter, ...kpiPeerReviewService.getReportReadiness({ quarter, actorAuthRole: req.user.role }) });
+  }
+
+  function getPeerReviewResults(req, res) {
+    const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
+    return res.json({ quarter, results: kpiPeerReviewService.getReviewResults({ quarter, actorAuthRole: req.user.role }) });
+  }
+
+  function exportPeerReviewReport(req, res) {
+    const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
+    const csv = kpiPeerReviewService.exportReviewResultsCsv({ quarter, actorAuthRole: req.user.role });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="team-reviews-${quarter}.csv"`);
+    return res.send(csv);
   }
 
   function listNotifications(req, res) {
@@ -289,10 +302,12 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
     setReviewWindow,
     getPeerReviewRoster,
     submitPeerReview,
-    getPeerReviewCompletion,
     getPeerReviewCounter,
     getMyTeamPeerReviewCounter,
     getMyPeerReviewStatus,
+    getPeerReviewReportStatus,
+    getPeerReviewResults,
+    exportPeerReviewReport,
     enterSelfEvaluation,
     getRequiredActions,
     getTeamSummary,

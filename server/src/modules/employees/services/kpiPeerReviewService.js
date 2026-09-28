@@ -148,39 +148,11 @@ function createKpiPeerReviewService({
     return response;
   }
 
-  // P&C-only: who has/hasn't submitted, and how many reviews each active
-  // employee has received — counts only, never content. Same anonymity
-  // boundary submitReview's own comment documents.
-  function getCompletion({ quarter, actorAuthRole }) {
-    if (actorAuthRole !== roles.PEOPLE_CULTURE && actorAuthRole !== roles.ADMIN) {
-      throw new EmployeesError('You do not have permission to view review completion.', 403);
-    }
-    const employees = employeeRepository.findAllActive();
-    const receivedCounts = new Map(kpiPeerReviewRepository.countReviewersByReviewee(quarter).map((r) => [r.reviewee_employee_id, r.n]));
-    const totalReviewers = employees.length - 1;
-
-    return employees.map((e) => {
-      const submitted = kpiPeerReviewRepository.findRevieweeIdsByReviewer(e.id, quarter).length;
-      return {
-        employeeId: e.id,
-        firstName: e.user_first_name,
-        lastName: e.user_last_name,
-        reviewsSubmitted: submitted,
-        reviewsExpected: totalReviewers,
-        reviewsReceived: receivedCounts.get(e.id) || 0,
-      };
-    });
-  }
-
-  // Manager/P&C-role, company-wide participation number — deliberately
-  // less detailed than getCompletion (P&C's per-employee breakdown): just
-  // how many employees have finished their full set of reviews out of
-  // how many total, e.g. "27/33". Gated on the auth role itself, not on
-  // being a specific employee's manager.
-  function getSubmissionCounter({ quarter, actorAuthRole }) {
-    if (actorAuthRole !== roles.MANAGER && actorAuthRole !== roles.PEOPLE_CULTURE) {
-      throw new EmployeesError('You do not have permission to view this.', 403);
-    }
+  // How many active employees have finished their full set of reviews out
+  // of how many total, e.g. "27/33" — shared by getSubmissionCounter
+  // (CEO-only, returns the actual numbers) and getReportReadiness/
+  // requireReviewCycleComplete below (CEO+P&C, collapsed to a boolean).
+  function computeCompletion(quarter) {
     const employees = employeeRepository.findAllActive();
     const expectedPerPerson = Math.max(0, employees.length - 1);
     const completed = expectedPerPerson === 0 ? 0 : employees.filter((e) => {
@@ -188,6 +160,113 @@ function createKpiPeerReviewService({
       return submitted >= expectedPerPerson;
     }).length;
     return { completed, total: employees.length };
+  }
+
+  // CEO-only, company-wide participation number — never who, never
+  // content, per the confirmed anonymity decision (2026-09-28) that killed
+  // the old per-employee completion table entirely. Gated on the auth role
+  // itself, not on being a specific employee's manager.
+  function getSubmissionCounter({ quarter, actorAuthRole }) {
+    if (actorAuthRole !== roles.CEO) {
+      throw new EmployeesError('You do not have permission to view this.', 403);
+    }
+    return computeCompletion(quarter);
+  }
+
+  // CEO+P&C: whether the review cycle is fully done — a boolean only,
+  // never the counts getSubmissionCounter returns. Restores a "is it done
+  // yet" signal for P&C (lost when the per-employee completion table was
+  // removed) without reintroducing the participation-count visibility that
+  // removal was specifically about.
+  function getReportReadiness({ quarter, actorAuthRole }) {
+    if (actorAuthRole !== roles.CEO && actorAuthRole !== roles.PEOPLE_CULTURE) {
+      throw new EmployeesError('You do not have permission to view this.', 403);
+    }
+    const { completed, total } = computeCompletion(quarter);
+    return { ready: total > 0 && completed === total };
+  }
+
+  // The real gate behind getReviewResults/exportReviewResultsCsv — the
+  // frontend hiding the button when not ready is a convenience, this is
+  // what actually enforces it. Deliberately the same "0 or 100%" shape as
+  // the review process itself (2026-09-28 decision): showing an average
+  // built from a handful of early responses is both a deanonymization risk
+  // (a small sample narrows down who the reviewers plausibly were) and
+  // statistically misleading (looks as authoritative as a full average).
+  function requireReviewCycleComplete(quarter, actorAuthRole) {
+    if (actorAuthRole !== roles.CEO && actorAuthRole !== roles.PEOPLE_CULTURE) {
+      throw new EmployeesError('You do not have permission to view this.', 403);
+    }
+    const { completed, total } = computeCompletion(quarter);
+    if (total === 0 || completed < total) {
+      throw new EmployeesError('The team review results are not ready yet — not everyone has submitted.', 403);
+    }
+  }
+
+  // CEO+P&C, only once requireReviewCycleComplete allows it. Every value
+  // here already lives in kpi_pillar_a_reviews — recomputeAggregate wrote
+  // it on every submitReview call — so this is a pure read/join, no new
+  // aggregation logic. feedback stays an array of per-reviewer comments
+  // (never attributed) — flattening to a single string is a presentation
+  // concern for exportReviewResultsCsv/the frontend, not this function.
+  function getReviewResults({ quarter, actorAuthRole }) {
+    requireReviewCycleComplete(quarter, actorAuthRole);
+    const employees = employeeRepository.findAllActive();
+    const reviewsByEmployeeId = new Map(pillarAReviewRepository.findAllForQuarter(quarter).map((r) => [r.employee_id, r]));
+    return employees
+      .map((e) => {
+        const r = reviewsByEmployeeId.get(e.id);
+        return {
+          employeeId: e.id,
+          name: `${e.user_first_name || ''} ${e.user_last_name || ''}`.trim() || `Employee #${e.id}`,
+          collaboration: r ? r.collaboration : null,
+          communication: r ? r.communication : null,
+          reliability: r ? r.reliability : null,
+          attitude: r ? r.attitude : null,
+          contribution: r ? r.contribution : null,
+          responseCount: r ? r.response_count : 0,
+          feedback: r ? JSON.parse(r.feedback_json || '[]') : [],
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // Wraps a value in quotes and doubles any embedded quotes whenever it
+  // contains a comma, quote, or newline — same escaping dealsService.js's
+  // csvEscape uses; duplicated here rather than shared across modules per
+  // this codebase's own stated convention (see departmentService.js's
+  // comment on small per-service copies over a cross-service helper).
+  function csvEscape(value) {
+    const str = value === undefined || value === null ? '' : String(value);
+    return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  }
+
+  function formatAverage(value) {
+    return value === null || value === undefined ? '' : value.toFixed(1);
+  }
+
+  // CEO+P&C CSV export of exactly what getReviewResults returns — same
+  // gate and same completeness requirement, enforced there.
+  function exportReviewResultsCsv({ quarter, actorAuthRole }) {
+    const rows = getReviewResults({ quarter, actorAuthRole });
+    const header = ['Name', 'Collaboration', 'Communication', 'Reliability', 'Positive Attitude', 'Contribution to Team Success', 'Responses', 'Overall Performance Feedback'];
+    const lines = [header.map(csvEscape).join(',')];
+    rows.forEach((r) => {
+      const line = [
+        r.name,
+        formatAverage(r.collaboration),
+        formatAverage(r.communication),
+        formatAverage(r.reliability),
+        formatAverage(r.attitude),
+        formatAverage(r.contribution),
+        r.responseCount,
+        r.feedback.join('\n'),
+      ];
+      lines.push(line.map(csvEscape).join(','));
+    });
+    // CRLF — the CSV-standard line ending (matches dealsService.js's own
+    // export, and what makes Excel on Windows treat every row correctly).
+    return lines.join('\r\n');
   }
 
   // Any team head (an employee with direct reports) sees this same
@@ -222,7 +301,17 @@ function createKpiPeerReviewService({
   }
 
   return {
-    getWindow, setWindow, isWindowOpen, getRoster, submitReview, getCompletion, getSubmissionCounter, getMyTeamSubmissionCounter, getMyStatus,
+    getWindow,
+    setWindow,
+    isWindowOpen,
+    getRoster,
+    submitReview,
+    getSubmissionCounter,
+    getMyTeamSubmissionCounter,
+    getMyStatus,
+    getReportReadiness,
+    getReviewResults,
+    exportReviewResultsCsv,
   };
 }
 

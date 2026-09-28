@@ -40,7 +40,7 @@ function createRosterService({
   }
   function canManageRoster({ actorAuthRole }) {
     return actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE
-      || actorAuthRole === roles.MANAGER || actorAuthRole === roles.OPERATIONS;
+      || actorAuthRole === roles.CEO || actorAuthRole === roles.OPERATIONS;
   }
 
   function requireCanManageRoster({ actorAuthRole }) {
@@ -76,7 +76,7 @@ function createRosterService({
   // only for the case where the *employee themselves* wants to change an
   // already-locked field.
   function canReviewProfileChanges({ actorAuthRole }) {
-    return actorAuthRole === roles.ADMIN || actorAuthRole === roles.MANAGER || actorAuthRole === roles.PEOPLE_CULTURE;
+    return actorAuthRole === roles.ADMIN || actorAuthRole === roles.CEO || actorAuthRole === roles.PEOPLE_CULTURE;
   }
 
   function requireCanReviewProfileChanges({ actorAuthRole }) {

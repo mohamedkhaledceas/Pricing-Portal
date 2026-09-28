@@ -13,6 +13,7 @@ const {
   toIso,
 } = require('./fieldResolutionService');
 const dealRepository = require('../repositories/dealRepository');
+const dealRecordRepository = require('../repositories/dealRecordRepository');
 const stageRepository = require('../repositories/stageRepository');
 const bucketEventRepository = require('../repositories/bucketEventRepository');
 const dailyCountsRepository = require('../repositories/dailyCountsRepository');
@@ -20,6 +21,21 @@ const statusColorRepository = require('../repositories/statusColorRepository');
 
 function isPopulated(value) {
   return value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);
+}
+
+// 'users'-type fields resolve to an array (see fieldResolutionService's
+// resolveFieldValue) — commercial_lead_deal_records wants a plain display
+// string, same as anywhere else in this module that shows a person's name.
+function fieldText(fields, name) {
+  const value = fields[name]?.value;
+  if (value === undefined || value === null) return null;
+  return Array.isArray(value) ? value.join(', ') || null : String(value);
+}
+
+function fieldNumber(fields, name) {
+  const value = fields[name]?.value;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function removeFromLiveCache(taskId) {
@@ -119,6 +135,23 @@ function recomputeDailyCounts(listId) {
 async function syncTaskRecord({ taskId, listId, name, status, customFields, subtasks, linkedTasks, clickupCreatedAt, clickupUpdatedAt }) {
   const fields = await extractPopulatedFields(customFields, listId);
   dealRepository.upsert({ dealId: taskId, listId, name, status, fields, subtasks, linkedTasks, clickupCreatedAt, clickupUpdatedAt });
+
+  // Durable counterpart (migration 027) — same trigger, same fresh data,
+  // but never deleted by removeFromLiveCache/reconciliation. client_id is
+  // untouched here on purpose; only the identity-resolution step (tracker
+  // §4 item 4) ever calls dealRecordRepository.setClientId.
+  dealRecordRepository.upsert({
+    dealId: taskId,
+    listId,
+    name,
+    status,
+    salesPerson: fieldText(fields, 'Sales Person'),
+    accountManager: fieldText(fields, 'Account Manager'),
+    value: fieldNumber(fields, 'Project Value'),
+    currency: fieldText(fields, 'Currency'),
+    clickupCreatedAt,
+    clickupUpdatedAt,
+  });
 
   if (listId === INSIGHTS_LIST_ID) {
     const previousTracking = stageRepository.findTracking(taskId);
