@@ -47,6 +47,25 @@ function lateWfhWarningHtml(r) {
   return `<div class="request-card-conflict">⚠ Submitted at ${escapeHtml(fmtDateTime(r.createdAt))} — after 9:00 AM for a same-day WFH request. A deduction should be applied.</div>`;
 }
 
+// WFH over the monthly quota is no longer auto-rejected (2026-09-29) — it
+// takes the normal workflow instead, and P&C sees it flagged here so they
+// can decide (deduction, one-off exception, etc.) with full context.
+// wfhRequestsThisMonth includes this request itself (see timeOffService's
+// listPcPending); leaveTypeUsage.total is the same MONTHLY_WFH_DAYS limit
+// leaveTypeUsageHtml already reads for WFH, reused rather than duplicated.
+function wfhOverQuotaWarningHtml(r) {
+  if (r.leaveType !== 'wfh' || !r.wfhRequestsThisMonth || !r.leaveTypeUsage) return '';
+  if (r.wfhRequestsThisMonth <= r.leaveTypeUsage.total) return '';
+  return `<div class="request-card-conflict">⚠ This is their ${escapeHtml(String(r.wfhRequestsThisMonth))}${ordinalSuffix(r.wfhRequestsThisMonth)} Work From Home request this month — the policy limit is ${escapeHtml(String(r.leaveTypeUsage.total))}.</div>`;
+}
+
+function ordinalSuffix(n) {
+  if (n % 10 === 1 && n % 100 !== 11) return 'st';
+  if (n % 10 === 2 && n % 100 !== 12) return 'nd';
+  if (n % 10 === 3 && n % 100 !== 13) return 'rd';
+  return 'th';
+}
+
 function leaveTypeUsageHtml(r) {
   const u = r.leaveTypeUsage;
   if (!u) return '';
@@ -285,11 +304,17 @@ function timelineHtml(item) {
     if (item.autoRejectReason) {
       steps.push(`<div><strong>Auto-rejected</strong> — ${escapeHtml(item.autoRejectReason)}</div>`);
     }
-    if (item.managerDecisionAt) {
+    if (item.managerDecisionAt && item.managerDecisionBy) {
       const verb = item.managerDecisionNote && item.status === 'rejected' && !item.pcConfirmedAt ? 'Rejected' : 'Approved';
       steps.push(`<div><strong>${verb} by manager</strong> — ${escapeHtml(nameFor(item.managerDecisionBy))}, ${escapeHtml(fmtDateTime(item.managerDecisionAt))}${item.managerDecisionNote ? `: ${escapeHtml(item.managerDecisionNote)}` : ''}</div>`);
     } else if (item.managerDecisionNote) {
-      steps.push(`<div><strong>Manager stage skipped</strong> — ${escapeHtml(item.managerDecisionNote)}</div>`);
+      // No manager_decision_by — this is the "no manager assigned, routed
+      // straight to P&C" auto-route (submit()'s skippedManagerStage), not a
+      // real human decision. manager_decision_at is still set (same repo
+      // call as a real decision), so it can't be used to tell the two
+      // apart — managerDecisionBy is the only reliable signal, and without
+      // this check nameFor(null) rendered "Employee #null" here.
+      steps.push(`<div><strong>Manager stage skipped</strong> — ${escapeHtml(fmtDateTime(item.managerDecisionAt))}: ${escapeHtml(item.managerDecisionNote)}</div>`);
     }
     if (item.pcConfirmedAt) {
       const verb = item.status === 'rejected' ? 'Rejected' : 'Confirmed';
@@ -522,7 +547,7 @@ export async function renderRequestsCenter() {
     sections.push(`
       <div class="card section">
         <div class="card-title">Pending P&amp;C Confirmation (company-wide)</div>
-        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r) + leaveTypeUsageHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
+        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r) + wfhOverQuotaWarningHtml(r) + leaveTypeUsageHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
       </div>`);
   }
 

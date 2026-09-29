@@ -42,20 +42,17 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     let autoRejectReason = null;
     let salaryDeduction = 'none';
 
-    /* WFH's own auto-reject condition (2nd request in the same calendar
-       month) needs a DB query, so it's checked here rather than in the
-       pure-function rules module — per Time_off.pdf... actually WFH isn't
-       in the PDF at all; this quota is carried over from the old
-       prototype's real, in-use behavior (see the migration plan's decision
-       to keep WFH/Excuse/Unpaid alongside the 6 official types). */
-    if (leaveType === 'wfh') {
-      const yearMonth = startDate.slice(0, 7);
-      const existingThisMonth = leaveRequestRepository.countWfhInMonth({ employeeId, yearMonth });
-      if (existingThisMonth >= 1) {
-        status = 'auto_rejected';
-        autoRejectReason = `WFH quota for ${yearMonth} is already used. Only 1 WFH per month is allowed per policy.`;
-      }
-    }
+    // WFH over the monthly quota is deliberately NOT auto-rejected (reversed
+    // 2026-09-29 — it used to be, see git history) — it now takes the same
+    // normal manager/P&C workflow as any other request. Going over quota is
+    // a P&C judgement call (deduction, one-off exception, etc.), not
+    // something the system should decide unilaterally by blocking outright.
+    // Nothing to compute here at submission time: P&C sees it coming via
+    // listPcPending's wfhRequestsThisMonth (leaveRequestRepository's
+    // countWfhInMonth, queried fresh at read time — same "no separate
+    // counter to keep in sync" pattern as wfhSubmittedLate/leaveTypeUsage
+    // below), rendered as a warning by requestsCenter.js's
+    // wfhOverQuotaWarningHtml.
 
     if (status === 'pending') {
       const submittedAt = new Date();
@@ -241,6 +238,15 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
           submittedAt: new Date(r.createdAt),
           startDate: new Date(`${r.startDate}T00:00:00`),
         }),
+        // How many active (pending/manager_approved/approved) WFH requests
+        // this employee has this calendar month, including this one —
+        // deliberately broader than leaveTypeUsage.used above (which only
+        // counts approved requests), since a second still-pending WFH
+        // request should already warn P&C, not wait for the first one to
+        // clear approval. null for non-WFH requests (nothing to warn about).
+        wfhRequestsThisMonth: r.leaveType === 'wfh'
+          ? leaveRequestRepository.countWfhInMonth({ employeeId: r.employeeId, yearMonth: r.startDate.slice(0, 7) })
+          : null,
       };
     });
   }
