@@ -437,17 +437,28 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
+  // A requester can cancel their own request only while nobody's actually
+  // made a human decision on it yet: still pending/awaiting P&C, or
+  // auto-rejected by the notice-window rules (never reviewed by anyone —
+  // see timeOffRules.checkNoticeWindow). Once a manager or P&C has actually
+  // approved or rejected it, only they can move it to cancelled — see
+  // managerHrCancel below.
+  const SELF_CANCELLABLE_STATUSES = ['pending', 'manager_approved', 'auto_rejected'];
+
   async function cancel({ requestId, actorEmployee, actorId, ip }) {
     const request = leaveRequestRepository.findById(requestId);
     if (!request) throw new EmployeesError('Leave request not found.', 404);
     if (!actorEmployee || request.employee_id !== actorEmployee.id) {
       throw new EmployeesError('You can only cancel your own requests.', 403);
     }
-    if (!['pending', 'manager_approved'].includes(request.status)) {
+    if (!SELF_CANCELLABLE_STATUSES.includes(request.status)) {
       throw new EmployeesError('This request can no longer be cancelled.');
     }
 
-    const updated = leaveRequestRepository.updateCancelled(requestId);
+    const updated = leaveRequestRepository.updateCancelled(requestId, {
+      cancelledBy: actorEmployee.id,
+      cancelActorRole: 'employee',
+    });
     audit.record({
       userId: actorId,
       action: 'leave_request.cancel',
@@ -460,7 +471,116 @@ function createTimeOffService({ leaveRequestRepository, employeeRepository, leav
     return leaveRequestModel.toLeaveRequest(updated);
   }
 
-  return { submit, listMine, listTeam, listOffToday, listUpcomingTeamLeave, listPcPending, listAutoRejected, getLeaveBreakdown, getMyBalances, checkNotice, managerDecision, pcConfirm, cancel };
+  // Mirrors managerDecision's own identity check exactly (no auth-role
+  // bypass, including for `ceo` — a manager action always requires being
+  // this specific employee's direct manager). People & Culture acts
+  // company-wide via role, same as pcConfirm/listPcPending.
+  function isDirectManagerOrPeopleCulture({ request, actorEmployee, actorAuthRole }) {
+    const employee = employeeRepository.findById(request.employee_id);
+    const isDirectManager = !!(employee && actorEmployee && employee.manager_employee_id === actorEmployee.id);
+    const isPeopleCulture = actorAuthRole === roles.PEOPLE_CULTURE;
+    return { isDirectManager, isPeopleCulture, allowed: isDirectManager || isPeopleCulture };
+  }
+
+  // Once a request has actually been decided (approved, or auto-rejected
+  // pending nobody's review), the requester loses the ability to cancel it
+  // themselves — only their manager or P&C can, e.g. an approved request
+  // the employee ends up not taking, or an auto-rejected WFH request where
+  // the employee did in fact come in/work and the auto-reject should be
+  // resolved as a cancellation instead of a deduction-bearing rejection.
+  // Deliberately excludes manually-rejected requests (a manager/P&C human
+  // decision, already final — see confirmed scope decision 2026-09-29).
+  const MANAGER_HR_CANCELLABLE_STATUSES = ['approved', 'auto_rejected'];
+
+  async function managerHrCancel({ requestId, actorEmployee, actorAuthRole, reason, actorId, ip }) {
+    const request = leaveRequestRepository.findById(requestId);
+    if (!request) throw new EmployeesError('Leave request not found.', 404);
+
+    const { isPeopleCulture, allowed } = isDirectManagerOrPeopleCulture({ request, actorEmployee, actorAuthRole });
+    if (!allowed) {
+      throw new EmployeesError('You do not have permission to cancel this request.', 403);
+    }
+    if (!MANAGER_HR_CANCELLABLE_STATUSES.includes(request.status)) {
+      throw new EmployeesError('This request can no longer be cancelled.');
+    }
+
+    // Priority given to People & Culture when both are technically true
+    // (e.g. a P&C member who also happens to be this employee's direct
+    // manager) — matches managerHrConfirmRejection's own priority below,
+    // so the two stay consistent about who "acted" when both apply.
+    const cancelActorRole = isPeopleCulture ? 'people_culture' : 'manager';
+    const updated = leaveRequestRepository.updateCancelled(requestId, {
+      cancelledBy: actorEmployee.id,
+      cancelActorRole,
+      cancelReason: reason && reason.trim() ? reason.trim() : null,
+    });
+    audit.record({
+      userId: actorId,
+      action: isPeopleCulture ? 'leave_request.pc_cancel' : 'leave_request.manager_cancel',
+      entityType: 'leave_request',
+      entityId: String(requestId),
+      details: { before: { status: request.status }, after: { status: 'cancelled' }, reason: reason || null },
+      ip,
+    });
+    await clickupLeaveSync.updateStatus(request.clickup_task_id, 'cancelled');
+    return leaveRequestModel.toLeaveRequest(updated);
+  }
+
+  /* Reverses a requester's own self-cancel of an auto-rejected request back
+     to 'rejected' — the manager/P&C determination that the employee did
+     NOT actually work, so the salary_deduction the auto-reject already
+     computed at submission time should stand after all. Deliberately
+     narrow: only reachable from a 'cancelled' row whose cancel_actor_role
+     is still 'employee' (the requester's own pending self-cancel, not a
+     cancel a manager/P&C already finalized themselves via managerHrCancel
+     above) and whose origin was an auto-reject (auto_reject_reason set) —
+     confirmed scope decision 2026-09-29. "Confirming the cancellation" (the
+     other half of that decision) needs no code path at all: leaving the
+     request as cancelled and doing nothing already is confirmation. */
+  async function managerHrConfirmRejection({ requestId, actorEmployee, actorAuthRole, decisionNote, actorId, ip }) {
+    const request = leaveRequestRepository.findById(requestId);
+    if (!request) throw new EmployeesError('Leave request not found.', 404);
+    if (!decisionNote || !decisionNote.trim()) {
+      throw new EmployeesError('A comment is required to confirm a rejection.');
+    }
+
+    const { isPeopleCulture, allowed } = isDirectManagerOrPeopleCulture({ request, actorEmployee, actorAuthRole });
+    if (!allowed) {
+      throw new EmployeesError('You do not have permission to confirm this rejection.', 403);
+    }
+    if (request.status !== 'cancelled' || request.cancel_actor_role !== 'employee' || !request.auto_reject_reason) {
+      throw new EmployeesError('This request is not awaiting rejection confirmation.');
+    }
+
+    const note = decisionNote.trim();
+    const updated = isPeopleCulture
+      ? leaveRequestRepository.updatePcDecision(requestId, {
+        status: 'rejected',
+        pcConfirmedBy: actorEmployee.id,
+        salaryDeduction: request.salary_deduction,
+        unpaidDaysCount: request.unpaid_days_count,
+        decisionNote: note,
+        doctorNoteProvided: !!request.doctor_note_provided,
+      })
+      : leaveRequestRepository.updateManagerDecision(requestId, {
+        status: 'rejected',
+        managerDecisionBy: actorEmployee.id,
+        decisionNote: note,
+      });
+
+    audit.record({
+      userId: actorId,
+      action: isPeopleCulture ? 'leave_request.pc_confirm_rejection' : 'leave_request.manager_confirm_rejection',
+      entityType: 'leave_request',
+      entityId: String(requestId),
+      details: { before: { status: 'cancelled' }, after: { status: 'rejected' } },
+      ip,
+    });
+    await clickupLeaveSync.updateStatus(request.clickup_task_id, 'rejected');
+    return leaveRequestModel.toLeaveRequest(updated);
+  }
+
+  return { submit, listMine, listTeam, listOffToday, listUpcomingTeamLeave, listPcPending, listAutoRejected, getLeaveBreakdown, getMyBalances, checkNotice, managerDecision, pcConfirm, cancel, managerHrCancel, managerHrConfirmRejection };
 }
 
 module.exports = createTimeOffService;

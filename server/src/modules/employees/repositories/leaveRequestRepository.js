@@ -146,8 +146,16 @@ function updatePcDecision(id, { status, pcConfirmedBy, salaryDeduction, unpaidDa
   return findById(id);
 }
 
-function updateCancelled(id) {
-  db.prepare("UPDATE leave_requests SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+// cancelActorRole is 'employee' for a requester's own self-cancel, or
+// 'manager'/'people_culture' for a manager/HR override-cancel (see
+// timeOffService.cancel vs managerHrCancel) — what the confirm-rejection
+// reversal below checks to know a cancel is still awaiting manager/P&C
+// confirmation.
+function updateCancelled(id, { cancelledBy, cancelActorRole, cancelReason } = {}) {
+  db.prepare(
+    `UPDATE leave_requests SET status = 'cancelled', cancelled_by = ?, cancel_actor_role = ?, cancelled_at = CURRENT_TIMESTAMP, cancel_reason = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`
+  ).run(cancelledBy ?? null, cancelActorRole ?? null, cancelReason ?? null, id);
   return findById(id);
 }
 

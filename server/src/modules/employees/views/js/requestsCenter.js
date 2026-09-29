@@ -42,6 +42,17 @@ function noManagerFlagHtml(r) {
   return `<div class="request-card-conflict">⚠ ${escapeHtml(r.managerDecisionNote)}</div>`;
 }
 
+// A request the employee cancelled themselves (still status='cancelled',
+// cancel_actor_role='employee') and that originated as an auto-reject is
+// waiting on a manager/P&C call — reject-and-deduct instead, or nothing
+// (see managerHrOverrideActions below; there's no "confirm" endpoint,
+// leaving it cancelled already is the confirmation). Flagged here too so
+// it's visible without opening "View activity".
+function awaitingRejectionConfirmationHtml(r) {
+  if (r.status !== 'cancelled' || r.cancelActorRole !== 'employee' || !r.autoRejectReason) return '';
+  return `<div class="request-card-conflict">⚠ ${escapeHtml(nameFor(r.employeeId))} cancelled this themselves after it was auto-rejected — confirm they didn't actually work, or reject it with a deduction if they didn't.</div>`;
+}
+
 function lateWfhWarningHtml(r) {
   if (!r.wfhSubmittedLate) return '';
   return `<div class="request-card-conflict">⚠ Submitted at ${escapeHtml(fmtDateTime(r.createdAt))} — after 9:00 AM for a same-day WFH request. A deduction should be applied.</div>`;
@@ -270,6 +281,98 @@ function pcActions(r) {
   </div>`;
 }
 
+// Manager/P&C override actions for a request the requester can no longer
+// touch themselves — see timeOffService.managerHrCancel/
+// managerHrConfirmRejection. `canAct` is this employee's direct manager or
+// P&C (identity check mirrors managerDecision's own — no role bypass).
+let overrideCancelConfirmId = null;
+let confirmingRejectionId = null;
+
+function askOverrideCancel(id) {
+  overrideCancelConfirmId = id;
+  renderRequestsCenter();
+}
+
+function cancelOverrideCancel() {
+  overrideCancelConfirmId = null;
+  renderRequestsCenter();
+}
+
+async function overrideCancel(id) {
+  try {
+    await apiFetch(`/api/employees/leave-requests/${id}/manager-hr-cancel`, { method: 'POST', body: JSON.stringify({}) });
+    toast('Request cancelled', 'info');
+    overrideCancelConfirmId = null;
+    renderRequestsCenter();
+  } catch (err) {
+    toast(err.message, 'danger');
+  }
+}
+
+function askConfirmRejection(id) {
+  confirmingRejectionId = id;
+  renderRequestsCenter();
+}
+
+function cancelConfirmRejection() {
+  confirmingRejectionId = null;
+  renderRequestsCenter();
+}
+
+async function confirmRejection(id) {
+  const card = $('#team-card-' + id);
+  const note = (card && card.querySelector('.confirm-rejection-note') ? card.querySelector('.confirm-rejection-note').value : '').trim();
+  if (!note) {
+    toast('A comment is required to confirm the rejection.', 'danger');
+    return;
+  }
+  try {
+    await apiFetch(`/api/employees/leave-requests/${id}/confirm-rejection`, { method: 'PATCH', body: JSON.stringify({ decisionNote: note }) });
+    toast('Rejected — deduction stands', 'info');
+    confirmingRejectionId = null;
+    renderRequestsCenter();
+  } catch (err) {
+    toast(err.message, 'danger');
+  }
+}
+
+const MANAGER_HR_CANCELLABLE_STATUSES = ['approved', 'auto_rejected'];
+
+function managerHrOverrideActions(r, canAct) {
+  if (!canAct) return '';
+
+  // Awaiting a call on a self-cancelled auto-reject takes priority over
+  // the plain cancel action below — a 'cancelled' row is never in
+  // MANAGER_HR_CANCELLABLE_STATUSES anyway (it's already cancelled), so
+  // these two branches never overlap on the same request.
+  const canConfirmRejection = r.status === 'cancelled' && r.cancelActorRole === 'employee' && !!r.autoRejectReason;
+  if (canConfirmRejection) {
+    if (confirmingRejectionId === r.id) {
+      return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
+        <textarea class="form-control confirm-rejection-note" placeholder="Why this stays rejected (required)" rows="2" style="width:100%;"></textarea>
+        <button class="btn danger small" data-req-action="confirm-rejection-submit" data-request-id="${r.id}">Confirm Rejected (deduct)</button>
+        <button class="btn small" data-req-action="cancel-confirm-rejection">Cancel</button>
+      </div>`;
+    }
+    return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
+      <span class="small muted">Already final unless they didn't actually work.</span>
+      <button class="btn danger small" data-req-action="ask-confirm-rejection" data-request-id="${r.id}">Reject instead (apply deduction)</button>
+    </div>`;
+  }
+
+  if (!MANAGER_HR_CANCELLABLE_STATUSES.includes(r.status)) return '';
+  if (overrideCancelConfirmId === r.id) {
+    return `<div class="request-card-actions">
+      <span class="small">Cancel this request? </span>
+      <button class="btn small danger" data-req-action="override-cancel-confirm" data-request-id="${r.id}">Yes</button>
+      <button class="btn small" data-req-action="override-cancel-cancel">No</button>
+    </div>`;
+  }
+  return `<div class="request-card-actions">
+    <button class="btn small" data-req-action="ask-override-cancel" data-request-id="${r.id}">Cancel request</button>
+  </div>`;
+}
+
 // ── My Requests — unified own history (leave + profile changes) ────────
 // The one genuinely new capability here: nothing before this combined
 // both request types into a single, searchable/filterable, timestamped
@@ -298,15 +401,36 @@ function categoryLabelFor(item) {
 // §21), shown per-request rather than as one separate feed, since every
 // event needed is already sitting right there on the request/change-
 // request row (no new table, nothing extra to fetch).
+function cancelledEventHtml(item) {
+  const actorLabel = item.cancelActorRole === 'employee' ? 'by the requester'
+    : item.cancelActorRole === 'people_culture' ? 'by People &amp; Culture'
+    : item.cancelActorRole === 'manager' ? 'by manager' : '';
+  const actorName = item.cancelledBy && item.cancelActorRole !== 'employee' ? ` — ${escapeHtml(nameFor(item.cancelledBy))}` : '';
+  return `<strong>Cancelled</strong> ${actorLabel}${actorName}, ${escapeHtml(fmtDateTime(item.cancelledAt))}${item.cancelReason ? `: ${escapeHtml(item.cancelReason)}` : ''}`;
+}
+
+// Events are collected with their own timestamp and sorted, rather than
+// pushed in a fixed assumed order — a self-cancel of an auto-rejected
+// request (cancelledAt) can later be reversed back to 'rejected'
+// (managerDecisionAt/pcConfirmedAt moving to AFTER cancelledAt, see
+// managerHrConfirmRejection), which a fixed Submitted->Auto-
+// reject->Manager->P&C->Cancelled order can't represent correctly; a plain
+// manager/P&C override-cancel of an approved request needs Cancelled to
+// land AFTER those decisions instead. Array.prototype.sort is stable, so
+// same-instant ties (Submitted vs. an auto-reject computed at submission
+// time) keep their push order.
 function timelineHtml(item) {
-  const steps = [`<div><strong>Submitted</strong> — ${escapeHtml(fmtDateTime(item.createdAt))}</div>`];
+  const events = [{ at: item.createdAt, html: `<strong>Submitted</strong> — ${escapeHtml(fmtDateTime(item.createdAt))}` }];
   if (item.kind === 'leave') {
     if (item.autoRejectReason) {
-      steps.push(`<div><strong>Auto-rejected</strong> — ${escapeHtml(item.autoRejectReason)}</div>`);
+      events.push({ at: item.createdAt, html: `<strong>Auto-rejected</strong> — ${escapeHtml(item.autoRejectReason)}` });
+    }
+    if (item.cancelledAt) {
+      events.push({ at: item.cancelledAt, html: cancelledEventHtml(item) });
     }
     if (item.managerDecisionAt && item.managerDecisionBy) {
       const verb = item.managerDecisionNote && item.status === 'rejected' && !item.pcConfirmedAt ? 'Rejected' : 'Approved';
-      steps.push(`<div><strong>${verb} by manager</strong> — ${escapeHtml(nameFor(item.managerDecisionBy))}, ${escapeHtml(fmtDateTime(item.managerDecisionAt))}${item.managerDecisionNote ? `: ${escapeHtml(item.managerDecisionNote)}` : ''}</div>`);
+      events.push({ at: item.managerDecisionAt, html: `<strong>${verb} by manager</strong> — ${escapeHtml(nameFor(item.managerDecisionBy))}, ${escapeHtml(fmtDateTime(item.managerDecisionAt))}${item.managerDecisionNote ? `: ${escapeHtml(item.managerDecisionNote)}` : ''}` });
     } else if (item.managerDecisionNote) {
       // No manager_decision_by — this is the "no manager assigned, routed
       // straight to P&C" auto-route (submit()'s skippedManagerStage), not a
@@ -314,19 +438,17 @@ function timelineHtml(item) {
       // call as a real decision), so it can't be used to tell the two
       // apart — managerDecisionBy is the only reliable signal, and without
       // this check nameFor(null) rendered "Employee #null" here.
-      steps.push(`<div><strong>Manager stage skipped</strong> — ${escapeHtml(fmtDateTime(item.managerDecisionAt))}: ${escapeHtml(item.managerDecisionNote)}</div>`);
+      events.push({ at: item.managerDecisionAt, html: `<strong>Manager stage skipped</strong> — ${escapeHtml(fmtDateTime(item.managerDecisionAt))}: ${escapeHtml(item.managerDecisionNote)}` });
     }
     if (item.pcConfirmedAt) {
       const verb = item.status === 'rejected' ? 'Rejected' : 'Confirmed';
-      steps.push(`<div><strong>${verb} by People &amp; Culture</strong> — ${escapeHtml(nameFor(item.pcConfirmedBy))}, ${escapeHtml(fmtDateTime(item.pcConfirmedAt))}${item.pcDecisionNote ? `: ${escapeHtml(item.pcDecisionNote)}` : ''}</div>`);
-    }
-    if (item.status === 'cancelled') {
-      steps.push(`<div><strong>Cancelled</strong> — ${escapeHtml(fmtDateTime(item.updatedAt))}</div>`);
+      events.push({ at: item.pcConfirmedAt, html: `<strong>${verb} by People &amp; Culture</strong> — ${escapeHtml(nameFor(item.pcConfirmedBy))}, ${escapeHtml(fmtDateTime(item.pcConfirmedAt))}${item.pcDecisionNote ? `: ${escapeHtml(item.pcDecisionNote)}` : ''}` });
     }
   } else if (item.status !== 'pending') {
-    steps.push(`<div><strong>${escapeHtml(CHANGE_STATUS_LABELS[item.status] || item.status)} by ${escapeHtml(item.reviewedByName || 'reviewer')}</strong> — ${escapeHtml(fmtDateTime(item.updatedAt))}${item.decisionNote ? `: ${escapeHtml(item.decisionNote)}` : ''}</div>`);
+    events.push({ at: item.updatedAt, html: `<strong>${escapeHtml(CHANGE_STATUS_LABELS[item.status] || item.status)} by ${escapeHtml(item.reviewedByName || 'reviewer')}</strong> — ${escapeHtml(fmtDateTime(item.updatedAt))}${item.decisionNote ? `: ${escapeHtml(item.decisionNote)}` : ''}` });
   }
-  return steps.join('');
+  events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  return events.map((e) => `<div>${e.html}</div>`).join('');
 }
 
 function myRequestToggleTimeline(rowId) {
@@ -371,7 +493,21 @@ function myRequestRowHtml(item) {
   const detailsHtml = item.kind === 'leave'
     ? (item.reason ? `<div class="request-card-reason">${escapeHtml(item.reason)}</div>` : '')
     : `<div class="request-card-reason">${changeRequestDiffHtml(item.changes)}</div>`;
-  const canCancel = item.kind === 'leave' && ['pending', 'manager_approved'].includes(item.status);
+  // auto_rejected is self-cancellable too (see timeOffService.cancel) —
+  // nobody's actually reviewed it yet, so the requester can still say "I
+  // ended up working after all". Once a manager/P&C has actually decided
+  // (approved, or manually rejected), only they can change it from here —
+  // see MANAGER_HR_CANCELLABLE_STATUSES above.
+  const canCancel = item.kind === 'leave' && ['pending', 'manager_approved', 'auto_rejected'].includes(item.status);
+  const cancelLocked = item.kind === 'leave' && !canCancel && ['approved', 'rejected'].includes(item.status);
+  let cancelActionHtml = '';
+  if (canCancel) {
+    cancelActionHtml = confirmingCancelId === item.id
+      ? `<span class="small">Cancel this request? </span><button class="btn small danger" data-req-action="confirm-cancel" data-request-id="${item.id}">Yes</button> <button class="btn small" data-req-action="cancel-cancel">No</button>`
+      : `<button class="btn small" data-req-action="ask-cancel" data-request-id="${item.id}">Cancel</button>`;
+  } else if (cancelLocked) {
+    cancelActionHtml = `<button class="btn small" disabled title="Only your manager or People & Culture can change this now.">Cancel</button>`;
+  }
   return `<div class="request-card">
     <div class="request-card-top">
       <div>
@@ -382,13 +518,10 @@ function myRequestRowHtml(item) {
     </div>
     ${detailsHtml}
     ${item.kind === 'leave' ? conflictWarningHtml(item) + noManagerFlagHtml(item) : ''}
+    ${cancelLocked ? `<div class="request-card-conflict">⚠ This request can no longer be cancelled — once ${escapeHtml(item.status)}, only your manager or People &amp; Culture can change its status.</div>` : ''}
     <div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
       <button class="btn small" data-req-action="toggle-timeline" data-row-id="${rowId}">View activity</button>
-      ${canCancel
-        ? (confirmingCancelId === item.id
-          ? `<span class="small">Cancel this request? </span><button class="btn small danger" data-req-action="confirm-cancel" data-request-id="${item.id}">Yes</button> <button class="btn small" data-req-action="cancel-cancel">No</button>`
-          : `<button class="btn small" data-req-action="ask-cancel" data-request-id="${item.id}">Cancel</button>`)
-        : ''}
+      ${cancelActionHtml}
     </div>
     <div class="small muted mt-8" id="my-request-timeline-${rowId}" hidden>${timelineHtml(item)}</div>
   </div>`;
@@ -480,6 +613,12 @@ function bindRequestsCenterUi(container) {
     if (action === 'confirm-cancel') cancelMyRequest(id);
     if (action === 'cancel-cancel') cancelCancelMyRequest();
     if (action === 'ask-cancel') askCancelMyRequest(id);
+    if (action === 'ask-override-cancel') askOverrideCancel(id);
+    if (action === 'override-cancel-cancel') cancelOverrideCancel();
+    if (action === 'override-cancel-confirm') overrideCancel(id);
+    if (action === 'ask-confirm-rejection') askConfirmRejection(id);
+    if (action === 'cancel-confirm-rejection') cancelConfirmRejection();
+    if (action === 'confirm-rejection-submit') confirmRejection(id);
   });
 
   // "My Requests" filter bar — #my-requests-list gets replaced by
@@ -538,7 +677,7 @@ export async function renderRequestsCenter() {
       </div>
       <div class="card section">
         <div class="card-title">${isManagerRole ? 'All Requests (company-wide)' : "All My Direct Reports' Requests"}</div>
-        ${teamRequests.length ? teamRequests.map((r) => requestCard(r)).join('') : `<div class="empty-state">No requests yet</div>`}
+        ${teamRequests.length ? teamRequests.map((r) => requestCard(r, managerHrOverrideActions(r, isMyDirectReport(r) || isPeopleCulture), awaitingRejectionConfirmationHtml(r))).join('') : `<div class="empty-state">No requests yet</div>`}
       </div>`);
   }
 
