@@ -80,12 +80,12 @@ const attachEmployee = createAttachEmployeeMiddleware({ employeeRepository, empl
 // for the next scheduled tick.
 const clickupUserSync = startClickupUserSyncSchedule({ employeeRepository, clickupClient });
 
+const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const rosterService = createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
-  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync, departmentRepository,
+  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync, clickupLeaveSync, departmentRepository,
   teamMembership, realtime,
 });
-const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, audit, roles: ROLES });
 const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES, teamMembership });
 const kpiClickupMetricsService = createKpiClickupMetricsService({

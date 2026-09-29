@@ -46,6 +46,13 @@ function findByStatus(status) {
   return db.prepare('SELECT * FROM leave_requests WHERE status = ? ORDER BY created_at ASC').all(status);
 }
 
+// Backs rosterService's re-route-on-manager-removed fix: an employee's
+// still-pending requests, so they can be auto-skipped to P&C the same way
+// submit() already skips at submission time when there's no manager yet.
+function findPendingByEmployeeId(employeeId) {
+  return db.prepare("SELECT * FROM leave_requests WHERE employee_id = ? AND status = 'pending'").all(employeeId);
+}
+
 // Backs conflictPairService.findOverlaps — "does this set of employees
 // (a requester's active conflict partner(s)) have a still-relevant request
 // overlapping this date range". pending/manager_approved count as
@@ -157,6 +164,7 @@ module.exports = {
   findByEmployeeId,
   findByEmployeeIds,
   findByStatus,
+  findPendingByEmployeeId,
   findAll,
   findApprovedOverlapping,
   findApprovedUpcoming,
