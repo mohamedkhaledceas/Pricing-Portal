@@ -134,7 +134,31 @@ function createTimeOffController({ timeOffService }) {
     return res.json({ request });
   }
 
-  return { submit, listMine, listTeam, upcomingTeamLeave, offToday, listPcPending, listAutoRejected, getLeaveBreakdown, getBalances, checkNotice, managerDecision, pcConfirm, cancel };
+  async function managerHrCancel(req, res) {
+    const request = await timeOffService.managerHrCancel({
+      requestId: Number(req.params.id),
+      actorEmployee: req.employee,
+      actorAuthRole: req.user.role,
+      reason: (req.body || {}).reason,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ request });
+  }
+
+  async function managerHrConfirmRejection(req, res) {
+    const request = await timeOffService.managerHrConfirmRejection({
+      requestId: Number(req.params.id),
+      actorEmployee: req.employee,
+      actorAuthRole: req.user.role,
+      decisionNote: (req.body || {}).decisionNote,
+      actorId: req.user.id,
+      ip: req.ip,
+    });
+    return res.json({ request });
+  }
+
+  return { submit, listMine, listTeam, upcomingTeamLeave, offToday, listPcPending, listAutoRejected, getLeaveBreakdown, getBalances, checkNotice, managerDecision, pcConfirm, cancel, managerHrCancel, managerHrConfirmRejection };
 }
 
 module.exports = createTimeOffController;

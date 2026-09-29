@@ -57,6 +57,8 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.patch('/employees/leave-requests/:id/manager-decision', catchAsync(timeOffController.managerDecision));
   router.patch('/employees/leave-requests/:id/pc-confirm', catchAsync(timeOffController.pcConfirm));
   router.post('/employees/leave-requests/:id/cancel', catchAsync(timeOffController.cancel));
+  router.post('/employees/leave-requests/:id/manager-hr-cancel', catchAsync(timeOffController.managerHrCancel));
+  router.patch('/employees/leave-requests/:id/confirm-rejection', catchAsync(timeOffController.managerHrConfirmRejection));
 
   // Self-scoped, no admin/P&C gate — an employee checking who their own
   // conflict partner is, or whether that partner already overlaps a

@@ -24,6 +24,10 @@ function toLeaveRequest(row) {
     salaryDeduction: row.salary_deduction,
     unpaidDaysCount: row.unpaid_days_count,
     doctorNoteProvided: !!row.doctor_note_provided,
+    cancelledBy: row.cancelled_by,
+    cancelActorRole: row.cancel_actor_role,
+    cancelledAt: row.cancelled_at,
+    cancelReason: row.cancel_reason,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
