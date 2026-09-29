@@ -28,7 +28,7 @@ async function loadViewCandidates() {
 
   kpiPerms.isPeopleCulture = !!(state.currentUser && state.currentUser.role === 'people_culture');
   kpiPerms.isAdmin = !!(state.currentUser && state.currentUser.role === 'admin');
-  kpiPerms.isManager = !!(state.currentUser && state.currentUser.role === 'manager');
+  kpiPerms.isManager = !!(state.currentUser && state.currentUser.role === 'ceo');
   kpiPerms.hasReports = false;
 
   try {
@@ -140,6 +140,27 @@ async function renderRequiredActions(quarter) {
 // Overview (single-employee breakdown)
 // ---------------------------------------------------------------------
 
+// Delegated on #kpi-view-content, guarded against double-binding the same
+// way kpiPeerReview.js's bindPeerReviewUi is — this container persists
+// across Overview/History/Team/PeerReview sub-view switches within one KPI
+// tab visit, so renderOverview() (this file's local one, for a single
+// employee's breakdown) can run several times on the same element.
+// Replaces onclick="..." attributes, which the CSP's script-src-attr
+// 'none' silently blocks (confirmed live, 2026-09-28, on the sibling
+// Overview-page and Team-Reviews bugs — this is the same root cause).
+function bindKpiOverviewUi(container) {
+  if (container._kpiOverviewBound) return;
+  container._kpiOverviewBound = true;
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-kpi-action]');
+    if (!btn) return;
+    const { kpiAction, employeeId, quarter, metricId } = btn.dataset;
+    if (kpiAction === 'enter-self-eval') enterSelfEvaluation(Number(employeeId), quarter);
+    if (kpiAction === 'set-target') setEmployeeTarget(Number(employeeId), quarter, metricId);
+    if (kpiAction === 'enter-metric') enterMetricScore(Number(employeeId), quarter, metricId);
+  });
+}
+
 async function enterSelfEvaluation(employeeId, quarter) {
   const dims = ['communication', 'collaboration', 'reliability', 'attitude', 'contribution', 'growth'];
   const payload = { quarter };
@@ -156,7 +177,6 @@ async function enterSelfEvaluation(employeeId, quarter) {
     toast(err.message, 'danger');
   }
 }
-window.kpiEnterSelfEvaluation = enterSelfEvaluation;
 
 async function enterMetricScore(employeeId, quarter, metricId) {
   const input = $('#metric-input-' + metricId);
@@ -178,7 +198,6 @@ async function enterMetricScore(employeeId, quarter, metricId) {
     toast(err.message, 'danger');
   }
 }
-window.kpiEnterMetricScore = enterMetricScore;
 
 function canEnterMetric(target) {
   if (!viewerEmployee || !target) return false;
@@ -213,7 +232,6 @@ async function setEmployeeTarget(employeeId, quarter, metricId) {
     toast(err.message, 'danger');
   }
 }
-window.kpiSetEmployeeTarget = setEmployeeTarget;
 
 function pillarASectionHtml(pillarA, selfEvaluation, employeeId, quarter) {
   const dims = pillarA.dimensions.map((d) => {
@@ -248,7 +266,7 @@ function pillarASectionHtml(pillarA, selfEvaluation, employeeId, quarter) {
           <label class="form-label">Comment</label>
           <textarea class="form-control" id="se-comment" rows="2">${escapeHtml(selfEvaluation ? selfEvaluation.comment || '' : '')}</textarea>
         </div>
-        <div class="form-group full"><button class="btn small" onclick="kpiEnterSelfEvaluation(${employeeId}, '${quarter}')">${selfEvaluation ? 'Update' : 'Submit'} Self-Evaluation</button></div>
+        <div class="form-group full"><button class="btn small" data-kpi-action="enter-self-eval" data-employee-id="${employeeId}" data-quarter="${escapeHtml(quarter)}">${selfEvaluation ? 'Update' : 'Submit'} Self-Evaluation</button></div>
       </div>
     </div>` : (selfEvaluation ? `
     <div class="card section" style="margin-top:12px;">
@@ -299,14 +317,14 @@ function pillarBSectionHtml(pillarB, employeeId, quarter) {
               ${canSetTarget() ? `
                 <span class="kpi-entry-row" style="display:inline-flex; margin-top:4px;">
                   <input class="form-control small" id="target-input-${m.metricId}" placeholder="target" style="width:90px;" value="${m.employeeTarget === null ? '' : m.employeeTarget}">
-                  <button class="btn small" onclick="kpiSetEmployeeTarget(${employeeId}, '${quarter}', '${m.metricId}')">Set Target</button>
+                  <button class="btn small" data-kpi-action="set-target" data-employee-id="${employeeId}" data-quarter="${escapeHtml(quarter)}" data-metric-id="${escapeHtml(m.metricId)}">Set Target</button>
                 </span>` : ''}
             </div>` : ''}
           ${canEnterMetric(employeeId) ? `
             <div class="kpi-entry-row">
               <input class="form-control small" id="metric-input-${m.metricId}" placeholder="actual value" value="${m.actualValue === null || m.actualValue === undefined ? '' : escapeHtml(String(m.actualValue))}">
               <input class="form-control small" id="metric-comment-${m.metricId}" placeholder="comment (optional)" value="${escapeHtml(m.comment || '')}">
-              <button class="btn small" onclick="kpiEnterMetricScore(${employeeId}, '${quarter}', '${m.metricId}')">Save</button>
+              <button class="btn small" data-kpi-action="enter-metric" data-employee-id="${employeeId}" data-quarter="${escapeHtml(quarter)}" data-metric-id="${escapeHtml(m.metricId)}">Save</button>
             </div>` : ''}
         </div>`).join('')}
     </div>`).join('');
@@ -354,6 +372,7 @@ async function renderOverview(employeeId, quarter) {
       <div class="mt-16">${pillarASectionHtml(pillarA, selfEvaluation, employeeId, quarter)}</div>
       <div class="mt-16">${pillarBSectionHtml(pillarB, employeeId, quarter)}</div>
     `;
+    bindKpiOverviewUi(container);
 
     $('#kpi-view-history-btn').addEventListener('click', () => {
       activeView = 'history';
@@ -445,7 +464,13 @@ function renderActiveView(employeeId, quarter) {
   return null;
 }
 
-export async function renderKpi() {
+// initialView lets a caller land directly on a specific sub-view (e.g. the
+// Overview page's "Go to Team Reviews" button wants 'peerReview', not the
+// default) — previously hardcoded to 'overview' unconditionally, which
+// silently defeated that button even once its onclick/CSP issue is fixed:
+// clicking it correctly switched to the KPI tab, but the tab itself always
+// reset back to its own default sub-view regardless of intent.
+export async function renderKpi(initialView) {
   const container = $('#kpi-content');
   const emp = state.myEmployee;
   if (!emp) {
@@ -455,7 +480,7 @@ export async function renderKpi() {
 
   container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
   await Promise.all([loadViewCandidates(), loadCurrentQuarter(), loadAvailableQuarters()]);
-  activeView = 'overview';
+  activeView = initialView || 'overview';
 
   const current = currentQuarterInfo && currentQuarterInfo.quarter;
   const quarter = (current && availableQuarters.includes(current)) ? current : (availableQuarters[0] || current || `${new Date().getFullYear()}-Q1`);

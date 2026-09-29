@@ -1,69 +1,32 @@
-const { numOrDefault } = require('./numericField');
 const { PricingError } = require('../errors');
 
-// All three mutating endpoints (create/update/remove) return the full,
-// current team list — matching the legacy routes' own response contract,
-// which the frontend depends on.
-function createTeamService({ teamRepository, teamMemberModel, projectLineRepository, unitOfWork, audit, generateId }) {
-  function list() {
-    return teamRepository.findAll().map(teamMemberModel.toTeamMember);
+/* Team & Salaries tab — sources real employees via modules/employees'
+   public interface (listEmployeesForPlanner/updateEmployeeCompensation),
+   not the old team_members shadow table (migrations 028-030, tracker §4
+   item 8). No create/remove here anymore: employees are managed in
+   modules/employees, not created or deleted from the Planner.
+
+   Redaction for a non-compensation-authorized viewer (e.g. operations,
+   here for the general Planner surface but not salary) happens by asking
+   listEmployeesForPlanner for the non-compensation shape — the HTTP
+   response itself never contains salary/currency/default_hours/
+   default_utilization_pct/override_rate for that viewer, not just a UI
+   that hides them. */
+function createTeamService({ listEmployeesForPlanner, updateEmployeeCompensation, canViewCompensation, canEditCompensation }) {
+  function list({ actorRole }) {
+    return listEmployeesForPlanner({ includeCompensation: canViewCompensation(actorRole) });
   }
 
-  function create({ data, actorId, actorEmail, ip }) {
-    const id = data.id || generateId('team');
-    const created = teamRepository.insert({
-      id,
-      name: data.name || '',
-      role: data.role || '',
-      salary: numOrDefault(data.salary, 0, 'salary'),
-      extras: numOrDefault(data.extras, 0, 'extras'),
-      hours: numOrDefault(data.hours, 176, 'hours'),
-      util: numOrDefault(data.util, 70, 'util'),
-      override: numOrDefault(data.override, null, 'override'),
-      currency: data.cur || 'EGP',
-    });
-    const member = teamMemberModel.toTeamMember(created);
-    audit.record({ userId: actorId, username: actorEmail, action: 'team_member.create', entityType: 'team_member', entityId: member.id, details: { after: member }, ip });
-    return list();
+  function update({ id, patch, actorRole, actorId, actorEmail, ip }) {
+    if (!canEditCompensation(actorRole)) {
+      throw new PricingError('You do not have permission to edit compensation.', 403);
+    }
+    const updated = updateEmployeeCompensation({ employeeId: id, patch, actorId, actorEmail, ip });
+    if (!updated) throw new PricingError('Employee not found.', 404);
+    return list({ actorRole });
   }
 
-  function update({ id, patch, actorId, actorEmail, ip }) {
-    const existingRow = teamRepository.findById(id);
-    if (!existingRow) throw new PricingError('Team member not found.', 404);
-    const before = teamMemberModel.toTeamMember(existingRow);
-    const merged = { ...before, ...patch };
-    const updatedRow = teamRepository.update(id, {
-      name: merged.name || '',
-      role: merged.role || '',
-      salary: numOrDefault(merged.salary, 0, 'salary'),
-      extras: numOrDefault(merged.extras, 0, 'extras'),
-      hours: numOrDefault(merged.hours, 176, 'hours'),
-      util: numOrDefault(merged.util, 70, 'util'),
-      override: numOrDefault(merged.override, null, 'override'),
-      currency: merged.cur || 'EGP',
-    });
-    const after = teamMemberModel.toTeamMember(updatedRow);
-    audit.record({ userId: actorId, username: actorEmail, action: 'team_member.update', entityType: 'team_member', entityId: id, details: { before, after }, ip });
-    return list();
-  }
-
-  // No 404 on a missing id — same as the legacy route, which always
-  // returned 200 with the current list regardless of whether anything was
-  // actually removed.
-  function remove({ id, actorId, actorEmail, ip }) {
-    const existingRow = teamRepository.findById(id);
-    const before = existingRow ? teamMemberModel.toTeamMember(existingRow) : null;
-    unitOfWork.transaction(() => {
-      teamRepository.remove(id);
-      // project_lines.person_id has no FK to team_members — strip any
-      // dangling references left behind by this delete.
-      projectLineRepository.clearPersonReferences(id);
-    });
-    audit.record({ userId: actorId, username: actorEmail, action: 'team_member.delete', entityType: 'team_member', entityId: id, details: { before }, ip });
-    return list();
-  }
-
-  return { list, create, update, remove };
+  return { list, update };
 }
 
 module.exports = createTeamService;

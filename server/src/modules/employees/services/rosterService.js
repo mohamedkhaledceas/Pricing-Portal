@@ -13,9 +13,46 @@ const EMPLOYMENT_TYPES = ['full_time', 'part_time', 'freelancer'];
    include operations. */
 function createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
-  profileChangeRequestModel, audit, roles, deleteStoredPhoto, clickupUserSync, departmentRepository,
+  profileChangeRequestModel, audit, roles, deleteStoredPhoto, clickupUserSync, clickupLeaveSync, departmentRepository,
   teamMembership, realtime,
 }) {
+  // An employee's manager can be cleared after they already have requests
+  // sitting in 'pending' (awaiting that now-gone manager's decision) —
+  // managerDecision's exact-match check (employee.manager_employee_id ===
+  // actorEmployee.id) can then never be satisfied by anyone, so the
+  // request would otherwise be stuck forever. Same skip-to-P&C routing
+  // submit() already does when there's no manager *at submission time*,
+  // applied retroactively to whatever was already pending. Call this
+  // whenever managerEmployeeId is being explicitly set to null/falsy —
+  // safe to call unconditionally in that case: a no-op if nothing's
+  // actually pending.
+  function rerouteOrphanedPendingRequests({ employeeId, actorId, ip }) {
+    leaveRequestRepository.findPendingByEmployeeId(employeeId).forEach((r) => {
+      const updated = leaveRequestRepository.updateManagerDecision(r.id, {
+        status: 'manager_approved',
+        managerDecisionBy: null,
+        decisionNote: 'Manager removed after submission — routed directly to People & Culture for review.',
+      });
+      audit.record({
+        userId: actorId,
+        action: 'leave_request.auto_route_no_manager',
+        entityType: 'leave_request',
+        entityId: String(r.id),
+        details: { reason: 'manager_removed_after_submission', before: { status: 'pending' }, after: { status: 'manager_approved' } },
+        ip,
+      });
+      // Fire-and-forget, same as this file's own triggerClickupUserSync —
+      // ClickUp sync failures are logged, never fatal to the roster edit
+      // that triggered this.
+      if (updated.clickup_task_id) clickupLeaveSync.updateStatus(updated.clickup_task_id, 'manager_approved').catch(() => {});
+    });
+  }
+
+  function maybeRerouteAfterManagerRemoved({ employeeId, managerEmployeeId, actorId, ip }) {
+    if (managerEmployeeId !== undefined && !managerEmployeeId) {
+      rerouteOrphanedPendingRequests({ employeeId, actorId, ip });
+    }
+  }
   // Must exist and be active — departments is now a real table (see
   // docs/adr/0011) instead of a frozen array; the DB-level FK on
   // employees.department only guarantees the code *exists*, not that it's
@@ -40,7 +77,7 @@ function createRosterService({
   }
   function canManageRoster({ actorAuthRole }) {
     return actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE
-      || actorAuthRole === roles.MANAGER || actorAuthRole === roles.OPERATIONS;
+      || actorAuthRole === roles.CEO || actorAuthRole === roles.OPERATIONS;
   }
 
   function requireCanManageRoster({ actorAuthRole }) {
@@ -76,7 +113,7 @@ function createRosterService({
   // only for the case where the *employee themselves* wants to change an
   // already-locked field.
   function canReviewProfileChanges({ actorAuthRole }) {
-    return actorAuthRole === roles.ADMIN || actorAuthRole === roles.MANAGER || actorAuthRole === roles.PEOPLE_CULTURE;
+    return actorAuthRole === roles.ADMIN || actorAuthRole === roles.CEO || actorAuthRole === roles.PEOPLE_CULTURE;
   }
 
   function requireCanReviewProfileChanges({ actorAuthRole }) {
@@ -319,6 +356,7 @@ function createRosterService({
       details: { before, after: employeeModel.toEmployee(updated) },
       ip,
     });
+    maybeRerouteAfterManagerRemoved({ employeeId: targetId, managerEmployeeId, actorId, ip });
     return decorateStatusOne(employeeModel.toEmployee(updated));
   }
 
@@ -406,6 +444,7 @@ function createRosterService({
         details: { self: true, before, after: employeeModel.toEmployee(updated) },
         ip,
       });
+      maybeRerouteAfterManagerRemoved({ employeeId: actorEmployee.id, managerEmployeeId, actorId, ip });
       return { pending: false, employee: decorateStatusOne(employeeModel.toEmployee(updated)) };
     }
 
@@ -480,6 +519,7 @@ function createRosterService({
       details: { before, after: employeeModel.toEmployee(updated), changes },
       ip,
     });
+    maybeRerouteAfterManagerRemoved({ employeeId: row.employee_id, managerEmployeeId: changes.managerEmployeeId, actorId, ip });
     return decorateStatusOne(employeeModel.toEmployee(updated));
   }
 

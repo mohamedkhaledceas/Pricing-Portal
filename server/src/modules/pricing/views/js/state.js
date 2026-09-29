@@ -1,6 +1,6 @@
 import { uid } from './dom.js';
 
-export const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
+export const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
 
 export let state;
 export let dirty = false;

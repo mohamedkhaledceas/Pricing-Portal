@@ -333,7 +333,7 @@ export function renderRules() {
       <div>Sick leave longer than 2 consecutive working days requires a doctor's note, submitted within 2 working days of your return.</div>
     </div>
     <div class="section alert alert-info">
-      <div>Work From Home is limited to <strong>1 request per calendar month</strong>. A second request in the same month is auto-rejected. A same-day WFH request must be submitted <strong>before 9:00 AM</strong> — submitting after 9:00 AM for a same-day request is still accepted, but a salary deduction will be applied.</div>
+      <div>Work From Home is limited to <strong>1 request per calendar month</strong>. A request beyond the limit is not auto-rejected — it goes through the normal approval flow, and People &amp; Culture will see that you've gone over quota when reviewing it. A same-day WFH request must be submitted <strong>before 9:00 AM</strong> — submitting after 9:00 AM for a same-day request is still accepted, but a salary deduction will be applied.</div>
     </div>
     <div class="section">
       <div class="card-title">Approval Workflow</div>

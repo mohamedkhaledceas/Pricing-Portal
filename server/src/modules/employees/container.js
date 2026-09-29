@@ -49,6 +49,7 @@ const createClickupLeaveSync = require('./services/clickupLeaveSync');
 const createKpiClickupMetricsService = require('./services/kpiClickupMetricsService');
 const createKpiClickupSyncService = require('./services/kpiClickupSyncService');
 const createKpiPeerReviewService = require('./services/kpiPeerReviewService');
+const createPlannerExportService = require('./services/plannerExportService');
 const startClickupUserSyncSchedule = require('./jobs/clickupUserSyncSchedule');
 const { startKpiClickupListSyncSchedule } = require('./jobs/kpiClickupListSync');
 const createRosterController = require('./controllers/rosterController');
@@ -79,12 +80,12 @@ const attachEmployee = createAttachEmployeeMiddleware({ employeeRepository, empl
 // for the next scheduled tick.
 const clickupUserSync = startClickupUserSyncSchedule({ employeeRepository, clickupClient });
 
+const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const rosterService = createRosterService({
   employeeRepository, employeeModel, leaveRequestRepository, employeeProfileChangeRequestRepository,
-  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync, departmentRepository,
+  profileChangeRequestModel, audit, roles: ROLES, deleteStoredPhoto, clickupUserSync, clickupLeaveSync, departmentRepository,
   teamMembership, realtime,
 });
-const clickupLeaveSync = createClickupLeaveSync({ clickupClient, employeeRepository, timeOffRules });
 const conflictPairService = createConflictPairService({ conflictPairRepository, conflictPairModel, leaveRequestRepository, employeeRepository, audit, roles: ROLES });
 const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRepository, leaveRequestModel, timeOffRules, leaveBalanceRules, audit, clickupLeaveSync, conflictPairService, roles: ROLES, teamMembership });
 const kpiClickupMetricsService = createKpiClickupMetricsService({
@@ -103,6 +104,7 @@ const kpiClickupSyncService = createKpiClickupSyncService({
 const kpiPeerReviewService = createKpiPeerReviewService({
   employeeRepository, pillarAReviewRepository, kpiPeerReviewRepository, kpiReviewWindowRepository, audit, roles: ROLES,
 });
+const plannerExportService = createPlannerExportService({ employeeRepository, employeeModel, audit });
 
 // Refreshes the local list/status cache the mapping-admin UI reads from —
 // same boot+interval shape as the ClickUp user sync above.
@@ -146,4 +148,11 @@ module.exports = {
   // Mounted directly in index.js, before express.json() — same reasoning
   // as commercial-leads' own webhookRouter export.
   kpiClickupWebhookRouter,
+  // modules/pricing's Team & Salaries tab / Estimator staffing interface —
+  // see docs/governance/business-portal-tracker.md §4 item 8. pricing
+  // resolves canViewCompensation/canEditCompensation itself before calling
+  // either of these; this module has no opinion on who's authorized, only
+  // on what "with compensation" vs "without" means for its own data.
+  listEmployeesForPlanner: plannerExportService.listForPlanner,
+  updateEmployeeCompensation: plannerExportService.updateCompensation,
 };

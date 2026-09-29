@@ -18,7 +18,7 @@ function slugify(label) {
 function createDepartmentService({ departmentRepository, departmentModel, audit, roles }) {
   function requireCanManage({ actorAuthRole }) {
     const allowed = actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE
-      || actorAuthRole === roles.MANAGER || actorAuthRole === roles.OPERATIONS;
+      || actorAuthRole === roles.CEO || actorAuthRole === roles.OPERATIONS;
     if (!allowed) {
       throw new EmployeesError('You do not have permission to manage departments.', 403);
     }

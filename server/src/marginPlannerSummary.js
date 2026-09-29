@@ -30,15 +30,21 @@ function toBase(settings, v, cur) {
   return num(v) * rateOf(settings, cur || settings.currency);
 }
 
+// person is now a real employees.listEmployeesForPlanner entry (migrations
+// 028-030, tracker §4 item 8), not a team_members row — field names differ
+// (currency not cur, defaultHours not hours, defaultUtilizationPct not
+// util, overrideRate not override) and there's no `extras` concept on real
+// employees at all (team_members' separate allowance-on-top-of-salary
+// line has no equivalent yet — treated as 0, not silently invented).
 function personCalc(settings, person) {
-  const monthlyCost = toBase(settings, person.salary, person.cur) + toBase(settings, person.extras, person.cur);
-  const hours = num(person.hours) || 0;
-  const billable = hours * (num(person.util) / 100);
+  const monthlyCost = toBase(settings, person.salary, person.currency);
+  const hours = num(person.defaultHours) || 0;
+  const billable = hours * (num(person.defaultUtilizationPct) / 100);
   const raw = hours > 0 ? monthlyCost / hours : 0;
   const recovery = billable > 0 ? monthlyCost / billable : 0;
   const auto = settings.basis === 'raw' ? raw : recovery;
-  const rate = (person.override !== null && person.override !== '' && Number.isFinite(parseFloat(person.override)))
-    ? toBase(settings, person.override, person.cur)
+  const rate = (person.overrideRate !== null && person.overrideRate !== '' && Number.isFinite(parseFloat(person.overrideRate)))
+    ? toBase(settings, person.overrideRate, person.currency)
     : auto;
   return { monthlyCost, hours, billable, raw, recovery, rate };
 }

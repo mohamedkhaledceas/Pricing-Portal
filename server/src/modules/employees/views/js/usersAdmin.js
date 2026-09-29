@@ -2,9 +2,9 @@ import { $, escapeHtml, toast } from './dom.js';
 import { apiFetch } from './apiClient.js';
 import { state } from './state.js';
 
-const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
-const ASSIGNABLE_ROLES = ['employee', 'manager', 'operations', 'finance', 'admin', 'people_culture'];
-const ROLE_LABELS = { employee: 'Employee', manager: 'Manager', operations: 'Operations', finance: 'Finance', admin: 'Admin', people_culture: 'People & Culture' };
+const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
+const ASSIGNABLE_ROLES = ['employee', 'ceo', 'operations', 'finance', 'admin', 'people_culture', 'commercial', 'account_management'];
+const ROLE_LABELS = { employee: 'Employee', ceo: 'CEO', operations: 'Operations', finance: 'Finance', admin: 'Admin', people_culture: 'People & Culture', commercial: 'Commercial', account_management: 'Account Management' };
 
 /* Mirrors the server's canAssignRole in common/permissions.js — this is only
    for hiding/disabling controls that would fail anyway; the server is what
@@ -31,7 +31,6 @@ async function changeRole(id, role) {
   }
   await renderUsersAdmin();
 }
-window.usersChangeRole = changeRole;
 
 async function toggleActive(id, active) {
   try {
@@ -42,14 +41,35 @@ async function toggleActive(id, active) {
   }
   await renderUsersAdmin();
 }
-window.usersToggleActive = toggleActive;
 
 function copyUuid(uuid) {
   navigator.clipboard.writeText(uuid)
     .then(() => toast('UUID copied', 'info'))
     .catch(() => toast('Could not copy — select and copy manually', 'danger'));
 }
-window.usersCopyUuid = copyUuid;
+
+// Delegated on #users-content — guarded against double-binding since
+// renderUsersAdmin() re-runs on this same persisting element after every
+// role change/activation toggle, not just on tab switch (see changeRole/
+// toggleActive above). Replaces onclick=".../onchange="..." attributes,
+// which the CSP's script-src-attr 'none' silently blocks (confirmed live,
+// 2026-09-28, on the sibling Overview-page/Team-Reviews bugs — same root
+// cause).
+function bindUsersTableUi(container) {
+  if (container._usersTableBound) return;
+  container._usersTableBound = true;
+  container.addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-role-select]');
+    if (!sel) return;
+    changeRole(Number(sel.dataset.userId), sel.value);
+  });
+  container.addEventListener('click', (e) => {
+    const toggleBtn = e.target.closest('[data-toggle-active]');
+    if (toggleBtn) { toggleActive(Number(toggleBtn.dataset.userId), toggleBtn.dataset.newActive === 'true'); return; }
+    const copyBtn = e.target.closest('[data-copy-uuid]');
+    if (copyBtn) copyUuid(copyBtn.dataset.copyUuid);
+  });
+}
 
 // UUID column is admin-only — the server already withholds `uuid` from the
 // response entirely for non-admin roles (accountAdminService.listUsers), so
@@ -67,14 +87,14 @@ function renderUsersTable(users) {
     const isSelf = u.id === myId;
     const canAct = !isSelf && clientCanAssignRole(myRole, u.role);
     const roleCell = canAct
-      ? `<select class="form-control small" onchange="usersChangeRole(${u.id}, this.value)">${roleOptionsHtml(myRole, u.role)}</select>`
+      ? `<select class="form-control small" data-role-select data-user-id="${u.id}">${roleOptionsHtml(myRole, u.role)}</select>`
       : escapeHtml(ROLE_LABELS[u.role] || u.role);
     const statusBadge = u.isActive ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Deactivated</span>';
     const statusBtn = canAct
-      ? `<button type="button" class="btn small ${u.isActive ? 'danger' : ''}" onclick="usersToggleActive(${u.id}, ${!u.isActive})">${u.isActive ? 'Deactivate' : 'Reactivate'}</button>`
+      ? `<button type="button" class="btn small ${u.isActive ? 'danger' : ''}" data-toggle-active data-user-id="${u.id}" data-new-active="${!u.isActive}">${u.isActive ? 'Deactivate' : 'Reactivate'}</button>`
       : '';
     const uuidCell = showUuid
-      ? `<td class="uuid-col"><span class="small muted" style="font-family:monospace;">${escapeHtml(u.uuid || '—')}</span>${u.uuid ? ` <button type="button" class="btn small" onclick="usersCopyUuid('${u.uuid}')" title="Copy UUID">Copy</button>` : ''}</td>`
+      ? `<td class="uuid-col"><span class="small muted" style="font-family:monospace;">${escapeHtml(u.uuid || '—')}</span>${u.uuid ? ` <button type="button" class="btn small" data-copy-uuid="${escapeHtml(u.uuid)}" title="Copy UUID">Copy</button>` : ''}</td>`
       : '';
     return `<tr>
       <td>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</td>
@@ -86,7 +106,8 @@ function renderUsersTable(users) {
     </tr>`;
   }).join('');
 
-  $('#users-content').innerHTML = `
+  const container = $('#users-content');
+  container.innerHTML = `
     <div class="card section">
       <div class="table-scroll">
         <table class="data-table">
@@ -96,6 +117,7 @@ function renderUsersTable(users) {
       </div>
     </div>
   `;
+  bindUsersTableUi(container);
 }
 
 export async function renderUsersAdmin() {

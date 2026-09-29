@@ -5,11 +5,12 @@
    (common/integrations/clickupWebhookAuth.js), a different secret
    (CLICKUP_KPI_WEBHOOK_SECRET), a different downstream service. */
 const logger = require('../../../common/logger');
+const config = require('../../../config');
 const { verifyClickupSignature } = require('../../../common/integrations/clickupWebhookAuth');
 
 function createKpiClickupWebhookController({ kpiClickupSyncService }) {
   function receive(req, res) {
-    const secret = process.env.CLICKUP_KPI_WEBHOOK_SECRET;
+    const secret = config.clickupKpiWebhookSecret;
     if (!secret) {
       logger.error('CLICKUP_KPI_WEBHOOK_SECRET is not configured — rejecting KPI ClickUp webhook.', {
         correlationId: req.correlationId,

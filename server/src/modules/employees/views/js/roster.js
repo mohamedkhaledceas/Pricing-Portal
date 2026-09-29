@@ -40,7 +40,17 @@ function departmentOptionsHtml(currentCode) {
 }
 // Team Head toggle rendering — matches rosterService.canManageRoster/
 // canAssignTeamHead exactly (same role set, both gates are equivalent).
-const canAssignTeamHead = () => ['admin', 'manager', 'operations', 'people_culture'].includes(state.currentUser && state.currentUser.role);
+const canAssignTeamHead = () => ['admin', 'ceo', 'operations', 'people_culture'].includes(state.currentUser && state.currentUser.role);
+
+// Deliberately narrower than the rest of this page (admin/people_culture
+// only) — matches conflictPairService.requireCanManage exactly, which has
+// never included ceo/operations. The card used to render unconditionally
+// for every canManageRoster role, so a ceo/operations viewer got an
+// uncaught 403 exception from loadConflictPairs on every Roster page load
+// (found 2026-09-28 while browser-testing an unrelated change) — hiding
+// the card for roles the backend was already rejecting fixes that at the
+// source instead of chasing the exception.
+const canManageConflictPairs = () => ['admin', 'people_culture'].includes(state.currentUser && state.currentUser.role);
 
 let rosterCache = [];
 let directoryCache = [];
@@ -116,7 +126,6 @@ async function submitCreate() {
     btn.disabled = false;
   }
 }
-window.rosterSubmitCreate = submitCreate;
 
 const ROSTER_BOOLEAN_FIELDS = new Set(['isTeamHead']);
 const ROSTER_MANAGER_FIELD = 'managerEmployeeId';
@@ -141,7 +150,6 @@ async function rosterFieldChanged(id, field, el) {
     await renderRosterTable();
   }
 }
-window.rosterFieldChanged = rosterFieldChanged;
 
 async function toggleActive(id, active) {
   try {
@@ -152,7 +160,6 @@ async function toggleActive(id, active) {
     toast(err.message, 'danger');
   }
 }
-window.rosterToggleActive = toggleActive;
 
 async function renderRosterTable() {
   const [res] = await Promise.all([apiFetch('/api/employees'), window.Departments.load(apiFetch), loadClickupMembers()]);
@@ -170,44 +177,44 @@ async function renderRosterTable() {
         </div>
       </td>
       <td>
-        <select class="form-control edit-job-title small" style="min-width:110px;" onchange="rosterFieldChanged(${e.id}, 'jobTitle', this)">
+        <select class="form-control edit-job-title small" style="min-width:110px;" data-roster-field-change data-employee-id="${e.id}" data-field="jobTitle">
           <option value="">—</option>
           ${jobTitleOptionsHtml(e.jobTitle)}
         </select>
       </td>
       <td>
-        <select class="form-control edit-department small" style="min-width:150px;" onchange="rosterFieldChanged(${e.id}, 'department', this)">
+        <select class="form-control edit-department small" style="min-width:150px;" data-roster-field-change data-employee-id="${e.id}" data-field="department">
           <option value="">—</option>
           ${departmentOptionsHtml(e.department)}
         </select>
       </td>
       <td>
-        <select class="form-control edit-kpi-profile small" style="min-width:120px;" onchange="rosterFieldChanged(${e.id}, 'kpiProfile', this)">
+        <select class="form-control edit-kpi-profile small" style="min-width:120px;" data-roster-field-change data-employee-id="${e.id}" data-field="kpiProfile">
           <option value="">—</option>
           ${KPI_PROFILES.map((p) => `<option value="${p}" ${e.kpiProfile === p ? 'selected' : ''}>${p}</option>`).join('')}
         </select>
       </td>
       <td>
-        <select class="form-control edit-employment-type small" style="min-width:110px;" onchange="rosterFieldChanged(${e.id}, 'employmentType', this)">
+        <select class="form-control edit-employment-type small" style="min-width:110px;" data-roster-field-change data-employee-id="${e.id}" data-field="employmentType">
           <option value="">—</option>
           ${EMPLOYMENT_TYPES.map((t) => `<option value="${t}" ${e.employmentType === t ? 'selected' : ''}>${EMPLOYMENT_TYPE_LABELS[t]}</option>`).join('')}
         </select>
       </td>
-      <td><input type="date" class="form-control edit-joining-date small" value="${escapeHtml(e.joiningDate || '')}" style="min-width:130px;" onchange="rosterFieldChanged(${e.id}, 'joiningDate', this)"></td>
+      <td><input type="date" class="form-control edit-joining-date small" value="${escapeHtml(e.joiningDate || '')}" style="min-width:130px;" data-roster-field-change data-employee-id="${e.id}" data-field="joiningDate"></td>
       <td>
-        <select class="form-control edit-work-location small" style="min-width:120px;" onchange="rosterFieldChanged(${e.id}, 'workLocation', this)">
+        <select class="form-control edit-work-location small" style="min-width:120px;" data-roster-field-change data-employee-id="${e.id}" data-field="workLocation">
           <option value="">—</option>
           ${WORK_LOCATIONS.map((l) => `<option value="${l}" ${e.workLocation === l ? 'selected' : ''}>${escapeHtml(WORK_LOCATION_LABELS[l])}</option>`).join('')}
         </select>
       </td>
       <td>
-        <select class="form-control edit-manager small" style="min-width:130px;" onchange="rosterFieldChanged(${e.id}, 'managerEmployeeId', this)">
+        <select class="form-control edit-manager small" style="min-width:130px;" data-roster-field-change data-employee-id="${e.id}" data-field="managerEmployeeId">
           <option value="">— None —</option>
           ${managerOptions(e.id)}
         </select>
       </td>
       <td>
-        <select class="form-control edit-clickup-id small" style="min-width:170px;" onchange="rosterFieldChanged(${e.id}, 'clickupUserId', this)">
+        <select class="form-control edit-clickup-id small" style="min-width:170px;" data-roster-field-change data-employee-id="${e.id}" data-field="clickupUserId">
           <option value="">— Unlinked —</option>
           ${clickupMemberOptionsHtml(e.clickupUserId)}
         </select>
@@ -215,12 +222,12 @@ async function renderRosterTable() {
       <td style="text-align:center;">${e.authRole === 'people_culture' ? '<span class="badge badge-approved">P&amp;C</span>' : ''}</td>
       <td style="text-align:center;">
         ${canAssignTeamHead()
-          ? `<input type="checkbox" class="edit-team-head" ${e.isTeamHead ? 'checked' : ''} title="Team Head" onchange="rosterFieldChanged(${e.id}, 'isTeamHead', this)">`
+          ? `<input type="checkbox" class="edit-team-head" ${e.isTeamHead ? 'checked' : ''} title="Team Head" data-roster-field-change data-employee-id="${e.id}" data-field="isTeamHead">`
           : (e.isTeamHead ? '<span class="badge badge-approved">Team Head</span>' : '')}
       </td>
       <td>${e.active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
       <td>
-        <button class="btn small ${e.active ? 'danger' : ''}" onclick="rosterToggleActive(${e.id}, ${!e.active})">${e.active ? 'Deactivate' : 'Reactivate'}</button>
+        <button class="btn small ${e.active ? 'danger' : ''}" data-roster-action="toggle-active" data-employee-id="${e.id}" data-new-active="${!e.active}">${e.active ? 'Deactivate' : 'Reactivate'}</button>
       </td>
     </tr>`).join('');
 
@@ -293,7 +300,6 @@ async function addDepartment() {
     toast(err.message, 'danger');
   }
 }
-window.deptAdd = addDepartment;
 
 let editingDepartmentId = null;
 let expandedDepartmentId = null;
@@ -302,19 +308,16 @@ function toggleDepartmentExpand(id) {
   expandedDepartmentId = expandedDepartmentId === id ? null : id;
   renderDepartmentsSection();
 }
-window.deptToggleExpand = toggleDepartmentExpand;
 
 function askEditDepartment(id) {
   editingDepartmentId = id;
   renderDepartmentsSection();
 }
-window.deptAskEdit = askEditDepartment;
 
 function cancelEditDepartment() {
   editingDepartmentId = null;
   renderDepartmentsSection();
 }
-window.deptCancelEdit = cancelEditDepartment;
 
 async function saveEditDepartment(id) {
   const input = $('#dept-edit-input-' + id);
@@ -330,7 +333,6 @@ async function saveEditDepartment(id) {
     toast(err.message, 'danger');
   }
 }
-window.deptSaveEdit = saveEditDepartment;
 
 // Same clickable-card look and click-to-expand-for-detail behavior as My
 // Team's myTeamCardHtml (team.js) / the Teams tab (teamsDirectory.js) —
@@ -348,7 +350,7 @@ function deptMemberCardHtml(e) {
   const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
   const managerName = e.managerEmployeeId ? employeeNameById(e.managerEmployeeId) : null;
   return `
-    <div class="team-directory-card" id="dept-member-card-${e.id}" role="button" tabindex="0" onclick="event.stopPropagation(); deptMemberToggleCard(${e.id})">
+    <div class="team-directory-card" id="dept-member-card-${e.id}" role="button" tabindex="0" data-card-toggle="dept-member" data-id="${e.id}">
       <div class="team-directory-card-summary">
         <div class="team-directory-card-avatar">${avatarHtml}</div>
         <div>
@@ -363,13 +365,13 @@ function deptMemberCardHtml(e) {
     </div>`;
 }
 // Accordion, not independent toggles — same rule as My Team's cards.
-window.deptMemberToggleCard = function (id) {
+function deptMemberToggleCard(id) {
   const detail = document.getElementById('dept-member-detail-' + id);
   if (!detail) return;
   const wasHidden = detail.hidden;
   document.querySelectorAll('[id^="dept-member-detail-"]').forEach((d) => { d.hidden = true; });
   detail.hidden = !wasHidden;
-};
+}
 
 function renderDepartmentsSection() {
   const departments = window.Departments.list();
@@ -378,18 +380,18 @@ function renderDepartmentsSection() {
         const isExpanded = expandedDepartmentId === d.id;
         const isEditing = editingDepartmentId === d.id;
         const members = isExpanded ? rosterCache.filter((e) => e.department === d.code) : [];
-        return `<div class="request-card dept-card ${isExpanded ? 'expanded' : ''}" style="margin-bottom:6px;" ${isEditing ? '' : `role="button" tabindex="0" onclick="deptToggleExpand(${d.id})"`}>
+        return `<div class="request-card dept-card ${isExpanded ? 'expanded' : ''}" style="margin-bottom:6px;" ${isEditing ? '' : `role="button" tabindex="0" data-dept-action="toggle-expand" data-dept-id="${d.id}"`}>
         ${isEditing
-          ? `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;" onclick="event.stopPropagation()">
+          ? `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
               <input class="form-control" id="dept-edit-input-${d.id}" value="${escapeHtml(d.label)}" style="flex:1; min-width:200px;">
-              <button class="btn small primary" onclick="deptSaveEdit(${d.id})">Save</button>
-              <button class="btn small" onclick="deptCancelEdit()">Cancel</button>
+              <button class="btn small primary" data-dept-action="save-edit" data-dept-id="${d.id}">Save</button>
+              <button class="btn small" data-dept-action="cancel-edit">Cancel</button>
             </div>`
           : `<div class="request-card-top">
               <div class="dept-name-btn">
                 <span class="dept-name-chev">▸</span>${escapeHtml(d.label)}
               </div>
-              <button class="btn small" onclick="event.stopPropagation(); deptAskEdit(${d.id})">Edit</button>
+              <button class="btn small" data-dept-action="ask-edit" data-dept-id="${d.id}">Edit</button>
             </div>
             ${isExpanded ? `<div class="dept-members">${
               members.length
@@ -410,11 +412,12 @@ function renderDepartmentsSection() {
   $('#dept-add-btn').addEventListener('click', addDepartment);
 }
 
-/* ── Conflict pairs — manager/people_culture/operations/admin (same
-   canManageRoster role set gating this whole page) can add one, edit which
-   two employees it covers in place, or delete it outright. Delete is a
-   real removal (not a revoke/deactivate) — see conflictPairRepository.
-   remove's own comment on why that's safe for this table specifically. */
+/* ── Conflict pairs — admin/people_culture only (see canManageConflictPairs
+   above; deliberately narrower than the rest of this page) can add one,
+   edit which two employees it covers in place, or delete it outright.
+   Delete is a real removal (not a revoke/deactivate) — see
+   conflictPairRepository.remove's own comment on why that's safe for this
+   table specifically. */
 async function loadConflictPairs() {
   const res = await apiFetch('/api/employees/conflict-pairs');
   return res.conflictPairs || [];
@@ -443,7 +446,6 @@ async function addConflictPair() {
     toast(err.message, 'danger');
   }
 }
-window.cpAdd = addConflictPair;
 
 let editingConflictPairId = null;
 let confirmingDeleteConflictPairId = null;
@@ -453,13 +455,11 @@ function askEditConflictPair(id) {
   confirmingDeleteConflictPairId = null;
   renderConflictPairs();
 }
-window.cpAskEdit = askEditConflictPair;
 
 function cancelEditConflictPair() {
   editingConflictPairId = null;
   renderConflictPairs();
 }
-window.cpCancelEdit = cancelEditConflictPair;
 
 async function saveEditConflictPair(id) {
   const a = Number($(`#cp-edit-a-${id}`).value);
@@ -474,20 +474,17 @@ async function saveEditConflictPair(id) {
     toast(err.message, 'danger');
   }
 }
-window.cpSaveEdit = saveEditConflictPair;
 
 function askDeleteConflictPair(id) {
   confirmingDeleteConflictPairId = id;
   editingConflictPairId = null;
   renderConflictPairs();
 }
-window.cpAskDelete = askDeleteConflictPair;
 
 function cancelDeleteConflictPair() {
   confirmingDeleteConflictPairId = null;
   renderConflictPairs();
 }
-window.cpCancelDelete = cancelDeleteConflictPair;
 
 async function deleteConflictPair(id) {
   try {
@@ -499,31 +496,30 @@ async function deleteConflictPair(id) {
     toast(err.message, 'danger');
   }
 }
-window.cpDelete = deleteConflictPair;
 
 function conflictPairRowHtml(p) {
   if (editingConflictPairId === p.id) {
     return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
       <select class="form-control" id="cp-edit-a-${p.id}" style="flex:1; min-width:160px;">${employeeOptionsHtml(p.employeeIdA)}</select>
       <select class="form-control" id="cp-edit-b-${p.id}" style="flex:1; min-width:160px;">${employeeOptionsHtml(p.employeeIdB)}</select>
-      <button class="btn small primary" onclick="cpSaveEdit(${p.id})">Save</button>
-      <button class="btn small" onclick="cpCancelEdit()">Cancel</button>
+      <button class="btn small primary" data-cp-action="save-edit" data-cp-id="${p.id}">Save</button>
+      <button class="btn small" data-cp-action="cancel-edit">Cancel</button>
     </div>`;
   }
   if (confirmingDeleteConflictPairId === p.id) {
     return `<div class="request-card-top">
       <span class="small">Delete this pair? </span>
       <span>
-        <button class="btn small danger" onclick="cpDelete(${p.id})">Yes</button>
-        <button class="btn small" onclick="cpCancelDelete()">No</button>
+        <button class="btn small danger" data-cp-action="delete" data-cp-id="${p.id}">Yes</button>
+        <button class="btn small" data-cp-action="cancel-delete">No</button>
       </span>
     </div>`;
   }
   return `<div class="request-card-top">
     <div>${escapeHtml(directoryName(p.employeeIdA))} ↔ ${escapeHtml(directoryName(p.employeeIdB))}</div>
     <span>
-      <button class="btn small" onclick="cpAskEdit(${p.id})">Edit</button>
-      <button class="btn small danger" onclick="cpAskDelete(${p.id})">Delete</button>
+      <button class="btn small" data-cp-action="ask-edit" data-cp-id="${p.id}">Edit</button>
+      <button class="btn small danger" data-cp-action="ask-delete" data-cp-id="${p.id}">Delete</button>
     </span>
   </div>`;
 }
@@ -541,6 +537,69 @@ async function renderConflictPairs() {
       <div class="form-group full"><button class="btn small" id="cp-add-btn">Add Pair</button></div>
     </div>`;
   $('#cp-add-btn').addEventListener('click', addConflictPair);
+}
+
+// Delegated on #roster-content — covers all three sections (roster table
+// field-changes/toggle-active, departments, conflict pairs). Guarded
+// against double-binding since renderRoster() re-runs on this same
+// persisting element after several actions (toggleActive, addDepartment,
+// saveEditDepartment, submitCreate all call it again), even though the
+// three sub-sections also have their own standalone re-render paths
+// (renderDepartmentsSection/renderConflictPairs/renderRosterTable) that
+// don't recreate #roster-content itself — delegation survives those
+// automatically, only the container-level rebind needs guarding.
+//
+// Ordering matters here, not stopPropagation: dept-member cards nest
+// inside an expanded department card, and edit-mode buttons nest inside
+// the same card that (when not editing) has its own toggle-expand handler
+// — checking the most-specific selector first and returning early gets the
+// same effect the original onclick="event.stopPropagation()" calls did,
+// without needing to actually stop propagation.
+//
+// Replaces onclick=".../onchange="..." attributes, which the CSP's
+// script-src-attr 'none' silently blocks (confirmed live, 2026-09-28, on
+// the sibling Overview-page/Team-Reviews bugs — same root cause).
+function bindRosterUi(container) {
+  if (container._rosterBound) return;
+  container._rosterBound = true;
+
+  container.addEventListener('change', (e) => {
+    const el = e.target.closest('[data-roster-field-change]');
+    if (!el) return;
+    rosterFieldChanged(Number(el.dataset.employeeId), el.dataset.field, el);
+  });
+
+  container.addEventListener('click', (e) => {
+    const memberCard = e.target.closest('[data-card-toggle="dept-member"]');
+    if (memberCard) { deptMemberToggleCard(Number(memberCard.dataset.id)); return; }
+
+    const deptBtn = e.target.closest('[data-dept-action]');
+    if (deptBtn) {
+      const deptId = Number(deptBtn.dataset.deptId);
+      const action = deptBtn.dataset.deptAction;
+      if (action === 'toggle-expand') toggleDepartmentExpand(deptId);
+      if (action === 'ask-edit') askEditDepartment(deptId);
+      if (action === 'save-edit') saveEditDepartment(deptId);
+      if (action === 'cancel-edit') cancelEditDepartment();
+      return;
+    }
+
+    const cpBtn = e.target.closest('[data-cp-action]');
+    if (cpBtn) {
+      const cpId = Number(cpBtn.dataset.cpId);
+      const action = cpBtn.dataset.cpAction;
+      if (action === 'ask-edit') askEditConflictPair(cpId);
+      if (action === 'save-edit') saveEditConflictPair(cpId);
+      if (action === 'cancel-edit') cancelEditConflictPair();
+      if (action === 'ask-delete') askDeleteConflictPair(cpId);
+      if (action === 'delete') deleteConflictPair(cpId);
+      if (action === 'cancel-delete') cancelDeleteConflictPair();
+      return;
+    }
+
+    const rosterBtn = e.target.closest('[data-roster-action="toggle-active"]');
+    if (rosterBtn) toggleActive(Number(rosterBtn.dataset.employeeId), rosterBtn.dataset.newActive === 'true');
+  });
 }
 
 export async function renderRoster() {
@@ -568,14 +627,16 @@ export async function renderRoster() {
         </table>
       </div>
     </div>
+    ${canManageConflictPairs() ? `
     <div class="card section">
       <div class="card-title">Team Conflict Pairs <span class="small muted">(informational only — not enforced by the request form yet)</span></div>
       <div id="conflict-pairs-list" class="mt-8"></div>
       <div id="conflict-pairs-form" class="mt-16"></div>
-    </div>
+    </div>` : ''}
   `;
+  bindRosterUi(container);
   await renderRosterTable();
   renderDepartmentsSection();
   await renderCreateForm();
-  await renderConflictPairs();
+  if (canManageConflictPairs()) await renderConflictPairs();
 }

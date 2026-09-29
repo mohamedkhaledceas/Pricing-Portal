@@ -2,7 +2,7 @@ import { $, $all } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
 import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
-import { renderOverview } from './overview.js';
+import { renderOverview, bindOverviewUi } from './overview.js';
 import { renderNewRequestForm, renderRules, switchSubTab } from './timeOff.js';
 import { renderTeam } from './team.js';
 import { renderTeamsDirectory } from './teamsDirectory.js';
@@ -13,26 +13,30 @@ import { renderUsersAdmin, bindUsersAdminUi } from './usersAdmin.js';
 import { renderLeaveReport } from './leaveBreakdown.js';
 import { connectRealtime } from './realtime.js';
 
-// 'manager' is the CEO's role in this org — full company-wide roster
-// access, same as people_culture (see rosterService.canManageRoster).
-// Must match that function's role set exactly — it previously omitted
-// 'operations', which the backend already granted full roster access to;
-// that mismatch meant an operations-role user could call the roster APIs
-// directly but never see the tab that reaches them.
-const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'manager', 'operations'];
+// 'ceo' (renamed from 'manager' in migration 024) is this org's single
+// top-level exec role — full company-wide roster access, same as
+// people_culture (see rosterService.canManageRoster). Must match that
+// function's role set exactly — it previously omitted 'operations', which
+// the backend already granted full roster access to; that mismatch meant
+// an operations-role user could call the roster APIs directly but never
+// see the tab that reaches them.
+const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'ceo', 'operations'];
 // Leave Report is scoped to the two roles that actually review/approve
 // requests — not admin (canManageRoster's superset doesn't apply here).
-const LEAVE_REPORT_ROLES = ['manager', 'people_culture', 'admin'];
+const LEAVE_REPORT_ROLES = ['ceo', 'people_culture', 'admin'];
 // Same gate as margin-planner_1.html's own Commercial Lead button
 // (USER_MANAGER_ROLES) — role only.
-const MARGIN_PLANNER_ROLES = ['manager', 'operations', 'admin'];
+const MARGIN_PLANNER_ROLES = ['ceo', 'operations', 'admin'];
 // Matches commercial-lead's own USER_MANAGER_ROLES gate for the Users menu item.
-const USER_MANAGER_ROLES = ['admin', 'manager', 'operations'];
-// 'manager' only — see modules/management/ceo-dashboard/routes/index.js's
+const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
+// 'ceo' only — see modules/management/ceo-dashboard/routes/index.js's
 // own comment on why this doesn't use USER_MANAGER_ROLES like the others.
-const CEO_DASHBOARD_ROLES = ['manager', 'admin'];
+const CEO_DASHBOARD_ROLES = ['ceo', 'admin'];
 
-export function switchMainTab(tabId, btn) {
+// opts.kpiView lets a caller deep-link into a specific KPI sub-view (see
+// renderKpi's own comment) — e.g. Overview's "Go to Team Reviews" button
+// passes { kpiView: 'peerReview' } via bindOverviewUi's data-goto-kpi-view.
+export function switchMainTab(tabId, btn, opts = {}) {
   state.mainTab = tabId;
   $all('.nav-tab').forEach((t) => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
@@ -48,7 +52,7 @@ export function switchMainTab(tabId, btn) {
   if (tabId === 'teams') renderTeamsDirectory();
   if (tabId === 'requests') renderRequestsCenter();
   if (tabId === 'roster') renderRoster();
-  if (tabId === 'kpi') renderKpi();
+  if (tabId === 'kpi') renderKpi(opts.kpiView);
   if (tabId === 'users') renderUsersAdmin();
   if (tabId === 'leave-report') renderLeaveReport();
 }
@@ -71,6 +75,7 @@ function bindUi() {
   $all('.sub-nav-tab').forEach((btn) => btn.addEventListener('click', () => switchSubTab(btn.dataset.subtab, btn)));
 
   bindUsersAdminUi();
+  bindOverviewUi();
 }
 
 (async function init() {

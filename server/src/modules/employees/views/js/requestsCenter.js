@@ -47,6 +47,25 @@ function lateWfhWarningHtml(r) {
   return `<div class="request-card-conflict">⚠ Submitted at ${escapeHtml(fmtDateTime(r.createdAt))} — after 9:00 AM for a same-day WFH request. A deduction should be applied.</div>`;
 }
 
+// WFH over the monthly quota is no longer auto-rejected (2026-09-29) — it
+// takes the normal workflow instead, and P&C sees it flagged here so they
+// can decide (deduction, one-off exception, etc.) with full context.
+// wfhRequestsThisMonth includes this request itself (see timeOffService's
+// listPcPending); leaveTypeUsage.total is the same MONTHLY_WFH_DAYS limit
+// leaveTypeUsageHtml already reads for WFH, reused rather than duplicated.
+function wfhOverQuotaWarningHtml(r) {
+  if (r.leaveType !== 'wfh' || !r.wfhRequestsThisMonth || !r.leaveTypeUsage) return '';
+  if (r.wfhRequestsThisMonth <= r.leaveTypeUsage.total) return '';
+  return `<div class="request-card-conflict">⚠ This is their ${escapeHtml(String(r.wfhRequestsThisMonth))}${ordinalSuffix(r.wfhRequestsThisMonth)} Work From Home request this month — the policy limit is ${escapeHtml(String(r.leaveTypeUsage.total))}.</div>`;
+}
+
+function ordinalSuffix(n) {
+  if (n % 10 === 1 && n % 100 !== 11) return 'st';
+  if (n % 10 === 2 && n % 100 !== 12) return 'nd';
+  if (n % 10 === 3 && n % 100 !== 13) return 'rd';
+  return 'th';
+}
+
 function leaveTypeUsageHtml(r) {
   const u = r.leaveTypeUsage;
   if (!u) return '';
@@ -96,13 +115,11 @@ function askReject(id) {
   rejectingId = id;
   renderRequestsCenter();
 }
-window.askReject = askReject;
 
 function cancelReject() {
   rejectingId = null;
   renderRequestsCenter();
 }
-window.cancelReject = cancelReject;
 
 async function managerDecide(id, decision, btn) {
   const card = $('#team-card-' + id);
@@ -125,7 +142,6 @@ async function managerDecide(id, decision, btn) {
     renderRequestsCenter();
   }
 }
-window.managerDecide = managerDecide;
 
 async function pcConfirm(id, decision) {
   const card = $('#team-card-' + id);
@@ -154,22 +170,24 @@ async function pcConfirm(id, decision) {
     toast(err.message, 'danger');
   }
 }
-window.pcConfirm = pcConfirm;
 
-function rejectNoteForm(id, confirmOnclick) {
+// confirmKind selects which decide function the delegated handler calls on
+// "Confirm Reject" — 'manager' -> managerDecide(id,'rejected',btn), 'pc' ->
+// pcConfirm(id,'rejected') (no btn arg needed there).
+function rejectNoteForm(id, confirmKind) {
   return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
     <textarea class="form-control reject-note" placeholder="Reason for rejecting (required)" rows="2" style="width:100%;"></textarea>
-    <button class="btn danger small" onclick="${confirmOnclick}">Confirm Reject</button>
-    <button class="btn small" onclick="cancelReject()">Cancel</button>
+    <button class="btn danger small" data-req-action="confirm-reject" data-reject-kind="${confirmKind}" data-request-id="${id}">Confirm Reject</button>
+    <button class="btn small" data-req-action="cancel-reject">Cancel</button>
   </div>`;
 }
 
 function managerActions(r) {
   if (r.status !== 'pending') return '';
-  if (rejectingId === r.id) return rejectNoteForm(r.id, `managerDecide(${r.id},'rejected',this)`);
+  if (rejectingId === r.id) return rejectNoteForm(r.id, 'manager');
   return `<div class="request-card-actions">
-    <button class="btn primary small" onclick="managerDecide(${r.id},'approved',this)">✓ Approve</button>
-    <button class="btn danger small" onclick="askReject(${r.id})">✕ Reject</button>
+    <button class="btn primary small" data-req-action="manager-approve" data-request-id="${r.id}">✓ Approve</button>
+    <button class="btn danger small" data-req-action="ask-reject" data-request-id="${r.id}">✕ Reject</button>
   </div>`;
 }
 
@@ -210,8 +228,8 @@ function changeRequestCard(r) {
     </div>
     <div class="request-card-reason">${changeRequestDiffHtml(r.changes)}</div>
     <div class="request-card-actions">
-      <button class="btn primary small" onclick="profileChangeDecide(${r.id},'approve',this)">✓ Approve</button>
-      <button class="btn danger small" onclick="profileChangeDecide(${r.id},'reject',this)">✕ Reject</button>
+      <button class="btn primary small" data-req-action="profile-change-approve" data-request-id="${r.id}">✓ Approve</button>
+      <button class="btn danger small" data-req-action="profile-change-reject" data-request-id="${r.id}">✕ Reject</button>
     </div>
   </div>`;
 }
@@ -227,7 +245,6 @@ async function profileChangeDecide(id, decision, btn) {
     renderRequestsCenter();
   }
 }
-window.profileChangeDecide = profileChangeDecide;
 
 function doctorNoteCheckboxHtml(r) {
   if (r.leaveType !== 'sick' || !r.requiresDoctorNote) return '';
@@ -238,7 +255,7 @@ function doctorNoteCheckboxHtml(r) {
 
 function pcActions(r) {
   if (r.status !== 'manager_approved') return '';
-  if (rejectingId === r.id) return rejectNoteForm(r.id, `pcConfirm(${r.id},'rejected')`);
+  if (rejectingId === r.id) return rejectNoteForm(r.id, 'pc');
   return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
     ${doctorNoteCheckboxHtml(r)}
     <select class="form-control pc-deduction" style="width:auto;">
@@ -248,8 +265,8 @@ function pcActions(r) {
       <option value="unpaid">Unpaid</option>
     </select>
     <input type="number" class="form-control pc-unpaid-days" placeholder="Unpaid days" style="width:110px;" min="0">
-    <button class="btn primary small" onclick="pcConfirm(${r.id},'approved')">✓ Confirm</button>
-    <button class="btn danger small" onclick="askReject(${r.id})">✕ Reject</button>
+    <button class="btn primary small" data-req-action="pc-approve" data-request-id="${r.id}">✓ Confirm</button>
+    <button class="btn danger small" data-req-action="ask-reject" data-request-id="${r.id}">✕ Reject</button>
   </div>`;
 }
 
@@ -287,11 +304,17 @@ function timelineHtml(item) {
     if (item.autoRejectReason) {
       steps.push(`<div><strong>Auto-rejected</strong> — ${escapeHtml(item.autoRejectReason)}</div>`);
     }
-    if (item.managerDecisionAt) {
+    if (item.managerDecisionAt && item.managerDecisionBy) {
       const verb = item.managerDecisionNote && item.status === 'rejected' && !item.pcConfirmedAt ? 'Rejected' : 'Approved';
       steps.push(`<div><strong>${verb} by manager</strong> — ${escapeHtml(nameFor(item.managerDecisionBy))}, ${escapeHtml(fmtDateTime(item.managerDecisionAt))}${item.managerDecisionNote ? `: ${escapeHtml(item.managerDecisionNote)}` : ''}</div>`);
     } else if (item.managerDecisionNote) {
-      steps.push(`<div><strong>Manager stage skipped</strong> — ${escapeHtml(item.managerDecisionNote)}</div>`);
+      // No manager_decision_by — this is the "no manager assigned, routed
+      // straight to P&C" auto-route (submit()'s skippedManagerStage), not a
+      // real human decision. manager_decision_at is still set (same repo
+      // call as a real decision), so it can't be used to tell the two
+      // apart — managerDecisionBy is the only reliable signal, and without
+      // this check nameFor(null) rendered "Employee #null" here.
+      steps.push(`<div><strong>Manager stage skipped</strong> — ${escapeHtml(fmtDateTime(item.managerDecisionAt))}: ${escapeHtml(item.managerDecisionNote)}</div>`);
     }
     if (item.pcConfirmedAt) {
       const verb = item.status === 'rejected' ? 'Rejected' : 'Confirmed';
@@ -306,13 +329,13 @@ function timelineHtml(item) {
   return steps.join('');
 }
 
-window.myRequestToggleTimeline = function (rowId) {
+function myRequestToggleTimeline(rowId) {
   const detail = document.getElementById('my-request-timeline-' + rowId);
   if (!detail) return;
   const wasHidden = detail.hidden;
   document.querySelectorAll('[id^="my-request-timeline-"]').forEach((d) => { d.hidden = true; });
   detail.hidden = !wasHidden;
-};
+}
 
 async function cancelMyRequest(id) {
   try {
@@ -324,17 +347,16 @@ async function cancelMyRequest(id) {
     toast(err.message, 'danger');
   }
 }
-window.cancelMyRequest = cancelMyRequest;
 
-window.askCancelMyRequest = function (id) {
+function askCancelMyRequest(id) {
   confirmingCancelId = id;
   filterMyRequests();
-};
+}
 
-window.cancelCancelMyRequest = function () {
+function cancelCancelMyRequest() {
   confirmingCancelId = null;
   filterMyRequests();
-};
+}
 
 function myRequestRowHtml(item) {
   const rowId = `${item.kind}-${item.id}`;
@@ -361,11 +383,11 @@ function myRequestRowHtml(item) {
     ${detailsHtml}
     ${item.kind === 'leave' ? conflictWarningHtml(item) + noManagerFlagHtml(item) : ''}
     <div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
-      <button class="btn small" onclick="myRequestToggleTimeline('${rowId}')">View activity</button>
+      <button class="btn small" data-req-action="toggle-timeline" data-row-id="${rowId}">View activity</button>
       ${canCancel
         ? (confirmingCancelId === item.id
-          ? `<span class="small">Cancel this request? </span><button class="btn small danger" onclick="cancelMyRequest(${item.id})">Yes</button> <button class="btn small" onclick="cancelCancelMyRequest()">No</button>`
-          : `<button class="btn small" onclick="askCancelMyRequest(${item.id})">Cancel</button>`)
+          ? `<span class="small">Cancel this request? </span><button class="btn small danger" data-req-action="confirm-cancel" data-request-id="${item.id}">Yes</button> <button class="btn small" data-req-action="cancel-cancel">No</button>`
+          : `<button class="btn small" data-req-action="ask-cancel" data-request-id="${item.id}">Cancel</button>`)
         : ''}
     </div>
     <div class="small muted mt-8" id="my-request-timeline-${rowId}" hidden>${timelineHtml(item)}</div>
@@ -386,7 +408,7 @@ function matchesFilters(item, filters) {
   return true;
 }
 
-window.filterMyRequests = function filterMyRequests() {
+function filterMyRequests() {
   const filters = {
     search: ($('#req-search') ? $('#req-search').value : '').trim().toLowerCase(),
     category: $('#req-filter-category') ? $('#req-filter-category').value : '',
@@ -398,24 +420,24 @@ window.filterMyRequests = function filterMyRequests() {
   const list = $('#my-requests-list');
   if (!list) return;
   list.innerHTML = filtered.length ? filtered.map(myRequestRowHtml).join('') : `<div class="empty-state">No requests match these filters.</div>`;
-};
+}
 
 function myRequestsFilterBarHtml() {
   const categoryOptions = LEAVE_TYPES.map((t) => `<option value="${escapeHtml(t.value)}">${escapeHtml(t.label)}</option>`).join('');
   const statusOptions = Object.keys(STATUS_LABELS).map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(STATUS_LABELS[s])}</option>`).join('');
   return `<div class="requests-filter-bar">
-    <input type="text" id="req-search" class="form-control" placeholder="Search my requests..." oninput="filterMyRequests()">
-    <select id="req-filter-category" class="form-control" onchange="filterMyRequests()">
+    <input type="text" id="req-search" class="form-control" placeholder="Search my requests..." data-my-requests-filter>
+    <select id="req-filter-category" class="form-control" data-my-requests-filter>
       <option value="">All categories</option>
       <option value="profile_change">Profile Change</option>
       ${categoryOptions}
     </select>
-    <select id="req-filter-status" class="form-control" onchange="filterMyRequests()">
+    <select id="req-filter-status" class="form-control" data-my-requests-filter>
       <option value="">All statuses</option>
       ${statusOptions}
     </select>
-    <input type="date" id="req-filter-from" class="form-control" title="From date" onchange="filterMyRequests()">
-    <input type="date" id="req-filter-to" class="form-control" title="To date" onchange="filterMyRequests()">
+    <input type="date" id="req-filter-from" class="form-control" title="From date" data-my-requests-filter>
+    <input type="date" id="req-filter-to" class="form-control" title="To date" data-my-requests-filter>
   </div>`;
 }
 
@@ -427,6 +449,50 @@ function myRequestsSectionHtml() {
   </div>`;
 }
 
+// Delegated on #requests-content — guarded against double-binding since
+// renderRequestsCenter() re-runs on this same persisting element after
+// nearly every action (approve/reject/cancel/etc. all call it again).
+// Covers every action button in this file plus the "My Requests" filter
+// bar's input/change events. Replaces onclick=".../onchange="..."/
+// oninput="..." attributes, which the CSP's script-src-attr 'none'
+// silently blocks (confirmed live, 2026-09-28, on the sibling
+// Overview-page/Team-Reviews bugs — same root cause).
+function bindRequestsCenterUi(container) {
+  if (container._requestsCenterBound) return;
+  container._requestsCenterBound = true;
+
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-req-action]');
+    if (!btn) return;
+    const action = btn.dataset.reqAction;
+    const id = Number(btn.dataset.requestId);
+    if (action === 'confirm-reject') {
+      if (btn.dataset.rejectKind === 'manager') managerDecide(id, 'rejected', btn);
+      else pcConfirm(id, 'rejected');
+    }
+    if (action === 'cancel-reject') cancelReject();
+    if (action === 'manager-approve') managerDecide(id, 'approved', btn);
+    if (action === 'ask-reject') askReject(id);
+    if (action === 'profile-change-approve') profileChangeDecide(id, 'approve', btn);
+    if (action === 'profile-change-reject') profileChangeDecide(id, 'reject', btn);
+    if (action === 'pc-approve') pcConfirm(id, 'approved');
+    if (action === 'toggle-timeline') myRequestToggleTimeline(btn.dataset.rowId);
+    if (action === 'confirm-cancel') cancelMyRequest(id);
+    if (action === 'cancel-cancel') cancelCancelMyRequest();
+    if (action === 'ask-cancel') askCancelMyRequest(id);
+  });
+
+  // "My Requests" filter bar — #my-requests-list gets replaced by
+  // filterMyRequests() itself, but the filter inputs live in a sibling
+  // element that persists, so this stays correctly bound throughout.
+  container.addEventListener('input', (e) => {
+    if (e.target.closest('[data-my-requests-filter]')) filterMyRequests();
+  });
+  container.addEventListener('change', (e) => {
+    if (e.target.closest('[data-my-requests-filter]')) filterMyRequests();
+  });
+}
+
 // ── Orchestration ────────────────────────────────────────────────────
 export async function renderRequestsCenter() {
   const container = $('#requests-content');
@@ -434,7 +500,7 @@ export async function renderRequestsCenter() {
 
   const role = state.currentUser && state.currentUser.role;
   const isPeopleCulture = role === 'people_culture';
-  const isManagerRole = role === 'manager';
+  const isManagerRole = role === 'ceo';
   const canReviewProfileChanges = role === 'admin' || isManagerRole || isPeopleCulture;
   const myEmployeeId = state.myEmployee && state.myEmployee.id;
 
@@ -481,7 +547,7 @@ export async function renderRequestsCenter() {
     sections.push(`
       <div class="card section">
         <div class="card-title">Pending P&amp;C Confirmation (company-wide)</div>
-        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r) + leaveTypeUsageHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
+        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r) + wfhOverQuotaWarningHtml(r) + leaveTypeUsageHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
       </div>`);
   }
 
@@ -495,4 +561,5 @@ export async function renderRequestsCenter() {
   }
 
   container.innerHTML = sections.join('');
+  bindRequestsCenterUi(container);
 }

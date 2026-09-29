@@ -333,7 +333,7 @@ function createKpiScoringService({
   function setEmployeeTarget({ employeeId, quarter, metricId, targetValue, actorEmployee, actorAuthRole, actorId, ip }) {
     const employee = employeeRepository.findById(employeeId);
     if (!employee) throw new EmployeesError('Employee not found.', 404);
-    if (actorAuthRole !== roles.ADMIN && actorAuthRole !== roles.MANAGER) {
+    if (actorAuthRole !== roles.ADMIN && actorAuthRole !== roles.CEO) {
       throw new EmployeesError('You do not have permission to set targets for this employee.', 403);
     }
     const definitions = kpiDefinitionRepository.findByProfileAndQuarter(employee.kpi_profile, quarter);
@@ -503,7 +503,7 @@ function createKpiScoringService({
   // direct report and a department member appears in both; that overlap
   // is intentional, confirmed with the user, not deduplicated).
   function computeTeamSummary({ actorEmployee, actorAuthRole, quarter }) {
-    const isCompanyWide = actorAuthRole === roles.MANAGER || actorAuthRole === roles.ADMIN;
+    const isCompanyWide = actorAuthRole === roles.CEO || actorAuthRole === roles.ADMIN;
     const directReports = actorEmployee ? employeeRepository.findByManagerId(actorEmployee.id) : [];
     if (!isCompanyWide && directReports.length === 0) {
       throw new EmployeesError('You do not have permission to view the team performance summary.', 403);

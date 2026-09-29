@@ -56,7 +56,6 @@ async function saveMapping(listsDatalistHtml) {
     toast(err.message, 'danger');
   }
 }
-window.kpiSaveMapping = saveMapping;
 
 async function removeMapping(kpiProfile, metricId) {
   try {
@@ -67,7 +66,6 @@ async function removeMapping(kpiProfile, metricId) {
     toast(err.message, 'danger');
   }
 }
-window.kpiRemoveMapping = removeMapping;
 
 async function runCompute() {
   const quarter = $('#map-run-quarter').value.trim();
@@ -79,7 +77,36 @@ async function runCompute() {
     toast(err.message, 'danger');
   }
 }
-window.kpiRunComputeAutoScores = runCompute;
+
+function renderMappingExtraFields(method) {
+  $('#map-extra-fields').innerHTML = methodExtraFieldsHtml(method);
+}
+
+// Delegated on container (#kpi-view-content) — guarded against double-
+// binding since renderKpiMappingAdmin re-runs on this same persisting
+// element after every save/remove, and it can also be revisited via
+// sub-view switching within one KPI-tab visit (same shared container as
+// Overview/Team Reviews — see kpi.js/kpiPeerReview.js's own comments on
+// this). Replaces onclick=".../onchange="..." attributes, which the CSP's
+// script-src-attr 'none' silently blocks (confirmed live, 2026-09-28, on
+// the sibling Overview-page/Team-Reviews bugs — same root cause).
+function bindKpiMappingAdminUi(container) {
+  if (container._kpiMappingAdminBound) return;
+  container._kpiMappingAdminBound = true;
+  container.addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-method-select]');
+    if (!sel) return;
+    renderMappingExtraFields(sel.value);
+  });
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-kpi-map-action]');
+    if (!btn) return;
+    const action = btn.dataset.kpiMapAction;
+    if (action === 'save') saveMapping();
+    if (action === 'run-compute') runCompute();
+    if (action === 'remove') removeMapping(btn.dataset.kpiProfile, btn.dataset.metricId);
+  });
+}
 
 export async function renderKpiMappingAdmin(container) {
   container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
@@ -104,7 +131,7 @@ export async function renderKpiMappingAdmin(container) {
           </div>
           <div class="form-group">
             <label class="form-label">Method</label>
-            <select class="form-control" id="map-method" onchange="document.getElementById('map-extra-fields').innerHTML = ''; kpiRenderMappingExtraFields(this.value)">
+            <select class="form-control" id="map-method" data-method-select>
               ${METHODS.map((m) => `<option value="${m.value}">${m.label}</option>`).join('')}
             </select>
           </div>
@@ -113,7 +140,7 @@ export async function renderKpiMappingAdmin(container) {
             <input class="form-control" id="map-list-ids" list="kpi-known-lists" placeholder="e.g. 901521332761">
           </div>
           <div class="form-group full" id="map-extra-fields">${methodExtraFieldsHtml(METHODS[0].value)}</div>
-          <div class="form-group full"><button class="btn primary small" onclick="kpiSaveMapping()">Save Mapping</button></div>
+          <div class="form-group full"><button class="btn primary small" data-kpi-map-action="save">Save Mapping</button></div>
         </div>
       </div>
 
@@ -121,7 +148,7 @@ export async function renderKpiMappingAdmin(container) {
         <div class="card-title">Run Auto-Compute</div>
         <div class="kpi-entry-row">
           <input class="form-control small" id="map-run-quarter" placeholder="YYYY-Qn">
-          <button class="btn small" onclick="kpiRunComputeAutoScores()">Run Now</button>
+          <button class="btn small" data-kpi-map-action="run-compute">Run Now</button>
         </div>
       </div>
 
@@ -138,18 +165,15 @@ export async function renderKpiMappingAdmin(container) {
                   <td>${escapeHtml(m.metric_id)}</td>
                   <td>${escapeHtml(m.method)}</td>
                   <td class="small muted">${escapeHtml(JSON.stringify(m.config))}</td>
-                  <td><button class="btn small" onclick="kpiRemoveMapping('${m.kpi_profile}', '${m.metric_id}')">Remove</button></td>
+                  <td><button class="btn small" data-kpi-map-action="remove" data-kpi-profile="${escapeHtml(m.kpi_profile)}" data-metric-id="${escapeHtml(m.metric_id)}">Remove</button></td>
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>`}
       </div>
     `;
+    bindKpiMappingAdminUi(container);
   } catch (err) {
     container.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
   }
 }
-
-window.kpiRenderMappingExtraFields = (method) => {
-  $('#map-extra-fields').innerHTML = methodExtraFieldsHtml(method);
-};

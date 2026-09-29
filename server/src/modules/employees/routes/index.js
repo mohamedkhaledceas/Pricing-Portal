@@ -97,10 +97,12 @@ function createEmployeesRouter({ rosterController, timeOffController, conflictPa
   router.get('/employees/kpi/peer-review/window', kpiController.getReviewWindow);
   router.post('/employees/kpi/peer-review/window', kpiController.setReviewWindow);
   router.get('/employees/kpi/peer-review/roster', kpiController.getPeerReviewRoster);
-  router.get('/employees/kpi/peer-review/completion', kpiController.getPeerReviewCompletion);
   router.get('/employees/kpi/peer-review/counter', kpiController.getPeerReviewCounter);
   router.get('/employees/kpi/peer-review/team-counter', kpiController.getMyTeamPeerReviewCounter);
   router.get('/employees/kpi/peer-review/my-status', kpiController.getMyPeerReviewStatus);
+  router.get('/employees/kpi/peer-review/report-status', kpiController.getPeerReviewReportStatus);
+  router.get('/employees/kpi/peer-review/results', kpiController.getPeerReviewResults);
+  router.get('/employees/kpi/peer-review/report', kpiController.exportPeerReviewReport);
   router.post('/employees/kpi/peer-review/:revieweeId', kpiController.submitPeerReview);
   router.post('/employees/kpi/:employeeId/self-evaluation', kpiController.enterSelfEvaluation);
 

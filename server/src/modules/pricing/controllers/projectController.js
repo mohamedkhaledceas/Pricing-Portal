@@ -57,7 +57,10 @@ function createProjectController({ projectService }) {
 
   function updateLine(req, res, next) {
     try {
-      const line = projectService.updateLine({ projectId: req.params.projectId, id: req.params.id, patch: req.body || {}, actorId: req.user.id, actorEmail: req.user.email, ip: req.ip });
+      // project_assignments.id is a real autoincrement integer now (was a
+      // generated string id on project_lines) — Number() it, same reasoning
+      // as teamController's employee id handling.
+      const line = projectService.updateLine({ projectId: req.params.projectId, id: Number(req.params.id), patch: req.body || {}, actorId: req.user.id, actorEmail: req.user.email, ip: req.ip });
       return res.json({ line });
     } catch (err) {
       return next(err);
@@ -66,7 +69,7 @@ function createProjectController({ projectService }) {
 
   function removeLine(req, res, next) {
     try {
-      const lines = projectService.removeLine({ projectId: req.params.projectId, id: req.params.id, actorId: req.user.id, actorEmail: req.user.email, ip: req.ip });
+      const lines = projectService.removeLine({ projectId: req.params.projectId, id: Number(req.params.id), actorId: req.user.id, actorEmail: req.user.email, ip: req.ip });
       return res.json({ lines });
     } catch (err) {
       return next(err);
