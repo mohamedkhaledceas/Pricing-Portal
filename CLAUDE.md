@@ -100,8 +100,102 @@ Full detail: `docs/security.md`. The load-bearing points:
 - Never construct a service's dependencies inline in a controller or route file — always through that module's `container.js`.
 - Never hard-delete a `users` or `employee_roster` row, or any row with retained history — revoke/deactivate instead.
 - Never introduce a new response shape that doesn't follow the `{ data }` / `{ error: { message, code, details } }` envelope (`docs/api-guidelines.md`).
-- Never add a dependency-injection framework, an ORM, a frontend framework/bundler, Redis, a domain-event system, or API versioning without first reading the relevant ADR in `docs/adr/` — each of these was explicitly considered and deferred with a stated trigger condition. If that trigger condition is genuinely met, propose a new ADR that supersedes the old one; don't silently introduce it.
+- Never introduce a frontend framework or bundler as part of routine
+  feature/UI work. The current framework-free frontend is intentional.
+  A frontend framework/bundler may only be introduced through an explicit architecture decision after reviewing docs/adr/ and confirming that the documented trigger condition has been met.
 - Never treat this project's small scale as license to skip the security controls in `docs/security.md` — the data (salaries, HR records, approvals) is sensitive regardless of team size.
+
+## Current Frontend Reality
+
+The current frontend is intentionally framework-free.
+
+- HTML
+- CSS
+- Vanilla JavaScript
+- No React
+- No frontend framework
+- No bundler
+
+Do not introduce React, Vue, Next.js, Vite, or another frontend framework
+unless the user explicitly requests a frontend architecture change.
+
+For UI/UX work, improve the existing frontend in its current architecture.
+Prefer reusable vanilla JS components/modules and shared CSS patterns
+over duplicated page-specific implementations.
+
+The frontend architecture may be revisited separately in the future.
+That is not part of ordinary UI/UX work.
+
+
+
+## UI/UX Direction
+
+The CEAS Portal is an internal business application for approximately
+50 employees across employees, managers, P&C, and executive users.
+
+The interface should feel:
+
+- Professional
+- Modern
+- Clean
+- Premium
+- Practical
+- Agency-quality
+- Fast
+- Easy to understand
+- Consistent
+
+The UI should prioritize usability and information hierarchy over decoration.
+
+Avoid:
+
+- Generic AI-generated SaaS aesthetics
+- Excessive gradients
+- Excessive rounded cards
+- Excessive animations
+- Decorative elements without functional value
+- Excessive whitespace that reduces information density
+- Inconsistent spacing
+- One-off component styles
+- Visual complexity that makes business workflows harder to use
+
+Maintain a coherent design system across the portal.
+
+
+## Frontend Change Rules
+
+For frontend/UI work:
+
+1. Inspect existing frontend code before changing it.
+2. Reuse existing patterns where they are good.
+3. Consolidate duplicated styles/components where practical.
+4. Do not change backend behavior for visual improvements.
+5. Do not change API contracts for visual improvements.
+6. Do not change authentication or authorization behavior.
+7. Preserve existing routes and functionality.
+8. Ensure desktop and mobile layouts remain usable.
+9. Consider loading, empty, error, and success states.
+10. Prefer accessibility and clarity over visual novelty.
+
+
+## Frontend UI Work
+
+The frontend architecture documented in
+`docs/frontend-architecture.md` is the current architecture and is not
+being migrated as part of UI/UX work.
+
+For frontend UI/UX tasks:
+
+- Preserve the vanilla JS + native ES modules architecture.
+- Do not introduce React, Vue, Svelte, a bundler, or a component framework.
+- Do not restructure the frontend architecture unless explicitly requested.
+- Reuse existing frontend patterns where appropriate.
+- Prefer improving existing CSS, HTML, and JS modules over architectural rewrites.
+- Preserve all existing functionality, API contracts, authentication,
+  authorization, and business logic.
+- Keep UI changes isolated from backend architecture unless a backend
+  change is explicitly required.
+- Follow `docs/frontend-architecture.md` for frontend structure and conventions.
 
 ---
 
