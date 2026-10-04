@@ -25,6 +25,7 @@ const { initRealtime } = require('./common/realtime');
 const requireRole = require('./common/middleware/requireRole');
 const { USER_MANAGER_ROLES } = require('./common/permissions');
 const { inlineScriptHashes } = require('./common/csp');
+const config = require('./config');
 
 /* The Margin Planner's own API previously checked authMiddleware only —
    any authenticated user of any role could read/write salary and cost
@@ -93,8 +94,17 @@ app.use(helmet({
       baseUri: ["'self'"],
       formAction: ["'self'"],
       frameAncestors: ["'none'"],
+      /* Helmet adds upgrade-insecure-requests by default. Local dev is plain
+         HTTP, and Safari (and any browser on 127.0.0.1 / a LAN IP) obeys it
+         by rewriting every stylesheet/script URL to https://, which the dev
+         server can't answer — the page renders as unstyled text. Production
+         is HTTPS-only behind Render, so it keeps the directive. */
+      upgradeInsecureRequests: config.isProduction ? [] : null,
     },
   },
+  // Same reasoning: Safari caches HSTS even from http://localhost, after
+  // which it forces https for every later localhost visit.
+  strictTransportSecurity: config.isProduction,
 }));
 
 /* Frontend and API are served from this same Express app on the same origin —
