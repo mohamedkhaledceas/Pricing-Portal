@@ -2,6 +2,7 @@ import { $, escapeHtml, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { statusBadge } from './kpiShared.js';
+import { panel, split, colTitle, loadErrorPanel } from './panels.js';
 
 // apiFetch assumes a JSON body — CSV export needs its own fetch carrying
 // the same Bearer header, then a Blob download (the file needs the
@@ -31,11 +32,11 @@ async function downloadCsv(employeeId) {
 }
 
 export async function renderKpiHistory(container, employeeId) {
-  container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
+  container.innerHTML = panel({ title: 'Performance history', body: '<div class="panel-body"><div class="list-empty">Loading…</div></div>' });
   try {
     const { breakdowns } = await apiFetch(`/api/employees/kpi/${employeeId}/history`);
     if (breakdowns.length === 0) {
-      container.innerHTML = `<div class="card empty-state">No KPI history recorded yet for this employee.</div>`;
+      container.innerHTML = panel({ title: 'Performance history', body: '<div class="panel-body"><div class="list-empty">No KPI history recorded yet for this employee.</div></div>' });
       return;
     }
 
@@ -46,40 +47,42 @@ export async function renderKpiHistory(container, employeeId) {
     const trendHtml = trend.map((b) => {
       const heightPct = Math.max(2, (b.final.total / maxScore) * 100);
       return `<div class="kpi-trend-bar" title="${escapeHtml(b.quarter)}: ${b.final.total.toFixed(1)}">
+        <div class="kpi-trend-bar-value">${b.final.total.toFixed(0)}</div>
         <div class="kpi-trend-bar-fill" style="height:${heightPct}%;"></div>
-        <div class="kpi-trend-bar-label">${escapeHtml(b.quarter.replace(/^\d{4}-/, ''))}</div>
+        <div class="kpi-trend-bar-label">${escapeHtml(b.quarter)}</div>
       </div>`;
     }).join('');
 
-    container.innerHTML = `
-      <div class="card section">
-        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
-          <span>Performance Trend</span>
-          <button class="btn small" id="kpi-history-export-btn">Export CSV</button>
-        </div>
-        <div class="kpi-trend-row">${trendHtml}</div>
-      </div>
-      <div class="card section">
-        <div class="card-title">Previous KPI Results</div>
-        <div style="overflow-x:auto;">
-          <table class="data-table">
-            <thead><tr><th>Quarter</th><th>Pillar A</th><th>Pillar B</th><th>Final</th><th>Status</th></tr></thead>
-            <tbody>
-              ${breakdowns.map((b) => `
-                <tr>
-                  <td>${escapeHtml(b.quarter)}</td>
-                  <td>${b.final.pillarAWeighted.toFixed(1)} / ${b.pillarA.maxTotal}</td>
-                  <td>${b.pillarB.defined ? b.final.pillarBWeighted.toFixed(1) + ' / ' + b.pillarB.maxTotal : '—'}</td>
-                  <td style="font-weight:700;">${b.final.total.toFixed(1)}</td>
-                  <td>${statusBadge(b.final.statusBand)}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>`;
+    const tableHtml = `<div class="table-scroll">
+      <table class="data-table">
+        <thead><tr><th>Quarter</th><th class="num">Pillar A</th><th class="num">Pillar B</th><th class="num">Final</th><th>Status</th></tr></thead>
+        <tbody>
+          ${breakdowns.map((b) => `
+            <tr>
+              <td>${escapeHtml(b.quarter)}</td>
+              <td class="num">${b.final.pillarAWeighted.toFixed(1)} / ${b.pillarA.maxTotal}</td>
+              <td class="num">${b.pillarB.defined ? b.final.pillarBWeighted.toFixed(1) + ' / ' + b.pillarB.maxTotal : '—'}</td>
+              <td class="num" style="font-weight:650;">${b.final.total.toFixed(1)}</td>
+              <td>${statusBadge(b.final.statusBand)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+    container.innerHTML = panel({
+      title: 'Performance history',
+      meta: `${breakdowns.length} ${breakdowns.length === 1 ? 'quarter' : 'quarters'}`,
+      actions: '<button class="small" id="kpi-history-export-btn">Export CSV</button>',
+      body: split([
+        { html: colTitle('Final score by quarter', 'out of 100') + `<div class="kpi-trend-row">${trendHtml}</div>` },
+        { html: colTitle('Results') + tableHtml },
+      ], '1fr 1.5fr'),
+    });
 
     $('#kpi-history-export-btn').addEventListener('click', () => downloadCsv(employeeId));
   } catch (err) {
-    container.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
+    console.error('KPI history failed to load', err);
+    container.innerHTML = loadErrorPanel('Performance history couldn’t load', err, 'data-history-retry');
+    container.querySelector('[data-history-retry]').addEventListener('click', () => renderKpiHistory(container, employeeId));
   }
 }

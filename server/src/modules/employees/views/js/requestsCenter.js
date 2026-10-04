@@ -10,6 +10,8 @@ import { $, escapeHtml, fmtDate, fmtDateTime, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { LEAVE_TYPES, leaveTypeLabel, availabilityLabel, STATUS_LABELS } from './leaveTypes.js';
+import { panel, plural, loadErrorPanel } from './panels.js';
+import { switchMainTab } from './main.js';
 
 // Own copy of the directory index — same reasoning team.js/teamsDirectory.js/
 // timeOff.js each already give for their own copy: independent per-module
@@ -101,13 +103,13 @@ function requestCard(r, actionsHtml, extraWarningHtml) {
   const isMultiDay = r.endDate !== r.startDate;
   const dateRangeHtml = `${fmtDate(r.startDate)}${isMultiDay ? ' → ' + fmtDate(r.endDate) : ''}`;
   const dayOfWeekHtml = `${fmtDayOfWeek(r.startDate)}${isMultiDay ? ' → ' + fmtDayOfWeek(r.endDate) : ''}`;
-  return `<div class="request-card" id="team-card-${r.id}">
+  return `<div class="request-card">
     <div class="request-card-top">
       <div>
         <div class="request-card-name">${escapeHtml(nameFor(r.employeeId))}</div>
         <div class="request-card-meta">${escapeHtml(leaveTypeLabel(r.leaveType))} · ${dateRangeHtml}, ${escapeHtml(dayOfWeekHtml)}${r.availability ? ' (' + escapeHtml(availabilityLabel(r.availability)) + ')' : (r.halfDay ? ' (half-day)' : '')}${r.requestedDays != null ? ` · ${escapeHtml(fmtDays(r.requestedDays))} day${r.requestedDays === 1 ? '' : 's'}` : ''}</div>
       </div>
-      <span class="badge badge-${r.status}">${escapeHtml(r.status.replace('_', ' '))}</span>
+      <span class="badge badge-${r.status}">${escapeHtml(STATUS_LABELS[r.status] || r.status)}</span>
     </div>
     ${r.reason ? `<div class="request-card-reason">${escapeHtml(r.reason)}</div>` : ''}
     ${conflictWarningHtml(r)}
@@ -132,8 +134,12 @@ function cancelReject() {
   renderRequestsCenter();
 }
 
+// The same request can render in more than one panel (e.g. a direct
+// report's request is in both the decision queue and the history list), so
+// inputs are always read from the card the clicked button sits in — never
+// via an id lookup, which would return whichever copy rendered first.
 async function managerDecide(id, decision, btn) {
-  const card = $('#team-card-' + id);
+  const card = btn.closest('.request-card');
   let decisionNote;
   if (decision === 'rejected') {
     decisionNote = (card && card.querySelector('.reject-note') ? card.querySelector('.reject-note').value : '').trim();
@@ -154,8 +160,8 @@ async function managerDecide(id, decision, btn) {
   }
 }
 
-async function pcConfirm(id, decision) {
-  const card = $('#team-card-' + id);
+async function pcConfirm(id, decision, btn) {
+  const card = btn.closest('.request-card');
   const deductionSel = card ? card.querySelector('.pc-deduction') : null;
   const salaryDeduction = deductionSel ? deductionSel.value : 'none';
   const unpaidInput = card ? card.querySelector('.pc-unpaid-days') : null;
@@ -184,7 +190,7 @@ async function pcConfirm(id, decision) {
 
 // confirmKind selects which decide function the delegated handler calls on
 // "Confirm Reject" — 'manager' -> managerDecide(id,'rejected',btn), 'pc' ->
-// pcConfirm(id,'rejected') (no btn arg needed there).
+// pcConfirm(id,'rejected',btn).
 function rejectNoteForm(id, confirmKind) {
   return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
     <textarea class="form-control reject-note" placeholder="Reason for rejecting (required)" rows="2" style="width:100%;"></textarea>
@@ -229,7 +235,7 @@ function changeRequestDiffHtml(changes) {
 }
 
 function changeRequestCard(r) {
-  return `<div class="request-card" id="change-request-card-${r.id}">
+  return `<div class="request-card">
     <div class="request-card-top">
       <div>
         <div class="request-card-name">${escapeHtml(r.employeeName)}</div>
@@ -319,8 +325,8 @@ function cancelConfirmRejection() {
   renderRequestsCenter();
 }
 
-async function confirmRejection(id) {
-  const card = $('#team-card-' + id);
+async function confirmRejection(id, btn) {
+  const card = btn.closest('.request-card');
   const note = (card && card.querySelector('.confirm-rejection-note') ? card.querySelector('.confirm-rejection-note').value : '').trim();
   if (!note) {
     toast('A comment is required to confirm the rejection.', 'danger');
@@ -503,10 +509,10 @@ function myRequestRowHtml(item) {
   let cancelActionHtml = '';
   if (canCancel) {
     cancelActionHtml = confirmingCancelId === item.id
-      ? `<span class="small">Cancel this request? </span><button class="btn small danger" data-req-action="confirm-cancel" data-request-id="${item.id}">Yes</button> <button class="btn small" data-req-action="cancel-cancel">No</button>`
+      ? `<span class="small">Cancel this request?</span><button class="btn small danger" data-req-action="confirm-cancel" data-request-id="${item.id}">Yes, cancel</button><button class="btn small" data-req-action="cancel-cancel">No</button>`
       : `<button class="btn small" data-req-action="ask-cancel" data-request-id="${item.id}">Cancel</button>`;
   } else if (cancelLocked) {
-    cancelActionHtml = `<button class="btn small" disabled title="Only your manager or People & Culture can change this now.">Cancel</button>`;
+    cancelActionHtml = `<span class="small muted">Only your manager or People &amp; Culture can change this now.</span>`;
   }
   return `<div class="request-card">
     <div class="request-card-top">
@@ -518,7 +524,6 @@ function myRequestRowHtml(item) {
     </div>
     ${detailsHtml}
     ${item.kind === 'leave' ? conflictWarningHtml(item) + noManagerFlagHtml(item) : ''}
-    ${cancelLocked ? `<div class="request-card-conflict">⚠ This request can no longer be cancelled — once ${escapeHtml(item.status)}, only your manager or People &amp; Culture can change its status.</div>` : ''}
     <div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
       <button class="btn small" data-req-action="toggle-timeline" data-row-id="${rowId}">View activity</button>
       ${cancelActionHtml}
@@ -552,7 +557,7 @@ function filterMyRequests() {
   const filtered = myRequestsCache.filter((item) => matchesFilters(item, filters));
   const list = $('#my-requests-list');
   if (!list) return;
-  list.innerHTML = filtered.length ? filtered.map(myRequestRowHtml).join('') : `<div class="empty-state">No requests match these filters.</div>`;
+  list.innerHTML = filtered.length ? filtered.map(myRequestRowHtml).join('') : `<div class="list-empty">No requests match these filters.</div>`;
 }
 
 function myRequestsFilterBarHtml() {
@@ -574,13 +579,32 @@ function myRequestsFilterBarHtml() {
   </div>`;
 }
 
-function myRequestsSectionHtml() {
-  return `<div class="card section">
-    <div class="card-title">My Requests</div>
-    ${myRequestsFilterBarHtml()}
-    <div id="my-requests-list">${myRequestsCache.length ? myRequestsCache.map(myRequestRowHtml).join('') : `<div class="empty-state">No requests yet</div>`}</div>
-  </div>`;
+function myRequestsPanel() {
+  return panel({
+    title: 'Your requests',
+    meta: `${myRequestsCache.length} total`,
+    actions: '<button class="small" data-req-action="new-request">New request</button>',
+    body: `<div class="panel-body">
+      ${myRequestsFilterBarHtml()}
+      <div id="my-requests-list" class="req-list">${myRequestsCache.length ? myRequestsCache.map(myRequestRowHtml).join('') : '<div class="list-empty">You haven’t made any requests yet.</div>'}</div>
+    </div>`,
+  });
 }
+
+// A queue panel always renders for a role that owns it, even when empty —
+// "Nothing waiting" reads as confirmed-empty instead of possibly-not-loaded.
+function queuePanel(title, cardsHtml, emptyMessage) {
+  return panel({
+    title,
+    meta: cardsHtml.length ? `${cardsHtml.length} waiting` : '',
+    body: `<div class="panel-body req-list">${cardsHtml.length ? cardsHtml.join('') : `<div class="list-empty">${escapeHtml(emptyMessage)}</div>`}</div>`,
+  });
+}
+
+// The CEO's history list is every request company-wide and only grows, so
+// it opens on the most recent few; the full list is one click away.
+const TEAM_HISTORY_PREVIEW = 10;
+let showAllTeamRequests = false;
 
 // Delegated on #requests-content — guarded against double-binding since
 // renderRequestsCenter() re-runs on this same persisting element after
@@ -601,14 +625,14 @@ function bindRequestsCenterUi(container) {
     const id = Number(btn.dataset.requestId);
     if (action === 'confirm-reject') {
       if (btn.dataset.rejectKind === 'manager') managerDecide(id, 'rejected', btn);
-      else pcConfirm(id, 'rejected');
+      else pcConfirm(id, 'rejected', btn);
     }
     if (action === 'cancel-reject') cancelReject();
     if (action === 'manager-approve') managerDecide(id, 'approved', btn);
     if (action === 'ask-reject') askReject(id);
     if (action === 'profile-change-approve') profileChangeDecide(id, 'approve', btn);
     if (action === 'profile-change-reject') profileChangeDecide(id, 'reject', btn);
-    if (action === 'pc-approve') pcConfirm(id, 'approved');
+    if (action === 'pc-approve') pcConfirm(id, 'approved', btn);
     if (action === 'toggle-timeline') myRequestToggleTimeline(btn.dataset.rowId);
     if (action === 'confirm-cancel') cancelMyRequest(id);
     if (action === 'cancel-cancel') cancelCancelMyRequest();
@@ -618,7 +642,9 @@ function bindRequestsCenterUi(container) {
     if (action === 'override-cancel-confirm') overrideCancel(id);
     if (action === 'ask-confirm-rejection') askConfirmRejection(id);
     if (action === 'cancel-confirm-rejection') cancelConfirmRejection();
-    if (action === 'confirm-rejection-submit') confirmRejection(id);
+    if (action === 'confirm-rejection-submit') confirmRejection(id, btn);
+    if (action === 'show-all-team') { showAllTeamRequests = true; renderRequestsCenter(); }
+    if (action === 'new-request') switchMainTab('timeoff', document.getElementById('maintab-timeoff'));
   });
 
   // "My Requests" filter bar — #my-requests-list gets replaced by
@@ -635,7 +661,7 @@ function bindRequestsCenterUi(container) {
 // ── Orchestration ────────────────────────────────────────────────────
 export async function renderRequestsCenter() {
   const container = $('#requests-content');
-  container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
+  bindRequestsCenterUi(container);
 
   const role = state.currentUser && state.currentUser.role;
   const isPeopleCulture = role === 'people_culture';
@@ -643,62 +669,73 @@ export async function renderRequestsCenter() {
   const canReviewProfileChanges = role === 'admin' || isManagerRole || isPeopleCulture;
   const myEmployeeId = state.myEmployee && state.myEmployee.id;
 
-  const [, myLeaveRes, myChangeRes, teamRes, pcRes, changeRes] = await Promise.all([
-    loadDirectoryIndex(),
-    myEmployeeId ? apiFetch('/api/employees/leave-requests/mine') : Promise.resolve({ requests: [] }),
-    myEmployeeId ? apiFetch('/api/employees/profile-change-requests/mine') : Promise.resolve({ requests: [] }),
-    apiFetch('/api/employees/leave-requests/team'),
-    isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
-    canReviewProfileChanges ? apiFetch('/api/employees/profile-change-requests') : Promise.resolve(null),
-    window.Departments.load(apiFetch),
-  ]);
+  if (!container.querySelector('.panel')) {
+    container.innerHTML = panel({ title: 'Requests', body: '<div class="panel-body"><div class="list-empty">Loading…</div></div>' });
+  }
+
+  let myLeaveRes, myChangeRes, teamRes, pcRes, changeRes;
+  try {
+    [, myLeaveRes, myChangeRes, teamRes, pcRes, changeRes] = await Promise.all([
+      loadDirectoryIndex(),
+      myEmployeeId ? apiFetch('/api/employees/leave-requests/mine') : Promise.resolve({ requests: [] }),
+      myEmployeeId ? apiFetch('/api/employees/profile-change-requests/mine') : Promise.resolve({ requests: [] }),
+      apiFetch('/api/employees/leave-requests/team'),
+      isPeopleCulture ? apiFetch('/api/employees/leave-requests/pending') : Promise.resolve(null),
+      canReviewProfileChanges ? apiFetch('/api/employees/profile-change-requests') : Promise.resolve(null),
+      window.Departments.load(apiFetch),
+    ]);
+  } catch (err) {
+    console.error('Requests failed to load', err);
+    container.innerHTML = loadErrorPanel('Requests couldn’t load', err, 'data-req-retry');
+    container.querySelector('[data-req-retry]').addEventListener('click', renderRequestsCenter);
+    return;
+  }
 
   myRequestsCache = [
     ...(myLeaveRes.requests || []).map((r) => ({ ...r, kind: 'leave' })),
     ...(myChangeRes.requests || []).map((r) => ({ ...r, kind: 'profile_change' })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
-  const sections = [myRequestsSectionHtml()];
   const teamRequests = teamRes.requests || [];
 
   // Same scoping rule as before the move: a decision is always tied to
-  // actual direct reports, even for the company-wide `manager` role.
+  // actual direct reports, even for the company-wide `ceo` role.
   const isMyDirectReport = (r) => {
     const target = directoryById[r.employeeId];
     return !!target && !!myEmployeeId && target.managerEmployeeId === myEmployeeId;
   };
   const myPending = teamRequests.filter((r) => r.status === 'pending' && isMyDirectReport(r));
+  const hasTeamQueue = teamRequests.length || isPeopleCulture || isManagerRole;
 
-  if (teamRequests.length || isPeopleCulture || isManagerRole) {
-    sections.push(`
-      <div class="card section">
-        <div class="card-title">Pending My Decision</div>
-        ${myPending.length ? myPending.map((r) => requestCard(r, managerActions(r))).join('') : `<div class="empty-state">No pending requests</div>`}
-      </div>
-      <div class="card section">
-        <div class="card-title">${isManagerRole ? 'All Requests (company-wide)' : "All My Direct Reports' Requests"}</div>
-        ${teamRequests.length ? teamRequests.map((r) => requestCard(r, managerHrOverrideActions(r, isMyDirectReport(r) || isPeopleCulture), awaitingRejectionConfirmationHtml(r))).join('') : `<div class="empty-state">No requests yet</div>`}
-      </div>`);
+  // Order is by urgency: queues the viewer has to act on, then their own
+  // requests, then the read-mostly history of everyone else's.
+  const sections = [];
+  if (hasTeamQueue) {
+    sections.push(queuePanel('Waiting for your decision', myPending.map((r) => requestCard(r, managerActions(r))), 'Nothing waiting for your decision.'));
   }
-
   if (isPeopleCulture) {
     const pcPending = (pcRes && pcRes.requests) || [];
-    sections.push(`
-      <div class="card section">
-        <div class="card-title">Pending P&amp;C Confirmation (company-wide)</div>
-        ${pcPending.length ? pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r) + wfhOverQuotaWarningHtml(r) + leaveTypeUsageHtml(r))).join('') : `<div class="empty-state">Nothing waiting on P&amp;C</div>`}
-      </div>`);
+    sections.push(queuePanel('Waiting for P&C confirmation',
+      pcPending.map((r) => requestCard(r, pcActions(r), lateWfhWarningHtml(r) + wfhOverQuotaWarningHtml(r) + leaveTypeUsageHtml(r))),
+      'Nothing waiting on People & Culture.'));
   }
-
   if (canReviewProfileChanges) {
     const changeRequests = (changeRes && changeRes.requests) || [];
-    sections.push(`
-      <div class="card section">
-        <div class="card-title">Pending Profile Changes</div>
-        ${changeRequests.length ? changeRequests.map(changeRequestCard).join('') : `<div class="empty-state">No profile changes waiting on review</div>`}
-      </div>`);
+    sections.push(queuePanel('Profile changes to review', changeRequests.map(changeRequestCard), 'No profile changes waiting for review.'));
+  }
+  if (myEmployeeId) sections.push(myRequestsPanel());
+  if (hasTeamQueue) {
+    const shown = showAllTeamRequests ? teamRequests : teamRequests.slice(0, TEAM_HISTORY_PREVIEW);
+    const hidden = teamRequests.length - shown.length;
+    sections.push(panel({
+      title: isManagerRole ? 'All requests, company-wide' : 'Your direct reports’ requests',
+      meta: `${teamRequests.length} ${plural(teamRequests.length, 'request', 'requests')}`,
+      body: `<div class="panel-body req-list">
+        ${shown.length ? shown.map((r) => requestCard(r, managerHrOverrideActions(r, isMyDirectReport(r) || isPeopleCulture), awaitingRejectionConfirmationHtml(r))).join('') : '<div class="list-empty">No requests yet.</div>'}
+        ${hidden > 0 ? `<div class="req-list-more"><button class="small" data-req-action="show-all-team">Show all ${teamRequests.length}</button></div>` : ''}
+      </div>`,
+    }));
   }
 
-  container.innerHTML = sections.join('');
-  bindRequestsCenterUi(container);
+  container.innerHTML = `<div class="stack">${sections.join('')}</div>`;
 }

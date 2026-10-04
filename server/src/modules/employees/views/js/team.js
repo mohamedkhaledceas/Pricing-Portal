@@ -1,6 +1,7 @@
 import { $, escapeHtml, fmtDate } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
+import { panel, split, colTitle, personRow, list, plural, loadErrorPanel, fullName, peopleRowHtml } from './panels.js';
 
 let directoryById = {};
 async function loadDirectoryIndex() {
@@ -11,113 +12,17 @@ async function loadDirectoryIndex() {
   return employees;
 }
 
-// Same clickable-card look and click-to-expand behavior as the Teams tab
-// (see ./teamsDirectory.js's cardHtml/toggleCard) — reuses its CSS
-// (already loaded globally via accountMenu.css) so a card here looks and
-// behaves identically to one there. Kept as its own markup/toggle
-// (my-team-* ids) rather than calling into that module, matching that
-// module's own precedent: tab-panels are only hidden, not removed from the
-// DOM, so both sets of cards coexist and would otherwise collide on the
-// same #team-directory-card-N ids.
-function myTeamCardHtml(e, roleLabel) {
-  const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
-  const dept = e.department ? window.Departments.labelFor(e.department) : null;
-  return `
-    <div class="team-directory-card" id="my-team-card-${e.id}" role="button" tabindex="0" data-card-toggle="my-team" data-id="${e.id}">
-      <div class="team-directory-card-summary">
-        <div class="team-directory-card-avatar">${avatarHtml}</div>
-        <div>
-          <div class="team-directory-card-name">${escapeHtml(e.firstName + ' ' + e.lastName)}${roleLabel ? ` <span class="badge badge-approved">${escapeHtml(roleLabel)}</span>` : ''}</div>
-          <div class="team-directory-card-title small muted">${escapeHtml(e.jobTitle || '')}</div>
-        </div>
-      </div>
-      <div class="team-directory-card-detail" id="my-team-detail-${e.id}" hidden>
-        <div><strong>Department:</strong> ${escapeHtml(dept || '—')}</div>
-        <div><strong>Email:</strong> ${e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'}</div>
-        <div><strong>Manager:</strong> ${e.managerName
-          ? `${escapeHtml(e.managerName)}${e.managerEmail ? ` (<a href="mailto:${escapeHtml(e.managerEmail)}">${escapeHtml(e.managerEmail)}</a>)` : ''}`
-          : 'No manager assigned yet'}</div>
-      </div>
-    </div>`;
-}
-// Accordion, not independent toggles — opening a card closes whichever
-// other one was open, so at most one is ever expanded at a time.
-function myTeamToggleCard(id) {
-  const detail = document.getElementById('my-team-detail-' + id);
-  if (!detail) return;
-  const wasHidden = detail.hidden;
-  document.querySelectorAll('[id^="my-team-detail-"]').forEach((d) => { d.hidden = true; });
-  detail.hidden = !wasHidden;
-}
-
-// Same clickable-card look as My Team's cards (myTeamCardHtml above) —
-// own id namespace (reporting-line-card-/reporting-line-detail-) since
-// the chain below can include the very same employee (your manager) that
-// My Team's own grid also renders on the same tab at the same time.
-// badges is a list rather than a single roleLabel since one card can
-// legitimately need two ("You" + "Team Head" when you manage a team
-// yourself).
-function reportingLineCardHtml(e, badges) {
-  const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
-  const dept = e.department ? window.Departments.labelFor(e.department) : null;
-  const badgeHtml = badges.map((b) => ` <span class="badge badge-approved">${escapeHtml(b)}</span>`).join('');
-  return `
-    <div class="team-directory-card" id="reporting-line-card-${e.id}" role="button" tabindex="0" data-card-toggle="reporting-line" data-id="${e.id}">
-      <div class="team-directory-card-summary">
-        <div class="team-directory-card-avatar">${avatarHtml}</div>
-        <div>
-          <div class="team-directory-card-name">${escapeHtml(e.firstName + ' ' + e.lastName)}${badgeHtml}</div>
-          <div class="team-directory-card-title small muted">${escapeHtml(e.jobTitle || '')}</div>
-        </div>
-      </div>
-      <div class="team-directory-card-detail" id="reporting-line-detail-${e.id}" hidden>
-        <div><strong>Department:</strong> ${escapeHtml(dept || '—')}</div>
-        <div><strong>Email:</strong> ${e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'}</div>
-        <div><strong>Manager:</strong> ${e.managerName
-          ? `${escapeHtml(e.managerName)}${e.managerEmail ? ` (<a href="mailto:${escapeHtml(e.managerEmail)}">${escapeHtml(e.managerEmail)}</a>)` : ''}`
-          : 'No manager assigned yet'}</div>
-      </div>
-    </div>`;
-}
-// Accordion, not independent toggles — same rule as My Team's cards.
-function reportingLineToggleCard(id) {
-  const detail = document.getElementById('reporting-line-detail-' + id);
-  if (!detail) return;
-  const wasHidden = detail.hidden;
-  document.querySelectorAll('[id^="reporting-line-detail-"]').forEach((d) => { d.hidden = true; });
-  detail.hidden = !wasHidden;
-}
-
-// Delegated on #team-content — a fresh element's innerHTML is set once per
-// renderTeam() call (no sub-view switching within this tab, unlike KPI), so
-// no double-bind guard is needed here; call this once, right after
-// container.innerHTML is set. Replaces onclick="..." attributes, which the
-// CSP's script-src-attr 'none' silently blocks (confirmed live, 2026-09-28,
-// on the sibling Overview-page/Team-Reviews bugs — same root cause).
-function bindTeamUi(container) {
-  container.addEventListener('click', (e) => {
-    const card = e.target.closest('[data-card-toggle]');
-    if (!card) return;
-    const id = Number(card.dataset.id);
-    if (card.dataset.cardToggle === 'my-team') myTeamToggleCard(id);
-    if (card.dataset.cardToggle === 'reporting-line') reportingLineToggleCard(id);
-  });
-}
-
 // My Reporting Line — the requirement doc's "Reporting line (full chain)"
 // bullet (Portal §2), distinct from the Organization Chart on the Teams
-// tab: that's the whole company's tree, this is just *your* path up it,
-// front and center on My Team instead of buried in a shared tree you'd
-// have to find yourself in. Walks managerEmployeeId upward through the
-// same already-loaded directory the org chart uses (no new endpoint),
-// stopping at the CEO (isCompanyManager) since nothing above them is
-// meaningful, or at the first break in the chain (no manager assigned, or
-// one who isn't in the active directory) — capped with a `seen` set so a
-// data cycle (A manages B manages A) can't loop forever.
-function myReportingLineSectionHtml() {
+// tab: that's the whole company's tree, this is just *your* path up it.
+// Walks managerEmployeeId upward through the already-loaded directory (no
+// new endpoint), stopping at the CEO (isCompanyManager) since nothing above
+// them is meaningful, or at the first break in the chain (no manager
+// assigned, or one who isn't in the active directory) — capped with a
+// `seen` set so a data cycle (A manages B manages A) can't loop forever.
+function reportingLineHtml() {
   const myEmployeeId = state.myEmployee && state.myEmployee.id;
-  if (!myEmployeeId) return '';
-  const me = directoryById[myEmployeeId];
+  const me = myEmployeeId ? directoryById[myEmployeeId] : null;
   if (!me) return '';
 
   const chain = [me];
@@ -131,21 +36,17 @@ function myReportingLineSectionHtml() {
     current = next;
   }
 
-  const badgesFor = (e, isMe) => {
-    const badges = isMe ? ['You'] : [];
-    if (e.isCompanyManager) badges.push('CEO');
-    else if (e.isTeamHead) badges.push('Team Head');
-    return badges;
-  };
+  const roleOf = (e) => (e.isCompanyManager ? 'CEO' : e.isTeamHead ? 'Team head' : '');
+  const steps = chain.map((e, i) => {
+    const role = roleOf(e);
+    return `<span class="chain-step">${i === 0 ? '<strong>You</strong>' : escapeHtml(fullName(e))}${role ? ` <span class="muted">(${role})</span>` : ''}</span>`;
+  }).join('<span class="chain-arrow" aria-hidden="true">→</span>');
   const noManagerYet = chain.length === 1 && !me.isCompanyManager;
-  const cardsHtml = chain
-    .map((e, i) => (i === 0 ? '' : '<span class="reporting-line-arrow">→</span>') + reportingLineCardHtml(e, badgesFor(e, i === 0)))
-    .join('');
 
-  return `<div class="card section">
-    <div class="card-title">My Reporting Line</div>
-    <div class="reporting-line-row">${cardsHtml}</div>
-    ${noManagerYet ? '<div class="empty-state">You haven’t been assigned a manager yet.</div>' : ''}
+  return `<div class="context-line" aria-label="Your reporting line">
+    <span class="muted">Reporting line</span>
+    <span class="chain">${steps}</span>
+    ${noManagerYet ? '<span class="chain-warn">No manager assigned yet</span>' : ''}
   </div>`;
 }
 
@@ -155,74 +56,77 @@ function myReportingLineSectionHtml() {
 // otherwise) is decided once, server-side, by rosterService.getMyTeam /
 // services/teamMembership.js — the single source of truth every team-scoped
 // screen shares. This only resolves the returned ids against the
-// already-loaded directory so cards get the directory's cross-referenced
-// managerName/managerEmail display fields.
-function myTeamSectionHtml(myTeam) {
-  const myEmployeeId = state.myEmployee && state.myEmployee.id;
-  if (!myEmployeeId) return '';
-  const myManagerId = state.myEmployee.managerEmployeeId;
+// already-loaded directory for photo/email/manager display fields.
+function teamListHtml(myTeam) {
+  const me = state.myEmployee;
+  const myManagerId = me.managerEmployeeId;
   const manager = myManagerId ? directoryById[myManagerId] : null;
   const teammates = (myTeam.employees || [])
     .map((e) => directoryById[e.id])
-    .filter((e) => e && e.id !== myEmployeeId && e.id !== myManagerId);
+    .filter((e) => e && e.id !== me.id && e.id !== myManagerId);
 
-  let body;
-  if (manager || teammates.length) {
-    body = `<div class="team-directory-grid">
-      ${manager ? myTeamCardHtml(manager, 'Manager') : ''}
-      ${teammates.map((t) => myTeamCardHtml(t)).join('')}
-    </div>`;
-  } else if (myManagerId || state.myEmployee.department) {
-    body = `<div class="empty-state">No other teammates found yet.</div>`;
-  } else {
-    body = `<div class="empty-state">You haven't been assigned a direct manager or department yet — once you are, your team will show up here.</div>`;
-  }
+  // Manager first, then your direct reports, then everyone else — each
+  // group alphabetical.
+  const isReport = (e) => e.managerEmployeeId === me.id;
+  const byName = (a, b) => fullName(a).localeCompare(fullName(b));
+  const ordered = [...teammates.filter(isReport).sort(byName), ...teammates.filter((e) => !isReport(e)).sort(byName)];
 
-  return `<div class="card section">
-    <div class="card-title">My Team</div>
-    ${body}
-  </div>`;
+  const rows = [];
+  if (manager) rows.push(peopleRowHtml(manager, [{ label: 'Your manager', tone: 'approved' }]));
+  ordered.forEach((e) => {
+    const badges = [];
+    if (isReport(e)) badges.push({ label: 'Reports to you', tone: 'manager_approved' });
+    if (e.isTeamHead) badges.push({ label: 'Team head', tone: 'neutral' });
+    rows.push(peopleRowHtml(e, badges));
+  });
+
+  if (rows.length) return { count: rows.length, reports: ordered.filter(isReport).length, html: `<ul class="list people-list">${rows.join('')}</ul>` };
+  const message = (myManagerId || me.department)
+    ? 'No other teammates found yet.'
+    : 'You haven’t been assigned a direct manager or department yet — once you are, your team will show up here.';
+  return { count: 0, reports: 0, html: `<div class="list-empty">${escapeHtml(message)}</div>` };
 }
 
-// Same tile markup as Overview's "Upcoming Team Leave" card
-// (overview.js's upcomingLeaveTile) — kept as its own copy rather than a
-// shared import, matching this file's existing precedent of duplicating
-// small card renderers per tab (myTeamCardHtml/reportingLineCardHtml)
-// instead of cross-importing between tab modules.
-function upcomingLeaveTile(u) {
-  const range = u.startDate === u.endDate ? fmtDate(u.startDate) : `${fmtDate(u.startDate)} → ${fmtDate(u.endDate)}`;
-  return `<div class="team-tile">
-    <div class="team-tile-name">${escapeHtml(u.name)}</div>
-    <div class="team-tile-meta">${range}</div>
-  </div>`;
+// Approved-only, name + date range — scoped server-side to the same team
+// definition as the list beside it (timeOffService.listUpcomingTeamLeave).
+function upcomingLeaveHtml(upcoming) {
+  const rows = upcoming.map((u) => personRow(u.name, u.startDate === u.endDate ? fmtDate(u.startDate) : `${fmtDate(u.startDate)} – ${fmtDate(u.endDate)}`));
+  return colTitle('Upcoming leave', 'approved only') + list(rows, 'No approved leave coming up for your team.');
 }
 
-function upcomingTeamLeaveSectionHtml(upcoming) {
-  return `<div class="card section">
-    <div class="card-title">Upcoming Team Leave</div>
-    <div class="team-grid">${upcoming.length
-      ? upcoming.map(upcomingLeaveTile).join('')
-      : `<div class="empty-state" style="grid-column:1/-1;padding:18px;">No upcoming approved leave for your team</div>`}</div>
-  </div>`;
-}
-
-// Approval queues (Pending My Decision, All Requests, Pending P&C
-// Confirmation, Pending Profile Changes) moved to the new Requests Center
-// tab (requestsCenter.js) — gathered there alongside the employee's own
-// request history, per Portal §21. My Team now shows team-member/org info
-// plus Upcoming Team Leave (approved-only, name + date range).
+// Approval queues moved to the Requests tab (requestsCenter.js); My Team
+// shows team-member/org info plus upcoming approved team leave.
 export async function renderTeam() {
   const container = $('#team-content');
-  container.innerHTML = `<div class="empty-state">Loading...</div>`;
+  if (!state.myEmployee) {
+    container.innerHTML = panel({ title: 'Your team', body: '<div class="panel-body"><div class="list-empty">No team information available for this account — it has no employee profile.</div></div>' });
+    return;
+  }
+  container.innerHTML = panel({ title: 'Your team', body: '<div class="panel-body"><div class="list-empty">Loading…</div></div>' });
 
-  const [, myTeamRes, , upcomingRes] = await Promise.all([
-    loadDirectoryIndex(),
-    apiFetch('/api/employees/team/mine'),
-    window.Departments.load(apiFetch),
-    apiFetch('/api/employees/leave-requests/team/upcoming'),
-  ]);
+  let myTeamRes, upcomingRes;
+  try {
+    [, myTeamRes, , upcomingRes] = await Promise.all([
+      loadDirectoryIndex(),
+      apiFetch('/api/employees/team/mine'),
+      window.Departments.load(apiFetch),
+      apiFetch('/api/employees/leave-requests/team/upcoming'),
+    ]);
+  } catch (err) {
+    console.error('My Team failed to load', err);
+    container.innerHTML = loadErrorPanel('Your team couldn’t load', err, 'data-team-retry');
+    container.querySelector('[data-team-retry]').addEventListener('click', renderTeam);
+    return;
+  }
 
-  const sections = [myReportingLineSectionHtml(), myTeamSectionHtml(myTeamRes), upcomingTeamLeaveSectionHtml(upcomingRes.upcoming || [])].filter(Boolean);
-  container.innerHTML = sections.length ? sections.join('') : `<div class="empty-state">No team information available for this account.</div>`;
-  bindTeamUi(container);
+  const team = teamListHtml(myTeamRes);
+  const meta = team.count
+    ? `${team.count} ${plural(team.count, 'person', 'people')}${team.reports ? `, ${team.reports} ${plural(team.reports, 'reports', 'report')} to you` : ''}`
+    : '';
+  container.innerHTML = `${reportingLineHtml()}
+    ${panel({
+      title: 'Your team',
+      meta,
+      body: split([{ html: team.html }, { html: upcomingLeaveHtml(upcomingRes.upcoming || []) }], '2.2fr 1fr'),
+    })}`;
 }

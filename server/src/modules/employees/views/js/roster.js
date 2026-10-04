@@ -1,6 +1,7 @@
 import { $, escapeHtml, toast } from './dom.js';
 import { apiFetch } from './apiClient.js';
 import { state } from './state.js';
+import { panel, split, colTitle, plural, loadErrorPanel, fullName } from './panels.js';
 
 const KPI_PROFILES = ['content', 'artdirector', 'aidesigner', 'production', 'am', 'pandc', 'heads', 'design'];
 // Fixed-value lists live in window.OrgConstants (shared/orgConstants.js) —
@@ -151,7 +152,58 @@ async function rosterFieldChanged(id, field, el) {
   }
 }
 
+// Deactivating ends someone's employment status (reactivating restores it),
+// so it's confirmed inline first — no native confirm(), per project rule.
+let confirmingDeactivateId = null;
+
+function statusCellHtml(e) {
+  if (!e.active) {
+    return `<span class="badge badge-neutral">Inactive</span>
+      <button class="btn small" data-roster-action="toggle-active" data-employee-id="${e.id}" data-new-active="true">Reactivate</button>`;
+  }
+  if (confirmingDeactivateId === e.id) {
+    return `<span class="small">Deactivate ${escapeHtml(fullName(e))}?</span>
+      <button class="btn small danger" data-roster-action="toggle-active" data-employee-id="${e.id}" data-new-active="false">Yes, deactivate</button>
+      <button class="btn small" data-roster-action="cancel-deactivate" data-employee-id="${e.id}">No</button>`;
+  }
+  return `<span class="badge badge-approved">Active</span>
+    <button class="btn small" data-roster-action="ask-deactivate" data-employee-id="${e.id}">Deactivate</button>`;
+}
+
+function setStatusCell(id) {
+  const e = rosterCache.find((x) => x.id === id);
+  const cell = document.querySelector(`#roster-row-${id} .roster-status-cell`);
+  if (e && cell) cell.innerHTML = statusCellHtml(e);
+}
+
+// Search + status filter are applied by hiding rows, never by re-rendering —
+// a re-render would throw away any dropdown the user is mid-way through.
+// "Login mismatch" matches the Overview attention row that links here:
+// employment status (active) and login access (isAccountActive) disagree.
+function applyRosterFilters() {
+  const q = ($('#roster-search') ? $('#roster-search').value : '').trim().toLowerCase();
+  const status = $('#roster-status-filter') ? $('#roster-status-filter').value : '';
+  let shown = 0;
+  rosterCache.forEach((e) => {
+    const row = document.getElementById('roster-row-' + e.id);
+    if (!row) return;
+    const text = `${fullName(e)} ${e.email || ''} ${e.jobTitle || ''} ${e.department ? window.Departments.labelFor(e.department) : ''}`.toLowerCase();
+    const statusOk = !status
+      || (status === 'active' && e.active)
+      || (status === 'inactive' && !e.active)
+      || (status === 'mismatch' && e.isAccountActive !== e.active);
+    const match = statusOk && (!q || text.includes(q));
+    row.hidden = !match;
+    if (match) shown += 1;
+  });
+  const meta = $('#roster-count');
+  if (meta) meta.textContent = shown === rosterCache.length ? `${rosterCache.length} ${plural(rosterCache.length, 'employee', 'employees')}` : `${shown} of ${rosterCache.length} shown`;
+  const empty = $('#roster-filter-empty');
+  if (empty) empty.hidden = shown > 0 || rosterCache.length === 0;
+}
+
 async function toggleActive(id, active) {
+  confirmingDeactivateId = null;
   try {
     await apiFetch(`/api/employees/${id}/${active ? 'reactivate' : 'deactivate'}`, { method: 'POST' });
     toast(active ? 'Reactivated' : 'Deactivated', 'info');
@@ -167,12 +219,13 @@ async function renderRosterTable() {
   directoryCache = rosterCache.map((e) => ({ id: e.id, firstName: e.firstName, lastName: e.lastName }));
 
   const rows = rosterCache.map((e) => `
-    <tr id="roster-row-${e.id}">
-      <td>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <div style="width:28px; height:28px; border-radius:50%; overflow:hidden; flex-shrink:0;">${window.AccountMenu.avatarHtml(e.photoUrl, e)}</div>
-          <div>
-            ${escapeHtml(e.firstName + ' ' + e.lastName)}<div class="small muted">${escapeHtml(e.email)}</div>
+    <tr id="roster-row-${e.id}" class="${e.active ? '' : 'is-inactive'}">
+      <td class="roster-name-cell">
+        <div class="roster-name">
+          <span class="people-avatar people-avatar-sm">${window.AccountMenu.avatarHtml(e.photoUrl, e)}</span>
+          <div class="list-main">
+            <div class="list-title">${escapeHtml(fullName(e))}${e.isAccountActive !== e.active ? ' <span class="badge badge-pending" title="Login access and employment status disagree">Login mismatch</span>' : ''}</div>
+            <div class="list-meta">${escapeHtml(e.email || '')}</div>
           </div>
         </div>
       </td>
@@ -225,19 +278,17 @@ async function renderRosterTable() {
           ? `<input type="checkbox" class="edit-team-head" ${e.isTeamHead ? 'checked' : ''} title="Team Head" data-roster-field-change data-employee-id="${e.id}" data-field="isTeamHead">`
           : (e.isTeamHead ? '<span class="badge badge-approved">Team Head</span>' : '')}
       </td>
-      <td>${e.active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
-      <td>
-        <button class="btn small ${e.active ? 'danger' : ''}" data-roster-action="toggle-active" data-employee-id="${e.id}" data-new-active="${!e.active}">${e.active ? 'Deactivate' : 'Reactivate'}</button>
-      </td>
+      <td class="roster-status-cell">${statusCellHtml(e)}</td>
     </tr>`).join('');
 
-  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="13" class="empty-state">No employees in the roster yet</td></tr>';
+  $('#roster-table-body').innerHTML = rows || '<tr><td colspan="12"><div class="list-empty">No employees in the roster yet.</div></td></tr>';
 
   // Pre-select each row's manager dropdown now that options exist.
   rosterCache.forEach((e) => {
     const sel = document.querySelector(`#roster-row-${e.id} .edit-manager`);
     if (sel && e.managerEmployeeId) sel.value = String(e.managerEmployeeId);
   });
+  applyRosterFilters();
 }
 
 async function renderCreateForm() {
@@ -246,7 +297,7 @@ async function renderCreateForm() {
   $('#roster-create-panel').innerHTML = `
     <div class="form-grid">
       <div class="form-group">
-        <label class="form-label">Account *</label>
+        <label class="form-label" for="${users.length ? 'roster-user-select' : 'roster-user-manual'}">Account *</label>
         ${users.length
           ? `<select class="form-control" id="roster-user-select">
               <option value="">— Select account —</option>
@@ -274,7 +325,7 @@ async function renderCreateForm() {
         <select class="form-control" id="roster-manager"><option value="">— None —</option>${managerOpts}</select>
       </div>
       <div class="form-group full" id="roster-create-result"></div>
-      <div class="form-group full"><button class="btn primary" id="roster-create-btn">Add to Roster</button></div>
+      <div class="form-group full"><div style="display:flex; gap:8px;"><button class="btn primary" id="roster-create-btn">Add to roster</button><button class="btn" data-roster-action="close-create">Cancel</button></div></div>
     </div>`;
   $('#roster-create-btn').addEventListener('click', submitCreate);
 }
@@ -334,80 +385,49 @@ async function saveEditDepartment(id) {
   }
 }
 
-// Same clickable-card look and click-to-expand-for-detail behavior as My
-// Team's myTeamCardHtml (team.js) / the Teams tab (teamsDirectory.js) —
-// reuses their CSS (loaded globally via
-// accountMenu.css). Kept as its own markup/toggle (dept-member-* ids)
-// rather than calling into team.js, matching that module's own precedent:
-// both can be on screen at once (different tabs, but tab-panels are only
-// hidden, not removed) and would otherwise collide on the same
-// #team-directory-card-N ids.
-function employeeNameById(id) {
-  const e = rosterCache.find((x) => x.id === id);
-  return e ? `${e.firstName} ${e.lastName}` : null;
-}
-function deptMemberCardHtml(e) {
-  const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
-  const managerName = e.managerEmployeeId ? employeeNameById(e.managerEmployeeId) : null;
-  return `
-    <div class="team-directory-card" id="dept-member-card-${e.id}" role="button" tabindex="0" data-card-toggle="dept-member" data-id="${e.id}">
-      <div class="team-directory-card-summary">
-        <div class="team-directory-card-avatar">${avatarHtml}</div>
-        <div>
-          <div class="team-directory-card-name">${escapeHtml(e.firstName + ' ' + e.lastName)}</div>
-          <div class="team-directory-card-title small muted">${escapeHtml(e.jobTitle || '')}</div>
-        </div>
-      </div>
-      <div class="team-directory-card-detail" id="dept-member-detail-${e.id}" hidden>
-        <div><strong>Email:</strong> ${e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'}</div>
-        <div><strong>Manager:</strong> ${managerName ? escapeHtml(managerName) : 'No manager assigned'}</div>
-      </div>
-    </div>`;
-}
-// Accordion, not independent toggles — same rule as My Team's cards.
-function deptMemberToggleCard(id) {
-  const detail = document.getElementById('dept-member-detail-' + id);
-  if (!detail) return;
-  const wasHidden = detail.hidden;
-  document.querySelectorAll('[id^="dept-member-detail-"]').forEach((d) => { d.hidden = true; });
-  detail.hidden = !wasHidden;
+function deptMemberRowHtml(e) {
+  return `<li class="list-row">
+    <div class="list-main"><div class="list-title" style="font-weight:500;">${escapeHtml(fullName(e))}${e.active ? '' : ' <span class="badge badge-neutral">Inactive</span>'}</div>
+    <div class="list-meta">${escapeHtml(e.jobTitle || 'No job title')}</div></div>
+  </li>`;
 }
 
 function renderDepartmentsSection() {
   const departments = window.Departments.list();
   $('#departments-list').innerHTML = departments.length
-    ? departments.map((d) => {
+    ? `<ul class="list admin-list">${departments.map((d) => {
         const isExpanded = expandedDepartmentId === d.id;
-        const isEditing = editingDepartmentId === d.id;
-        const members = isExpanded ? rosterCache.filter((e) => e.department === d.code) : [];
-        return `<div class="request-card dept-card ${isExpanded ? 'expanded' : ''}" style="margin-bottom:6px;" ${isEditing ? '' : `role="button" tabindex="0" data-dept-action="toggle-expand" data-dept-id="${d.id}"`}>
-        ${isEditing
-          ? `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
-              <input class="form-control" id="dept-edit-input-${d.id}" value="${escapeHtml(d.label)}" style="flex:1; min-width:200px;">
+        const members = rosterCache.filter((e) => e.department === d.code);
+        if (editingDepartmentId === d.id) {
+          return `<li class="admin-row">
+            <div class="admin-row-edit">
+              <input class="form-control" id="dept-edit-input-${d.id}" value="${escapeHtml(d.label)}" aria-label="Department name">
               <button class="btn small primary" data-dept-action="save-edit" data-dept-id="${d.id}">Save</button>
               <button class="btn small" data-dept-action="cancel-edit">Cancel</button>
-            </div>`
-          : `<div class="request-card-top">
-              <div class="dept-name-btn">
-                <span class="dept-name-chev">▸</span>${escapeHtml(d.label)}
-              </div>
-              <button class="btn small" data-dept-action="ask-edit" data-dept-id="${d.id}">Edit</button>
             </div>
-            ${isExpanded ? `<div class="dept-members">${
-              members.length
-                ? `<div class="team-directory-grid">${members.map((m) => deptMemberCardHtml(m)).join('')}</div>`
-                : `<div class="small muted">Nobody in this department</div>`
-            }</div>` : ''}`}
-      </div>`;
-      }).join('')
-    : `<div class="empty-state small">No departments yet</div>`;
+          </li>`;
+        }
+        return `<li class="admin-row">
+          <div class="admin-row-top">
+            <button class="admin-row-toggle" data-dept-action="toggle-expand" data-dept-id="${d.id}" aria-expanded="${isExpanded}">
+              <span class="admin-row-chev" aria-hidden="true">${isExpanded ? '▾' : '▸'}</span>
+              <span class="list-title">${escapeHtml(d.label)}</span>
+              ${d.active ? '' : '<span class="badge badge-neutral">Inactive</span>'}
+              <span class="list-meta">${members.length} ${plural(members.length, 'person', 'people')}</span>
+            </button>
+            <button class="btn small" data-dept-action="ask-edit" data-dept-id="${d.id}">Rename</button>
+          </div>
+          ${isExpanded ? (members.length
+            ? `<ul class="list admin-row-members">${members.map(deptMemberRowHtml).join('')}</ul>`
+            : '<div class="list-empty admin-row-members">Nobody in this department.</div>') : ''}
+        </li>`;
+      }).join('')}</ul>`
+    : '<div class="list-empty">No departments yet.</div>';
 
   $('#departments-form').innerHTML = `
-    <div class="form-grid">
-      <div class="form-group full">
-        <input class="form-control" id="dept-add-input" placeholder="Department name (e.g. AI &amp; Innovation)">
-      </div>
-      <div class="form-group full"><button class="btn small" id="dept-add-btn">Add Department</button></div>
+    <div class="admin-add">
+      <input class="form-control" id="dept-add-input" placeholder="New department name (e.g. AI &amp; Innovation)" aria-label="New department name">
+      <button class="btn small" id="dept-add-btn">Add department</button>
     </div>`;
   $('#dept-add-btn').addEventListener('click', addDepartment);
 }
@@ -499,42 +519,49 @@ async function deleteConflictPair(id) {
 
 function conflictPairRowHtml(p) {
   if (editingConflictPairId === p.id) {
-    return `<div class="request-card-actions" style="flex-wrap:wrap; align-items:center;">
-      <select class="form-control" id="cp-edit-a-${p.id}" style="flex:1; min-width:160px;">${employeeOptionsHtml(p.employeeIdA)}</select>
-      <select class="form-control" id="cp-edit-b-${p.id}" style="flex:1; min-width:160px;">${employeeOptionsHtml(p.employeeIdB)}</select>
+    return `<li class="admin-row"><div class="admin-row-edit">
+      <select class="form-control" id="cp-edit-a-${p.id}" aria-label="First employee">${employeeOptionsHtml(p.employeeIdA)}</select>
+      <select class="form-control" id="cp-edit-b-${p.id}" aria-label="Second employee">${employeeOptionsHtml(p.employeeIdB)}</select>
       <button class="btn small primary" data-cp-action="save-edit" data-cp-id="${p.id}">Save</button>
       <button class="btn small" data-cp-action="cancel-edit">Cancel</button>
-    </div>`;
+    </div></li>`;
   }
+  const names = `${escapeHtml(directoryName(p.employeeIdA))} <span class="muted">↔</span> ${escapeHtml(directoryName(p.employeeIdB))}`;
   if (confirmingDeleteConflictPairId === p.id) {
-    return `<div class="request-card-top">
-      <span class="small">Delete this pair? </span>
-      <span>
-        <button class="btn small danger" data-cp-action="delete" data-cp-id="${p.id}">Yes</button>
+    return `<li class="admin-row"><div class="admin-row-top">
+      <span class="small">Delete ${names}?</span>
+      <span class="admin-row-actions">
+        <button class="btn small danger" data-cp-action="delete" data-cp-id="${p.id}">Yes, delete</button>
         <button class="btn small" data-cp-action="cancel-delete">No</button>
       </span>
-    </div>`;
+    </div></li>`;
   }
-  return `<div class="request-card-top">
-    <div>${escapeHtml(directoryName(p.employeeIdA))} ↔ ${escapeHtml(directoryName(p.employeeIdB))}</div>
-    <span>
+  return `<li class="admin-row"><div class="admin-row-top">
+    <span class="list-title" style="font-weight:500;">${names}</span>
+    <span class="admin-row-actions">
       <button class="btn small" data-cp-action="ask-edit" data-cp-id="${p.id}">Edit</button>
-      <button class="btn small danger" data-cp-action="ask-delete" data-cp-id="${p.id}">Delete</button>
+      <button class="btn small" data-cp-action="ask-delete" data-cp-id="${p.id}">Delete</button>
     </span>
-  </div>`;
+  </div></li>`;
 }
 
 async function renderConflictPairs() {
-  const pairs = await loadConflictPairs();
+  let pairs;
+  try {
+    pairs = await loadConflictPairs();
+  } catch (err) {
+    $('#conflict-pairs-list').innerHTML = `<div class="list-empty">Conflict pairs couldn’t load: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
   $('#conflict-pairs-list').innerHTML = pairs.length
-    ? pairs.map((p) => `<div class="request-card" style="margin-bottom:6px;">${conflictPairRowHtml(p)}</div>`).join('')
-    : `<div class="empty-state small">No conflict pairs recorded</div>`;
+    ? `<ul class="list admin-list">${pairs.map(conflictPairRowHtml).join('')}</ul>`
+    : '<div class="list-empty">No conflict pairs recorded.</div>';
 
   $('#conflict-pairs-form').innerHTML = `
-    <div class="form-grid">
-      <div class="form-group"><select class="form-control" id="cp-a"><option value="">— Employee A —</option>${managerOptions(null)}</select></div>
-      <div class="form-group"><select class="form-control" id="cp-b"><option value="">— Employee B —</option>${managerOptions(null)}</select></div>
-      <div class="form-group full"><button class="btn small" id="cp-add-btn">Add Pair</button></div>
+    <div class="admin-add">
+      <select class="form-control" id="cp-a" aria-label="First employee"><option value="">Employee A</option>${managerOptions(null)}</select>
+      <select class="form-control" id="cp-b" aria-label="Second employee"><option value="">Employee B</option>${managerOptions(null)}</select>
+      <button class="btn small" id="cp-add-btn">Add pair</button>
     </div>`;
   $('#cp-add-btn').addEventListener('click', addConflictPair);
 }
@@ -570,9 +597,6 @@ function bindRosterUi(container) {
   });
 
   container.addEventListener('click', (e) => {
-    const memberCard = e.target.closest('[data-card-toggle="dept-member"]');
-    if (memberCard) { deptMemberToggleCard(Number(memberCard.dataset.id)); return; }
-
     const deptBtn = e.target.closest('[data-dept-action]');
     if (deptBtn) {
       const deptId = Number(deptBtn.dataset.deptId);
@@ -597,45 +621,78 @@ function bindRosterUi(container) {
       return;
     }
 
-    const rosterBtn = e.target.closest('[data-roster-action="toggle-active"]');
-    if (rosterBtn) toggleActive(Number(rosterBtn.dataset.employeeId), rosterBtn.dataset.newActive === 'true');
+    const rosterBtn = e.target.closest('[data-roster-action]');
+    if (!rosterBtn) return;
+    const action = rosterBtn.dataset.rosterAction;
+    const id = Number(rosterBtn.dataset.employeeId);
+    if (action === 'toggle-active') toggleActive(id, rosterBtn.dataset.newActive === 'true');
+    if (action === 'ask-deactivate') { confirmingDeactivateId = id; setStatusCell(id); }
+    if (action === 'cancel-deactivate') { confirmingDeactivateId = null; setStatusCell(id); }
+    if (action === 'open-create') { $('#roster-create-wrap').hidden = false; rosterBtn.hidden = true; }
+    if (action === 'close-create') { $('#roster-create-wrap').hidden = true; const open = container.querySelector('[data-roster-action="open-create"]'); if (open) open.hidden = false; }
   });
+
+  container.addEventListener('input', (e) => {
+    if (e.target.id === 'roster-search') applyRosterFilters();
+  });
+  container.addEventListener('change', (e) => {
+    if (e.target.id === 'roster-status-filter') applyRosterFilters();
+  });
+}
+
+function settingsBodyHtml() {
+  const deptCol = colTitle('Departments', 'rename only changes the label') + '<div id="departments-list"></div><div id="departments-form"></div>';
+  if (!canManageConflictPairs()) return `<div class="panel-body">${deptCol}</div>`;
+  return split([
+    { html: deptCol },
+    { html: colTitle('Team conflict pairs', 'warn-only, not enforced') + '<div id="conflict-pairs-list"></div><div id="conflict-pairs-form"></div>' },
+  ]);
 }
 
 export async function renderRoster() {
   const container = $('#roster-content');
+  confirmingDeactivateId = null;
   container.innerHTML = `
     <div class="page-header">
       <div class="page-title">Employee Roster</div>
-      <div class="page-subtitle">Manual roster management — automatic ClickUp sync is deferred (see migration plan)</div>
+      <div class="page-subtitle">Every employee record. Changes save as soon as you change a field.</div>
     </div>
-    <div class="card section">
-      <div class="card-title">Add Employee</div>
-      <div id="roster-create-panel"><div class="empty-state small">Loading...</div></div>
+    <div class="stack">
+      ${panel({
+        title: 'Employees',
+        meta: '<span id="roster-count"></span>',
+        actions: `<input type="search" class="form-control dir-search" id="roster-search" placeholder="Search name, email, title…" aria-label="Search employees">
+          <select class="form-control roster-filter" id="roster-status-filter" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="mismatch">Login mismatch</option>
+          </select>
+          <button class="small" data-roster-action="open-create">Add employee</button>`,
+        body: `<div class="roster-create" id="roster-create-wrap" hidden>
+            ${colTitle('Add an employee', 'creates their employee record for an existing account')}
+            <div id="roster-create-panel"><div class="list-empty">Loading…</div></div>
+          </div>
+          <div class="table-scroll roster-table-wrap">
+            <table class="data-table roster-table">
+              <thead><tr><th class="roster-name-cell">Name</th><th>Job title</th><th>Department</th><th>KPI profile</th><th>Employment type</th><th>Joining date</th><th>Work location</th><th>Manager</th><th>ClickUp user</th><th>P&amp;C</th><th>Team head</th><th>Status</th></tr></thead>
+              <tbody id="roster-table-body"><tr><td colspan="12"><div class="list-empty">Loading…</div></td></tr></tbody>
+            </table>
+          </div>
+          <div class="list-empty" id="roster-filter-empty" hidden style="padding:12px 18px;">No employees match these filters.</div>`,
+      })}
+      ${panel({ title: 'Organization settings', body: settingsBodyHtml() })}
     </div>
-    <div class="card section">
-      <div class="card-title">Departments</div>
-      <div id="departments-list" class="mt-8"></div>
-      <div id="departments-form" class="mt-16"></div>
-    </div>
-    <div class="card section">
-      <div class="card-title">All Employees</div>
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead><tr><th>Name</th><th>Job Title</th><th>Department</th><th>KPI Profile</th><th>Employment Type</th><th>Joining Date</th><th>Work Location</th><th>Manager</th><th>ClickUp ID</th><th>P&amp;C</th><th>Team Head</th><th>Active</th><th></th></tr></thead>
-          <tbody id="roster-table-body"><tr><td colspan="13" class="empty-state">Loading...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-    ${canManageConflictPairs() ? `
-    <div class="card section">
-      <div class="card-title">Team Conflict Pairs <span class="small muted">(informational only — not enforced by the request form yet)</span></div>
-      <div id="conflict-pairs-list" class="mt-8"></div>
-      <div id="conflict-pairs-form" class="mt-16"></div>
-    </div>` : ''}
   `;
   bindRosterUi(container);
-  await renderRosterTable();
+  try {
+    await renderRosterTable();
+  } catch (err) {
+    console.error('Roster failed to load', err);
+    container.innerHTML = loadErrorPanel('The roster couldn’t load', err, 'data-roster-retry');
+    container.querySelector('[data-roster-retry]').addEventListener('click', renderRoster);
+    return;
+  }
   renderDepartmentsSection();
   await renderCreateForm();
   if (canManageConflictPairs()) await renderConflictPairs();

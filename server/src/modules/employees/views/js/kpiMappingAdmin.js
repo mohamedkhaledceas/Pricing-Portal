@@ -1,5 +1,6 @@
 import { $, escapeHtml, toast } from './dom.js';
 import { apiFetch } from './apiClient.js';
+import { panel, split, colTitle, loadErrorPanel } from './panels.js';
 
 const KPI_PROFILES = ['content', 'artdirector', 'aidesigner', 'production', 'am', 'pandc', 'heads', 'design'];
 const METHODS = [
@@ -57,6 +58,18 @@ async function saveMapping(listsDatalistHtml) {
   }
 }
 
+// Remove is a real delete — confirmed inline (no native confirm(); see the
+// project rule on dialogs) by re-rendering just that row's action cell.
+function askRemove(btn) {
+  btn.closest('td').innerHTML = `<span class="small">Remove?</span>
+    <button class="btn small danger" data-kpi-map-action="remove" data-kpi-profile="${escapeHtml(btn.dataset.kpiProfile)}" data-metric-id="${escapeHtml(btn.dataset.metricId)}">Yes, remove</button>
+    <button class="btn small" data-kpi-map-action="cancel-remove" data-kpi-profile="${escapeHtml(btn.dataset.kpiProfile)}" data-metric-id="${escapeHtml(btn.dataset.metricId)}">No</button>`;
+}
+
+function removeButtonHtml(kpiProfile, metricId) {
+  return `<button class="btn small" data-kpi-map-action="ask-remove" data-kpi-profile="${escapeHtml(kpiProfile)}" data-metric-id="${escapeHtml(metricId)}">Remove</button>`;
+}
+
 async function removeMapping(kpiProfile, metricId) {
   try {
     await apiFetch(`/api/employees/kpi/auto-mappings/${kpiProfile}/${metricId}`, { method: 'DELETE' });
@@ -104,76 +117,77 @@ function bindKpiMappingAdminUi(container) {
     const action = btn.dataset.kpiMapAction;
     if (action === 'save') saveMapping();
     if (action === 'run-compute') runCompute();
+    if (action === 'ask-remove') askRemove(btn);
+    if (action === 'cancel-remove') btn.closest('td').innerHTML = removeButtonHtml(btn.dataset.kpiProfile, btn.dataset.metricId);
     if (action === 'remove') removeMapping(btn.dataset.kpiProfile, btn.dataset.metricId);
   });
 }
 
 export async function renderKpiMappingAdmin(container) {
-  container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
+  bindKpiMappingAdminUi(container);
+  container.innerHTML = panel({ title: 'ClickUp mappings', body: '<div class="panel-body"><div class="list-empty">Loading…</div></div>' });
   try {
     const [{ mappings }, listsDatalistHtml] = await Promise.all([
       apiFetch('/api/employees/kpi/auto-mappings'),
       loadListsDatalist(),
     ]);
+    const selectedQuarter = $('#kpi-quarter-input') ? $('#kpi-quarter-input').value : '';
 
-    container.innerHTML = `
-      <datalist id="kpi-known-lists">${listsDatalistHtml}</datalist>
-      <div class="card section">
-        <div class="card-title">Add / Update Mapping</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label">Role</label>
-            <select class="form-control" id="map-profile">${KPI_PROFILES.map((p) => `<option value="${p}">${p}</option>`).join('')}</select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Metric ID (e.g. Q1, D2)</label>
-            <input class="form-control" id="map-metric">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Method</label>
-            <select class="form-control" id="map-method" data-method-select>
-              ${METHODS.map((m) => `<option value="${m.value}">${m.label}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group full">
-            <label class="form-label">ClickUp list ID(s), comma-separated</label>
-            <input class="form-control" id="map-list-ids" list="kpi-known-lists" placeholder="e.g. 901521332761">
-          </div>
-          <div class="form-group full" id="map-extra-fields">${methodExtraFieldsHtml(METHODS[0].value)}</div>
-          <div class="form-group full"><button class="btn primary small" data-kpi-map-action="save">Save Mapping</button></div>
+    const formCol = colTitle('Add or update a mapping') + `
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" for="map-profile">Role</label>
+          <select class="form-control" id="map-profile">${KPI_PROFILES.map((p) => `<option value="${p}">${p}</option>`).join('')}</select>
         </div>
-      </div>
-
-      <div class="card section">
-        <div class="card-title">Run Auto-Compute</div>
-        <div class="kpi-entry-row">
-          <input class="form-control small" id="map-run-quarter" placeholder="YYYY-Qn">
-          <button class="btn small" data-kpi-map-action="run-compute">Run Now</button>
+        <div class="form-group">
+          <label class="form-label" for="map-metric">Metric ID (e.g. Q1, D2)</label>
+          <input class="form-control" id="map-metric">
         </div>
-      </div>
+        <div class="form-group full">
+          <label class="form-label" for="map-method">Method</label>
+          <select class="form-control" id="map-method" data-method-select>
+            ${METHODS.map((m) => `<option value="${m.value}">${m.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group full">
+          <label class="form-label" for="map-list-ids">ClickUp list ID(s), comma-separated</label>
+          <input class="form-control" id="map-list-ids" list="kpi-known-lists" placeholder="e.g. 901521332761">
+        </div>
+        <div class="form-group full" id="map-extra-fields">${methodExtraFieldsHtml(METHODS[0].value)}</div>
+        <div class="form-group full"><button class="btn primary small" data-kpi-map-action="save">Save mapping</button></div>
+      </div>`;
+    const runCol = colTitle('Run auto-compute') + `
+      <p class="panel-text">Recomputes every mapped metric for a quarter from ClickUp now. There's no schedule — it only runs when triggered here.</p>
+      <div class="kpi-entry-row">
+        <input class="form-control small" id="map-run-quarter" placeholder="YYYY-Qn" value="${escapeHtml(selectedQuarter)}" aria-label="Quarter to compute">
+        <button class="btn small" data-kpi-map-action="run-compute">Run now</button>
+      </div>`;
 
-      <div class="card section">
-        <div class="card-title">Existing Mappings</div>
-        ${mappings.length === 0 ? '<div class="muted small">No mappings configured yet.</div>' : `
-        <div style="overflow-x:auto;">
-          <table class="data-table">
-            <thead><tr><th>Role</th><th>Metric</th><th>Method</th><th>Config</th><th></th></tr></thead>
-            <tbody>
-              ${mappings.map((m) => `
-                <tr>
-                  <td>${escapeHtml(m.kpi_profile)}</td>
-                  <td>${escapeHtml(m.metric_id)}</td>
-                  <td>${escapeHtml(m.method)}</td>
-                  <td class="small muted">${escapeHtml(JSON.stringify(m.config))}</td>
-                  <td><button class="btn small" data-kpi-map-action="remove" data-kpi-profile="${escapeHtml(m.kpi_profile)}" data-metric-id="${escapeHtml(m.metric_id)}">Remove</button></td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>`}
-      </div>
-    `;
-    bindKpiMappingAdminUi(container);
+    const tableHtml = mappings.length === 0 ? '<div class="list-empty">No mappings configured yet.</div>' : `
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>Role</th><th>Metric</th><th>Method</th><th>Config</th><th></th></tr></thead>
+          <tbody>
+            ${mappings.map((m) => `
+              <tr>
+                <td>${escapeHtml(m.kpi_profile)}</td>
+                <td>${escapeHtml(m.metric_id)}</td>
+                <td>${escapeHtml((METHODS.find((x) => x.value === m.method) || {}).label || m.method)}</td>
+                <td class="small muted">${escapeHtml(JSON.stringify(m.config))}</td>
+                <td style="white-space:nowrap;">${removeButtonHtml(m.kpi_profile, m.metric_id)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    container.innerHTML = `<datalist id="kpi-known-lists">${listsDatalistHtml}</datalist>
+      <div class="stack">
+        ${panel({ title: 'ClickUp mappings', meta: 'Admin only', body: split([{ html: formCol }, { html: runCol }], '1.5fr 1fr') })}
+        ${panel({ title: 'Existing mappings', meta: `${mappings.length} configured`, body: `<div class="panel-body">${tableHtml}</div>` })}
+      </div>`;
   } catch (err) {
-    container.innerHTML = `<div class="alert alert-danger"><div>${escapeHtml(err.message)}</div></div>`;
+    console.error('KPI mappings failed to load', err);
+    container.innerHTML = loadErrorPanel('ClickUp mappings couldn’t load', err, 'data-map-retry');
+    container.querySelector('[data-map-retry]').addEventListener('click', () => renderKpiMappingAdmin(container));
   }
 }

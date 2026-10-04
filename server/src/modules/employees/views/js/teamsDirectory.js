@@ -1,48 +1,29 @@
-// The "Teams" tab: the company's reporting-line org chart, plus the full
-// directory grouped by department. Ported from the old
-// /shared/teamsDirectory.js modal (retired: it was reached only via
-// accountMenu.js's "Teams" item, which no longer exists — this tab is now
-// the one place any of this lives) and team.js's old "Organization Chart"
-// card (moved here so reporting structure and the department directory
-// live on the same tab). Same card look and expand-on-click behavior as My
-// Team in team.js, reusing the same global team-directory-* CSS
-// (accountMenu.css) — own id namespaces per section (teams-tab-*,
-// org-chart-*) since both sections are mounted on the same tab panel at
-// once and the accordion toggles are scoped by id prefix.
+// The "Teams" tab: the full company directory grouped by department (with
+// search), plus the reporting-line org chart. Every person is one row with
+// all their details visible — the old click-to-expand cards are gone.
 import { $, escapeHtml } from './dom.js';
 import { apiFetch } from './apiClient.js';
+import { panel, colTitle, plural, loadErrorPanel, fullName, peopleRowHtml } from './panels.js';
 
 function departmentLabel(dept) {
   if (!dept) return 'Other';
   return window.Departments.labelFor(dept);
 }
 
-function statusLabel(status) {
-  if (status === 'on_leave') return 'On Leave';
-  if (status === 'remote') return 'Remote';
-  return 'Active';
+// Only the non-default states earn a badge — "Active" on everyone is noise.
+function badgesFor(e) {
+  const badges = [];
+  if (e.isCompanyManager) badges.push({ label: 'CEO', tone: 'approved' });
+  else if (e.isTeamHead) badges.push({ label: 'Team head', tone: 'approved' });
+  if (e.status === 'on_leave') badges.push({ label: 'On leave', tone: 'pending' });
+  if (e.status === 'remote') badges.push({ label: 'Remote', tone: 'manager_approved' });
+  return badges;
 }
 
-function cardBodyHtml(e) {
-  const avatarHtml = window.AccountMenu.avatarHtml(e.photoUrl, e);
-  return `
-    <div class="team-directory-card-summary">
-      <div class="team-directory-card-avatar">${avatarHtml}</div>
-      <div>
-        <div class="team-directory-card-name">${escapeHtml(e.firstName + ' ' + e.lastName)}${e.isTeamHead ? ' <span class="badge badge-approved">Team Head</span>' : ''}</div>
-        <div class="team-directory-card-title small muted">${escapeHtml(e.jobTitle || '')}</div>
-      </div>
-    </div>`;
-}
-
-function cardDetailHtml(e) {
-  return `
-    <div><strong>Department:</strong> ${escapeHtml(departmentLabel(e.department))}</div>
-    <div><strong>Status:</strong> ${escapeHtml(statusLabel(e.status))}</div>
-    <div><strong>Email:</strong> ${e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'}</div>
-    <div><strong>Manager:</strong> ${e.managerName
-      ? `${escapeHtml(e.managerName)}${e.managerEmail ? ` (<a href="mailto:${escapeHtml(e.managerEmail)}">${escapeHtml(e.managerEmail)}</a>)` : ''}`
-      : 'No manager assigned yet'}</div>`;
+// What the directory search matches against — name, title, email,
+// department label, manager name.
+function searchText(e) {
+  return [fullName(e), e.jobTitle, e.email, departmentLabel(e.department), e.managerName].filter(Boolean).join(' ').toLowerCase();
 }
 
 // ── Department directory ──────────────────────────────────────────────
@@ -64,87 +45,66 @@ function groupByDepartment(entries) {
   return groups;
 }
 
-function directoryCardHtml(e) {
-  return `
-    <div class="team-directory-card" id="teams-tab-card-${e.id}" role="button" tabindex="0" data-card-toggle="teams-tab" data-id="${e.id}">
-      ${cardBodyHtml(e)}
-      <div class="team-directory-card-detail" id="teams-tab-detail-${e.id}" hidden>${cardDetailHtml(e)}</div>
-    </div>`;
-}
-
-// Accordion, not independent toggles.
-function teamsTabToggleCard(id) {
-  const detail = document.getElementById('teams-tab-detail-' + id);
-  if (!detail) return;
-  const wasHidden = detail.hidden;
-  document.querySelectorAll('[id^="teams-tab-detail-"]').forEach((d) => { d.hidden = true; });
-  detail.hidden = !wasHidden;
-}
-
-function departmentSectionsHtml(entries) {
-  const groups = groupByDepartment(entries);
+function directoryHtml(entries) {
+  const byName = (a, b) => fullName(a).localeCompare(fullName(b));
   const sections = [];
-  groups.forEach((members, dept) => {
+  groupByDepartment(entries).forEach((members, dept) => {
     if (!members.length) return;
-    sections.push(`
-      <section class="team-directory-section">
-        <h3>${escapeHtml(departmentLabel(dept))} <span class="small muted">(${members.length})</span></h3>
-        <div class="team-directory-grid">${members.map(directoryCardHtml).join('')}</div>
-      </section>`);
+    sections.push(`<section class="dir-section" data-dir-section>
+      ${colTitle(departmentLabel(dept), `<span data-dir-count>${members.length}</span>`)}
+      <ul class="list people-list people-list-grouped">${[...members].sort(byName).map((e) => peopleRowHtml(e, badgesFor(e), ` data-dir-row data-search="${escapeHtml(searchText(e))}"`)).join('')}</ul>
+    </section>`);
   });
-  return sections.join('') || '<div class="empty-state">No colleagues found.</div>';
+  return sections.length
+    ? sections.join('') + '<div class="list-empty" data-dir-nomatch hidden>No one matches that search.</div>'
+    : '<div class="list-empty">No colleagues found.</div>';
+}
+
+// Hides non-matching rows, then any department left empty; counts update
+// to the visible rows so a section heading never lies about what's under it.
+function applySearch(container, query) {
+  const q = query.trim().toLowerCase();
+  let anyVisible = false;
+  container.querySelectorAll('[data-dir-section]').forEach((section) => {
+    let visible = 0;
+    section.querySelectorAll('[data-dir-row]').forEach((row) => {
+      const match = !q || row.dataset.search.includes(q);
+      row.hidden = !match;
+      if (match) visible += 1;
+    });
+    section.hidden = visible === 0;
+    section.querySelector('[data-dir-count]').textContent = String(visible);
+    if (visible) anyVisible = true;
+  });
+  const none = container.querySelector('[data-dir-nomatch]');
+  if (none) none.hidden = anyVisible;
 }
 
 // ── Organization chart ────────────────────────────────────────────────
-// Deliberately not a pure managerEmployeeId tree (team.js's old version
-// was): the root is always the one 'ceo'-role account (this org's single
-// top-level exec — see employee.model.js's toDirectoryEntry comment) regardless of that
+// Deliberately not a pure managerEmployeeId tree: the root is always the
+// one 'ceo'-role account (this org's single top-level exec — see
+// employee.model.js's toDirectoryEntry comment) regardless of that
 // account's own managerEmployeeId, and every team head sits directly under
 // the root as its own flat tier regardless of their managerEmployeeId too
 // — team heads are the company's real org units and shouldn't nest under
 // each other or wherever a possibly-stale FK happens to point. Everyone
-// else nests recursively under their real manager, same as before.
-function orgChartCardHtml(e) {
-  return `
-    <div class="team-directory-card" id="org-chart-card-${e.id}" role="button" tabindex="0" data-card-toggle="org-chart" data-id="${e.id}">
-      ${cardBodyHtml(e)}
-      <div class="team-directory-card-detail" id="org-chart-detail-${e.id}" hidden>${cardDetailHtml(e)}</div>
-    </div>`;
-}
-
-function orgChartToggleCard(id) {
-  const detail = document.getElementById('org-chart-detail-' + id);
-  if (!detail) return;
-  const wasHidden = detail.hidden;
-  document.querySelectorAll('[id^="org-chart-detail-"]').forEach((d) => { d.hidden = true; });
-  detail.hidden = !wasHidden;
-}
-
-// Delegated on #teams-content, bound once per renderTeamsDirectory() call
-// (no sub-view switching within this tab, so no double-bind guard needed).
-// Replaces onclick="..." attributes, which the CSP's script-src-attr 'none'
-// silently blocks (confirmed live, 2026-09-28, on the sibling
-// Overview-page/Team-Reviews bugs — same root cause).
-function bindTeamsDirectoryUi(container) {
-  container.addEventListener('click', (e) => {
-    const card = e.target.closest('[data-card-toggle]');
-    if (!card) return;
-    const id = Number(card.dataset.id);
-    if (card.dataset.cardToggle === 'teams-tab') teamsTabToggleCard(id);
-    if (card.dataset.cardToggle === 'org-chart') orgChartToggleCard(id);
-  });
-}
-
-function orgChartNodeHtml(e, childrenByManager) {
+// else nests recursively under their real manager.
+function orgNodeHtml(e, childrenByManager) {
   const kids = childrenByManager[e.id] || [];
+  const role = e.isCompanyManager ? 'CEO' : e.isTeamHead ? 'Team head' : '';
   return `<li>
-    ${orgChartCardHtml(e)}
-    ${kids.length ? `<ul class="org-chart-children">${kids.map((k) => orgChartNodeHtml(k, childrenByManager)).join('')}</ul>` : ''}
+    <div class="org-node">
+      <span class="people-avatar people-avatar-sm">${window.AccountMenu.avatarHtml(e.photoUrl, e)}</span>
+      <span class="org-node-name">${escapeHtml(fullName(e))}</span>
+      ${role ? `<span class="badge badge-approved">${role}</span>` : ''}
+      <span class="org-node-meta">${escapeHtml([e.jobTitle, departmentLabel(e.department)].filter(Boolean).join(' · '))}</span>
+      ${kids.length ? `<span class="org-node-count">${kids.length} ${plural(kids.length, 'report', 'reports')}</span>` : ''}
+    </div>
+    ${kids.length ? `<ul class="org-children">${kids.map((k) => orgNodeHtml(k, childrenByManager)).join('')}</ul>` : ''}
   </li>`;
 }
 
-function orgChartSectionHtml(entries) {
-  if (!entries.length) return '';
+function orgChartHtml(entries) {
   const byId = new Map(entries.map((e) => [e.id, e]));
   const rootManager = entries.find((e) => e.isCompanyManager);
   const teamHeadIds = new Set(entries.filter((e) => e.isTeamHead).map((e) => e.id));
@@ -152,8 +112,7 @@ function orgChartSectionHtml(entries) {
   const childrenByManager = {};
   // Team heads (flat, under the root) plus anyone whose manager doesn't
   // resolve to a real, other employee (bad data, or a genuine orphan) —
-  // surfaced here rather than silently dropped from the chart, same rule
-  // this tree always applied to unresolvable managers.
+  // surfaced here rather than silently dropped from the chart.
   const secondTier = [];
   entries.forEach((e) => {
     if (rootManager && e.id === rootManager.id) return; // the root is never rendered as anyone's child
@@ -166,42 +125,53 @@ function orgChartSectionHtml(entries) {
     }
   });
   // A real direct report of the root who isn't flagged as a team head
-  // still belongs at tier 2 alongside the team heads — only team heads
-  // were named in the ask, but nobody should disappear just for
-  // reporting straight to the CEO without that flag set.
+  // still belongs at tier 2 alongside the team heads — nobody should
+  // disappear just for reporting straight to the CEO without that flag set.
   if (rootManager && childrenByManager[rootManager.id]) {
     secondTier.push(...childrenByManager[rootManager.id]);
   }
 
   // Alphabetical within each level — no seniority/title data to sort by
   // otherwise, and this keeps the tree deterministic across reloads.
-  const byName = (a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
+  const byName = (a, b) => fullName(a).localeCompare(fullName(b));
   secondTier.sort(byName);
   Object.values(childrenByManager).forEach((list) => list.sort(byName));
 
-  let tree;
   if (rootManager) {
     childrenByManager[rootManager.id] = secondTier;
-    tree = orgChartNodeHtml(rootManager, childrenByManager);
-  } else {
-    // No 'ceo'-role account in the directory — shouldn't happen in
-    // practice, but fall back to every team head/orphan as its own root
-    // rather than rendering nothing.
-    tree = secondTier.map((r) => orgChartNodeHtml(r, childrenByManager)).join('');
+    return `<ul class="org-tree">${orgNodeHtml(rootManager, childrenByManager)}</ul>`;
   }
-
-  return `<div class="card section">
-    <div class="card-title">Organization Chart</div>
-    <ul class="org-chart-tree">${tree}</ul>
-  </div>`;
+  // No 'ceo'-role account in the directory — shouldn't happen in
+  // practice, but fall back to every team head/orphan as its own root
+  // rather than rendering nothing.
+  return `<ul class="org-tree">${secondTier.map((r) => orgNodeHtml(r, childrenByManager)).join('')}</ul>`;
 }
 
 export async function renderTeamsDirectory() {
   const container = $('#teams-content');
-  container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div>Loading...</div>`;
+  container.innerHTML = panel({ title: 'Company directory', body: '<div class="panel-body"><div class="list-empty">Loading…</div></div>' });
 
-  const [res] = await Promise.all([apiFetch('/api/employees/directory'), window.Departments.load(apiFetch)]);
-  const entries = res.employees || [];
-  container.innerHTML = departmentSectionsHtml(entries) + orgChartSectionHtml(entries);
-  bindTeamsDirectoryUi(container);
+  let entries;
+  try {
+    const [res] = await Promise.all([apiFetch('/api/employees/directory'), window.Departments.load(apiFetch)]);
+    entries = res.employees || [];
+  } catch (err) {
+    console.error('Teams failed to load', err);
+    container.innerHTML = loadErrorPanel('The directory couldn’t load', err, 'data-teams-retry');
+    container.querySelector('[data-teams-retry]').addEventListener('click', renderTeamsDirectory);
+    return;
+  }
+
+  container.innerHTML = `<div class="stack">
+    ${panel({
+      title: 'Company directory',
+      meta: `${entries.length} ${plural(entries.length, 'person', 'people')}`,
+      actions: '<input type="search" class="form-control dir-search" id="teams-search" placeholder="Search name, title, email…" aria-label="Search the directory">',
+      body: `<div class="panel-body">${directoryHtml(entries)}</div>`,
+    })}
+    ${entries.length ? panel({ title: 'Organization chart', meta: 'CEO, then team heads, then everyone under their manager', body: `<div class="panel-body">${orgChartHtml(entries)}</div>` }) : ''}
+  </div>`;
+
+  const search = $('#teams-search');
+  if (search) search.addEventListener('input', () => applySearch(container, search.value));
 }

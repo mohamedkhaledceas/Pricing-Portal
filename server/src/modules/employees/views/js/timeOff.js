@@ -2,6 +2,7 @@ import { $, $all, escapeHtml, fmtDate, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch } from './apiClient.js';
 import { LEAVE_TYPES, leaveTypeLabel, AVAILABILITY_OPTIONS, availabilityLabel, STATUS_LABELS, balanceBucketForType } from './leaveTypes.js';
+import { panel, split, colTitle, personRow, list, balancesHtml, loadErrorPanel, plural } from './panels.js';
 
 async function getDirectory() {
   const res = await apiFetch('/api/employees/directory');
@@ -18,6 +19,8 @@ async function loadMyBalances() {
   } catch (err) {
     myBalances = null;
   }
+  const side = $('#to-balances');
+  if (side) side.innerHTML = balancesHtml(myBalances);
 }
 
 export function switchSubTab(tabId, btn) {
@@ -209,8 +212,10 @@ export function renderNewRequestForm() {
       <div>⚠ <strong>You haven't been assigned a direct manager yet.</strong> Requests you submit will skip the manager-approval step and go straight to People &amp; Culture for review. Contact People &amp; Culture if you believe this is a mistake. Please update your account to specify who you report directly to.</div>
     </div>` : ''}
     <div id="form-banner" class="section"></div>
-    <div class="card">
-      <div class="form-grid">
+    ${panel({
+      title: 'Request details',
+      body: split([
+        { html: `      <div class="form-grid">
         <div class="form-section-title">What kind of request is this?</div>
         <div class="form-group full">
           <label class="form-label">Request Type *</label>
@@ -256,11 +261,14 @@ export function renderNewRequestForm() {
           </div>
 
           <div class="form-group full">
-            <button class="btn primary" id="submit-btn">Submit Request →</button>
+            <button class="btn primary" id="submit-btn">Submit request</button>
           </div>
         </div>
-      </div>
-    </div>
+      </div>` },
+        { html: colTitle('Balance remaining') + '<div id="to-balances"><div class="list-empty">Loading…</div></div>'
+            + '<div class="footnote">Notice periods and approval steps are in <button class="link-btn" data-subtab-link="rules">Leave rules</button>.</div>' },
+      ], '1.7fr 1fr'),
+    })}
   `;
 
   $('#req-type').addEventListener('change', () => {
@@ -274,6 +282,10 @@ export function renderNewRequestForm() {
   $('#req-start').addEventListener('change', onStartChange);
   $('#req-end').addEventListener('change', checkConflictsLive);
   $('#submit-btn').addEventListener('click', submitRequest);
+  container.querySelector('[data-subtab-link]').addEventListener('click', (e) => {
+    const tab = e.currentTarget.dataset.subtabLink;
+    switchSubTab(tab, $('#subtab-' + tab));
+  });
   populateHandoverSelect();
   loadMyBalances().then(renderBalanceWarning);
 }
@@ -286,25 +298,32 @@ function todayIso() {
 
 async function renderToday() {
   const container = $('#today-content');
-  container.innerHTML = `<div class="empty-state">Loading team data...</div>`;
-  const [res, partnersRes] = await Promise.all([
-    apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
-    apiFetch('/api/employees/conflict-pairs/mine'),
-  ]);
-  const offToday = res.offToday || [];
-  const myPartnerIds = new Set((partnersRes.partners || []).map((p) => p.id));
   $('#today-date-label').textContent = fmtDate(todayIso());
-  container.innerHTML = offToday.length
-    ? `<div class="team-grid">${offToday.map((o) => {
-      const isPartner = myPartnerIds.has(o.employeeId);
-      return `
-      <div class="team-tile${isPartner ? ' conflict-pair' : ''}">
-        <div class="team-tile-name">${escapeHtml(o.name)}</div>
-        <div class="team-tile-meta">${escapeHtml(leaveTypeLabel(o.leaveType))}${o.availability ? ' · ' + escapeHtml(availabilityLabel(o.availability)) : ''}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
-        ${isPartner ? `<div class="team-tile-conflict-flag">⚠ Your conflict pair</div>` : ''}
-      </div>`;
-    }).join('')}</div>`
-    : `<div class="empty-state">Nobody's off today</div>`;
+  container.innerHTML = panel({ title: 'Off today', body: '<div class="panel-body"><div class="list-empty">Loading…</div></div>' });
+  let offToday, myPartnerIds;
+  try {
+    const [res, partnersRes] = await Promise.all([
+      apiFetch('/api/employees/leave-requests/off-today?date=' + todayIso()),
+      apiFetch('/api/employees/conflict-pairs/mine'),
+    ]);
+    offToday = res.offToday || [];
+    myPartnerIds = new Set((partnersRes.partners || []).map((p) => p.id));
+  } catch (err) {
+    console.error('Team status failed to load', err);
+    container.innerHTML = loadErrorPanel('Team status couldn’t load', err, 'data-today-retry');
+    container.querySelector('[data-today-retry]').addEventListener('click', renderToday);
+    return;
+  }
+  const rows = offToday.map((o) => {
+    const isPartner = myPartnerIds.has(o.employeeId);
+    const meta = [leaveTypeLabel(o.leaveType), o.availability ? availabilityLabel(o.availability) : null, o.department].filter(Boolean).map(escapeHtml).join(', ');
+    return personRow(o.name, meta, { flagged: isPartner, flag: isPartner ? 'Your conflict pair' : '' });
+  });
+  container.innerHTML = panel({
+    title: 'Off today',
+    meta: `${offToday.length} ${plural(offToday.length, 'person', 'people')}`,
+    body: `<div class="panel-body">${list(rows, 'Nobody is off today.', 'list-cols')}</div>`,
+  });
 }
 
 // My own request history/cancel (formerly here as "My History") moved to
@@ -313,44 +332,46 @@ async function renderToday() {
 // Portal §21.
 
 /* ── Rules (static reference) ── */
+function ruleRow(title, meta) {
+  return `<li class="list-row"><div class="list-main"><div class="list-title" style="font-weight:400;">${title}</div></div><span class="list-meta">${meta}</span></li>`;
+}
+
 export function renderRules() {
-  $('#rules-content').innerHTML = `
-    <div class="section">
-      <div class="card-title">Notice Requirements &amp; Auto-Reject Rules</div>
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead><tr><th>Leave Type</th><th>Notice Required</th></tr></thead>
-          <tbody>
-            ${LEAVE_TYPES.map((t) => `<tr><td>${escapeHtml(t.label)}</td><td>${escapeHtml(t.notice)}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="section alert alert-info">
-      <div>Short-notice types (Short-Notice Leave, Mental Health Day) submitted with less than 1 working day's notice, and Planned/Unpaid Leave submitted with less than 3 working days' notice, are <strong>auto-rejected</strong>. Sick and Emergency leave have no notice requirement.</div>
-    </div>
-    <div class="section alert alert-warn">
-      <div>Sick leave longer than 2 consecutive working days requires a doctor's note, submitted within 2 working days of your return.</div>
-    </div>
-    <div class="section alert alert-info">
-      <div>Work From Home is limited to <strong>1 request per calendar month</strong>. A request beyond the limit is not auto-rejected — it goes through the normal approval flow, and People &amp; Culture will see that you've gone over quota when reviewing it. A same-day WFH request must be submitted <strong>before 9:00 AM</strong> — submitting after 9:00 AM for a same-day request is still accepted, but a salary deduction will be applied.</div>
-    </div>
-    <div class="section">
-      <div class="card-title">Approval Workflow</div>
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
-          <tbody>
-            <tr><td><strong>Pending</strong></td><td>Submitted, awaiting your manager's decision</td></tr>
-            <tr><td><strong>Pending (P&amp;C)</strong></td><td>Manager approved — awaiting People &amp; Culture's final confirmation</td></tr>
-            <tr><td><strong>Approved</strong></td><td>Confirmed by People &amp; Culture</td></tr>
-            <tr><td><strong>Rejected / Auto-Rejected</strong></td><td>Not approved — see the reason on your History tab</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="section alert alert-warn">
-      <div>If you don't have a direct manager assigned, your requests skip the manager-approval step entirely and go straight to People &amp; Culture's queue as <strong>Pending (P&amp;C)</strong>.</div>
-    </div>
-  `;
+  const statusRows = [
+    ['pending', 'Submitted, awaiting your manager’s decision'],
+    ['manager_approved', 'Manager approved — awaiting People &amp; Culture’s final confirmation'],
+    ['approved', 'Confirmed by People &amp; Culture'],
+    ['rejected', 'Not approved — the reason is shown on the Requests tab'],
+    ['auto_rejected', 'Broke a notice rule at submission — the reason is shown on the Requests tab'],
+  ].map(([status, meaning]) => `<li class="list-row">
+      <span class="badge badge-${status}" style="min-width:118px;text-align:center;">${escapeHtml(STATUS_LABELS[status])}</span>
+      <div class="list-main"><div class="list-meta" style="color:var(--ink-2);">${meaning}</div></div>
+    </li>`);
+
+  $('#rules-content').innerHTML = `<div class="stack">
+    ${panel({
+      title: 'Notice periods',
+      meta: 'Requests inside the notice period are auto-rejected',
+      body: split([
+        { html: colTitle('Notice required') + list(LEAVE_TYPES.map((t) => ruleRow(escapeHtml(t.label), escapeHtml(t.notice))), '') },
+        { html: colTitle('Auto-reject rules') + `<p class="panel-text">Short-notice types (Short-Notice Leave, Mental Health Day) submitted with less than 1 working day’s notice, and Planned/Unpaid Leave submitted with less than 3 working days’ notice, are <strong>auto-rejected</strong>.</p>
+            <p class="panel-text">Sick and Emergency leave have no notice requirement.</p>` },
+      ], '1.2fr 1fr'),
+    })}
+    ${panel({
+      title: 'Approval workflow',
+      body: split([
+        { html: colTitle('What each status means') + list(statusRows, '') },
+        { html: colTitle('No direct manager?') + `<p class="panel-text">If you don’t have a direct manager assigned, your requests skip the manager-approval step entirely and go straight to People &amp; Culture’s queue as <strong>Pending (P&amp;C)</strong>.</p>` },
+      ], '1.5fr 1fr'),
+    })}
+    ${panel({
+      title: 'Special cases',
+      body: split([
+        { html: colTitle('Sick leave over 2 days') + `<p class="panel-text">Sick leave longer than 2 consecutive working days requires a doctor’s note, submitted within 2 working days of your return.</p>` },
+        { html: colTitle('Work from home') + `<p class="panel-text">Limited to <strong>1 request per calendar month</strong>. A request beyond the limit is not auto-rejected — it goes through the normal approval flow, and People &amp; Culture will see that you’ve gone over quota when reviewing it.</p>
+            <p class="panel-text">A same-day request must be submitted <strong>before 9:00 AM</strong>. Submitting after 9:00 AM is still accepted, but a salary deduction will be applied.</p>` },
+      ]),
+    })}
+  </div>`;
 }

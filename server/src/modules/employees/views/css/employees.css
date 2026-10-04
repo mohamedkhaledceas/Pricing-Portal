@@ -101,11 +101,114 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .cards-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px}
 .stat-card{background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius); padding:14px}
 .stat-card-title{font-size:11.5px; color:var(--muted); font-weight:600; margin-top:4px}
-.stat-num{font-size:30px; font-weight:800; font-family:'DM Mono',monospace; line-height:1.1; margin-top:4px}
+.stat-num{font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1.1; margin-top:4px}
 .stat-lbl{font-size:10.5px; color:var(--muted); margin-left:4px}
 .stat-row{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
 
 .empty-state{text-align:center; padding:36px 12px; color:var(--muted)}
+
+/* ── Panel system (Overview first; the target pattern for every tab) ──
+   Three levels, each visually distinct rather than one card for everything:
+   1. .attn   — things the viewer must act on; only rendered when non-empty.
+   2. .panel  — the only bordered container. A head row (title / meta /
+                actions) plus a body that may split into hairline-divided
+                columns, so related facts share one surface instead of
+                each getting its own equal-weight card.
+   3. .list   — unboxed rows separated by rules, used inside a panel. Never
+                put a bordered tile inside a panel. */
+.stack{display:grid; grid-template-columns:minmax(0, 1fr); gap:16px}
+.panel{background:var(--surface-1); border:1px solid var(--border); border-radius:8px; min-width:0}
+.panel-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 18px; border-bottom:1px solid var(--border)}
+.panel-title{font-size:15px; font-weight:650; letter-spacing:-0.01em; margin:0}
+.panel-meta{font-size:12.5px; color:var(--muted)}
+.panel-actions{margin-left:auto; display:flex; gap:8px}
+.panel-body{padding:16px 18px}
+.panel-split{display:grid; grid-template-columns:var(--split, 1fr 1fr)}
+.panel-split > .panel-col{padding:16px 18px; min-width:0}
+.panel-split > .panel-col + .panel-col{border-left:1px solid var(--border)}
+.panel-col-title{font-size:13px; font-weight:650; color:var(--ink-2); margin:0 0 8px; display:flex; justify-content:space-between; gap:8px}
+.panel-col-title .panel-meta{font-weight:400}
+.panel-col-title + .panel-col-title, .list + .panel-col-title, .list-empty + .panel-col-title, .meter-list + .panel-col-title, .metric-grid + .panel-col-title{margin-top:18px}
+@media (max-width:760px){
+  .panel-split{grid-template-columns:minmax(0, 1fr)}
+  .panel-split > .panel-col + .panel-col{border-left:none; border-top:1px solid var(--border)}
+}
+
+/* Context line under a page title — facts about the viewer, not actions. */
+.context-line{display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; font-size:13px; color:var(--ink-2); margin:-8px 0 16px}
+.context-line > * + *{padding-left:14px; border-left:1px solid var(--border)}
+
+.attn{background:var(--surface-1); border:1px solid var(--border); border-radius:8px; overflow:hidden}
+.attn-row{display:grid; grid-template-columns:56px 1fr auto; align-items:center; gap:4px 14px; padding:12px 18px 12px 15px; border-left:3px solid var(--accent)}
+.attn-row + .attn-row{border-top:1px solid var(--border)}
+.attn-row.is-warn{border-left-color:var(--warn)}
+.attn-count{font-size:24px; font-weight:650; line-height:1; font-variant-numeric:tabular-nums; color:var(--accent); text-align:center}
+.attn-row.is-warn .attn-count{color:var(--ink)}
+.attn-text{font-size:14px; font-weight:600}
+.attn-sub{display:block; font-size:12.5px; font-weight:400; color:var(--muted); margin-top:1px}
+.attn-calm{padding:12px 18px; font-size:13px; color:var(--muted)}
+.attn-group + .attn-row, .attn-row + .attn-group, .attn-group + .attn-group{border-top:1px solid var(--border)}
+.attn-group > summary{list-style:none; cursor:pointer}
+.attn-group > summary::-webkit-details-marker{display:none}
+.attn-group > summary:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
+.attn-toggle{font-size:12.5px; font-weight:600; color:var(--accent); white-space:nowrap}
+.attn-toggle::after{content:" ▾"}
+.attn-group[open] .attn-toggle::after{content:" ▴"}
+.attn-list{padding:0 18px 6px 74px; max-height:320px; overflow:auto}
+@media (max-width:560px){ .attn-list{padding-left:18px} .attn-row > .attn-toggle{grid-column:2} }
+@media (max-width:560px){
+  .attn-row{grid-template-columns:40px 1fr}
+  .attn-row > button{grid-column:2; justify-self:start}
+}
+
+.list{list-style:none; margin:0; padding:0}
+.list-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--border); min-width:0}
+.list-main{min-width:0; flex:1}
+.list-title{font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.list-meta{font-size:12px; color:var(--muted)}
+.list-empty{font-size:13px; color:var(--muted); padding:8px 0; border-top:1px solid var(--border)}
+.list-cols{columns:2 170px; column-gap:20px}
+.list-cols .list-row{break-inside:avoid}
+/* Directly under a panel head there's already a rule — no second one. */
+.panel-body > .list > .list-row:first-child, .panel-body > .list-empty{border-top:none; padding-top:0}
+.list-row.is-flagged{--flag:#8a5b00}
+:root[data-theme="dark"] .list-row.is-flagged{--flag:var(--warn)}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .list-row.is-flagged{--flag:var(--warn)}}
+.list-row.is-flagged .initials{border-color:var(--warn)}
+.list-flag{font-size:11.5px; font-weight:650; color:var(--flag)}
+.initials{position:relative; width:26px; height:26px; flex:none; border-radius:50%; background:var(--panel); border:1px solid var(--border); color:var(--ink-2); font-size:10.5px; font-weight:650; display:flex; align-items:center; justify-content:center}
+.initials .presence-dot{position:absolute; right:-1px; bottom:-1px; box-shadow:0 0 0 2px var(--surface-1)}
+
+.metric-grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px 18px}
+.metric-value{font-size:24px; font-weight:650; line-height:1.1; font-variant-numeric:tabular-nums}
+.metric-label{font-size:12.5px; color:var(--muted)}
+
+.meter-list{display:grid; gap:12px}
+.meter-top{display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-size:13px}
+.meter-label{color:var(--ink-2); min-width:0}
+.meter-value{font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--muted)}
+.meter-value strong{font-size:15px; font-weight:650; color:var(--ink)}
+.meter-track{height:4px; border-radius:2px; background:var(--grid); margin-top:6px; overflow:hidden}
+.meter-fill{height:100%; background:var(--accent); border-radius:2px}
+.meter.is-empty .meter-value strong{color:var(--muted)}
+.footnote{font-size:12.5px; color:var(--muted); margin-top:14px}
+
+.count-row{display:flex; flex-wrap:wrap; gap:6px 20px; margin-bottom:12px; font-size:12.5px; color:var(--muted)}
+.count-row strong{font-size:15px; font-weight:650; color:var(--ink); font-variant-numeric:tabular-nums; margin-right:4px}
+.panel-text{font-size:13px; line-height:1.55; color:var(--ink-2); margin:0 0 10px; max-width:62ch}
+.panel-text:last-child{margin-bottom:0}
+button.link-btn{background:none; border:none; padding:0; font:inherit; color:var(--accent); text-decoration:underline; text-underline-offset:2px; cursor:pointer}
+button.link-btn:hover,button.link-btn:active{filter:none; transform:none}
+
+/* Request cards inside a panel become unboxed rows (roster.js still uses the
+   boxed .request-card on its own). */
+.req-list > .request-card{border:none; border-top:1px solid var(--border); border-radius:0; background:none; margin:0; padding:12px 0}
+.req-list > .request-card:first-child{border-top:none; padding-top:0}
+.req-list > .request-card:last-of-type{padding-bottom:0}
+.req-list .request-card-actions{flex-wrap:wrap; align-items:center}
+.req-list-more{padding-top:12px; border-top:1px solid var(--border); margin-top:12px}
+.panel-body > .requests-filter-bar{padding-bottom:12px; border-bottom:1px solid var(--border)}
+.panel-body > .requests-filter-bar + .req-list > .request-card:first-child{padding-top:12px}
 
 /* ── Team grid (who's off today / who's online) ── */
 .team-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px}
@@ -115,23 +218,76 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .presence-dot{width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none}
 .presence-dot.online{background:var(--good)}
 
-/* ── My Reporting Line (My Team tab, team.js) — a horizontal row of the
-   same .team-directory-card used elsewhere, connected by arrows, since
-   it's a single path rather than a grid of unrelated peers. Cards keep a
-   fixed width here (the grid's auto-fill sizing doesn't apply outside a
-   grid container) so the row reads as a line, not a wrapped block. */
-.reporting-line-row{display:flex; align-items:center; flex-wrap:wrap; gap:10px}
-.reporting-line-row .team-directory-card{width:220px; flex:none}
-.reporting-line-arrow{color:var(--muted); font-size:15px; flex:none}
+/* ── My Team (team.js): reporting chain in the context line, then a
+   people list — every field visible, no click-to-expand. */
+.chain{display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px 8px}
+.chain-arrow{color:var(--muted)}
+.chain-warn{font-weight:600; color:#8a5b00}
+:root[data-theme="dark"] .chain-warn{color:var(--warn)}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .chain-warn{color:var(--warn)}}
+.people-row{display:grid; grid-template-columns:32px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.4fr); align-items:center; gap:4px 12px; padding:9px 0; border-top:1px solid var(--border)}
+.people-list > .people-row:first-child{border-top:none; padding-top:0}
+.people-avatar{width:32px; height:32px; border-radius:50%; overflow:hidden; flex:none}
+.people-avatar .account-avatar-img, .people-avatar .account-avatar-initials{width:100%; height:100%; font-size:12px}
+.people-dept{font-size:12.5px; color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.people-email{font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.people-row .list-title{white-space:normal}
+@media (max-width:640px){
+  .people-row{grid-template-columns:32px minmax(0, 1fr)}
+  .people-dept, .people-email{grid-column:2}
+}
 
-/* ── Company Org Chart (Teams tab, teamsDirectory.js) — reuses
-   .team-directory-card from accountMenu.css for each person; this just
-   handles the tree nesting. Indent + a left border on each child list is
-   enough of a "this is nested under that" cue without heavier
-   connector-line SVG work. */
-.org-chart-tree, .org-chart-children{list-style:none; margin:0; padding:0}
-.org-chart-tree > li{margin-bottom:10px}
-.org-chart-children{margin-top:10px; padding-left:32px; border-left:2px solid var(--border); display:flex; flex-direction:column; gap:10px}
+/* ── Teams tab (teamsDirectory.js): searchable directory + org chart as
+   one-line rows. Indent + a left rule per child list is the nesting cue. */
+.dir-search{width:240px; max-width:100%; padding-top:5px; padding-bottom:5px}
+.dir-section + .dir-section{margin-top:20px}
+.people-row[hidden], .dir-section[hidden]{display:none}
+/* Grouped by department already — the per-row department column is noise. */
+.people-list-grouped .people-row{grid-template-columns:32px minmax(0, 1.6fr) minmax(0, 1.4fr)}
+.people-list-grouped .people-dept{display:none}
+.org-tree, .org-children{list-style:none; margin:0; padding:0}
+.org-children{margin-left:13px; padding-left:20px; border-left:1px solid var(--border)}
+.org-node{display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; padding:6px 0; min-width:0}
+.org-node-name{font-size:13px; font-weight:600}
+.org-node-meta{font-size:12px; color:var(--muted); min-width:0}
+.org-node-count{font-size:11.5px; color:var(--muted); margin-left:auto; white-space:nowrap}
+.people-avatar-sm{width:26px; height:26px}
+.people-avatar-sm .account-avatar-initials{font-size:10.5px}
+@media (max-width:560px){ .dir-search{width:100%} .panel-actions:has(.dir-search){width:100%; margin-left:0} }
+
+/* ── Roster (roster.js): inline-edit table with a frozen name column, and
+   compact admin lists for departments / conflict pairs. */
+.panel-actions{align-items:center}
+.panel-actions > .form-control{flex:none; width:auto}
+.panel-actions > .dir-search{width:240px}
+.roster-filter{width:auto; padding-top:5px; padding-bottom:5px}
+@media (max-width:760px){ .panel-actions{flex-wrap:wrap; width:100%; margin-left:0} .panel-actions > .dir-search{flex:1 1 180px; width:auto} }
+.roster-create{padding:16px 18px; border-bottom:1px solid var(--border); background:var(--panel)}
+.roster-create[hidden]{display:none}
+.roster-table-wrap{border-radius:0 0 8px 8px}
+.roster-table td, .roster-table th{white-space:nowrap; vertical-align:middle}
+.roster-table .form-control{padding-top:4px; padding-bottom:4px; font-size:12.5px}
+.roster-table tr[hidden]{display:none}
+.roster-table .roster-name-cell{position:sticky; left:0; z-index:1; background:var(--surface-1); box-shadow:1px 0 0 var(--border); min-width:220px}
+.roster-table tbody tr:hover .roster-name-cell{background:var(--surface-1)}
+.roster-name{display:flex; align-items:center; gap:8px}
+/* Muted via colour, not opacity — opacity would make the sticky name cell see-through. */
+.roster-table tr.is-inactive .list-title, .roster-table tr.is-inactive .form-control{color:var(--muted)}
+.roster-status-cell .btn{margin-left:6px}
+.admin-list{margin-bottom:12px}
+.admin-row{border-top:1px solid var(--border); padding:6px 0}
+.admin-list > .admin-row:first-child{border-top:none}
+.admin-row-top{display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:30px}
+.admin-row-toggle{display:flex; align-items:center; gap:8px; flex:1; min-width:0; background:none; border:none; padding:0; text-align:left; cursor:pointer; font:inherit; color:inherit}
+.admin-row-toggle:hover, .admin-row-toggle:active{filter:none; transform:none}
+.admin-row-toggle .list-title{font-weight:600}
+.admin-row-chev{width:12px; color:var(--muted); font-size:11px}
+.admin-row-actions{display:flex; gap:6px; flex:none}
+.admin-row-edit{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
+.admin-row-edit .form-control{flex:1 1 160px; width:auto}
+.admin-row-members{margin:4px 0 4px 20px}
+.admin-add{display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding-top:10px; border-top:1px solid var(--border)}
+.admin-add .form-control{flex:1 1 160px; width:auto}
 
 /* ── Department headcount breakdown ── */
 .dept-row{display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border)}
@@ -153,6 +309,8 @@ button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
 .form-group{display:flex; flex-direction:column; gap:5px}
 .form-group.full{grid-column:1/-1}
+.form-group > .btn, .form-group > button{align-self:flex-start}
+table.kpi-team-table{table-layout:fixed}
 .form-label{font-size:12px; font-weight:650; color:var(--ink-2)}
 .form-control{
   font:inherit; font-size:13px; padding:8px 10px; border-radius:7px;
@@ -214,13 +372,21 @@ table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
 .team-tile-conflict-flag{font-size:11px; font-weight:700; color:#8a5b00; margin-top:4px}
 
 /* ── KPI page ── */
-.kpi-score-header{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap}
-.kpi-score-big{font-size:44px; font-weight:800; font-family:'DM Mono',monospace; line-height:1}
+/* KPI score panel + toolbar (panel system). Numerals are system-ui tabular,
+   same as the rest of the panel system — DM Mono is never loaded (CSP). */
+.kpi-toolbar{display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 14px; margin-bottom:14px}
+.kpi-toolbar-end{margin-left:auto}
+.kpi-score-line{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px}
+.kpi-score-big{font-size:40px; font-weight:650; line-height:1; letter-spacing:-0.02em; font-variant-numeric:tabular-nums}
+.kpi-score-facts{display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:10px; font-size:13px; color:var(--ink-2)}
+.kpi-score-facts > * + *{padding-left:14px; border-left:1px solid var(--border)}
+.kpi-band-note{margin-top:10px; font-size:12.5px; font-weight:600; color:var(--critical)}
+.kpi-pillar-section + .kpi-pillar-section{margin-top:18px}
+.kpi-dim-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); column-gap:28px}
+.kpi-metric-right-inline{display:flex; align-items:center; gap:10px}
+.kpi-metric-right-inline .kpi-metric-pts{margin-left:0}
+.kpi-dim-grid > .kpi-metric-row{border-bottom:none; border-top:1px solid var(--border); padding:8px 0}
 .kpi-score-unit{font-size:14px; color:var(--muted)}
-.kpi-pillar-summary{display:flex; flex-direction:column; gap:8px; min-width:200px}
-.kpi-pillar-chip{background:var(--panel); border-radius:8px; padding:10px 12px; border:1px solid var(--border)}
-.kpi-pillar-chip-label{font-size:11px; color:var(--muted)}
-.kpi-pillar-chip-val{font-size:16px; font-weight:700; font-family:'DM Mono',monospace}
 .kpi-bar{height:5px; background:var(--panel); border-radius:4px; overflow:hidden; margin-top:6px}
 .kpi-bar-fill{height:100%; border-radius:4px}
 .kpi-metric-row{padding:10px 0; border-bottom:1px solid var(--border)}
@@ -229,16 +395,13 @@ table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
 .kpi-metric-name{font-size:13px; font-weight:650}
 .kpi-metric-target{font-size:11.5px; color:var(--muted); margin-top:1px}
 .kpi-metric-right{text-align:right; flex-shrink:0}
-.kpi-metric-pts{font-size:12.5px; font-weight:700; margin-left:8px}
+.kpi-metric-pts{font-size:13px; font-weight:650; margin-left:8px; font-variant-numeric:tabular-nums}
 .kpi-section-title{font-size:12px; font-weight:700; color:var(--ink-2); margin:16px 0 4px; text-transform:uppercase; letter-spacing:0.03em}
 .kpi-section-title:first-child{margin-top:0}
 .kpi-entry-row{display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap}
 .kpi-entry-row input{width:120px}
 .kpi-metric-comment{font-size:12px; font-style:italic; color:var(--ink-2); margin-top:6px; padding:6px 8px; background:var(--panel); border-radius:6px}
 
-.kpi-required-actions-card{border-color:#fab21966}
-.kpi-action-row{font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--border)}
-.kpi-action-row:last-child{border-bottom:none}
 
 .kpi-notif-badge{background:var(--critical); color:#fff; border-radius:20px; font-size:10px; font-weight:700; padding:1px 6px; margin-left:4px}
 .kpi-notif-panel{
@@ -260,14 +423,38 @@ table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
 .kpi-notif-title{font-size:12.5px; font-weight:650}
 .kpi-notif-body{font-size:12px; color:var(--ink-2); margin-top:2px}
 
-.kpi-peer-review-row.kpi-peer-review-done{border-color:var(--good)}
-.kpi-peer-review-row.kpi-peer-review-incomplete{border-color:var(--critical)}
+/* Team review rating grid: one row per person, five rating columns. */
+.pr-row{display:grid; grid-template-columns:minmax(150px, 1.4fr) repeat(5, minmax(84px, 1fr)) minmax(130px, auto); gap:6px 10px; align-items:center; padding:8px 0; border-top:1px solid var(--border)}
+.pr-head{font-size:11.5px; font-weight:650; color:var(--muted); padding:0 0 6px; border-top:none}
+.pr-person{min-width:0}
+.pr-cell{display:block; min-width:0}
+.pr-cell-label{display:none}
+.pr-cell .form-control{width:100%; padding-top:5px; padding-bottom:5px}
+.pr-nowork{display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink-2); white-space:nowrap}
+.pr-comment{grid-column:2 / -1}
+.pr-comment .form-control{padding-top:5px; padding-bottom:5px; font-size:12.5px}
+.pr-dept + .pr-dept{margin-top:22px}
+.pr-legend{margin:0; padding-left:18px; font-size:12.5px; line-height:1.5; color:var(--ink-2)}
+.pr-legend li + li{margin-top:4px}
+.pr-submit-bar{position:sticky; bottom:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:12px 18px; border-top:1px solid var(--border); background:var(--surface-1); border-radius:0 0 8px 8px}
+.kpi-peer-review-row.kpi-peer-review-done .kpi-peer-review-fields,
+.kpi-peer-review-row.kpi-peer-review-done .pr-nowork{display:none}
+.kpi-peer-review-row.kpi-peer-review-incomplete{box-shadow:-10px 0 0 color-mix(in srgb, var(--critical) 5%, transparent), -13px 0 0 var(--critical); background:color-mix(in srgb, var(--critical) 5%, transparent)}
 .kpi-peer-review-fields[hidden]{display:none}
+.metric-of{font-size:14px; font-weight:500; color:var(--muted)}
+table.data-table th.num, table.data-table td.num{text-align:right; font-variant-numeric:tabular-nums}
+@media (max-width:900px){
+  .pr-head{display:none}
+  .pr-row{grid-template-columns:repeat(auto-fill, minmax(120px, 1fr))}
+  .pr-person, .pr-comment, .pr-nowork{grid-column:1 / -1}
+  .pr-cell-label{display:block; font-size:11.5px; color:var(--muted); margin-bottom:2px}
+}
 
-.kpi-trend-row{display:flex; align-items:flex-end; gap:8px; height:120px; padding-top:8px}
+.kpi-trend-row{display:flex; align-items:flex-end; gap:8px; height:150px; padding-top:8px}
 .kpi-trend-bar{display:flex; flex-direction:column; align-items:center; justify-content:flex-end; flex:1; height:100%}
 .kpi-trend-bar-fill{width:100%; max-width:28px; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px}
-.kpi-trend-bar-label{font-size:10px; color:var(--muted); margin-top:4px}
+.kpi-trend-bar-label{font-size:10.5px; color:var(--muted); margin-top:4px; white-space:nowrap}
+.kpi-trend-bar-value{font-size:11.5px; font-weight:650; font-variant-numeric:tabular-nums; margin-bottom:3px}
 
 .alert{border-radius:8px; padding:10px 12px; font-size:12.5px; display:flex; gap:8px; align-items:flex-start}
 .alert-info{background:rgba(66,140,255,0.10); color:var(--ink)}
