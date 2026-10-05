@@ -1,3 +1,4 @@
+import { clientBookPanel } from './clientBook.js';
 import { balanceSheet, bmodeBar, decisionItem, execSummary, fnByPl, fnGrid, fnMaster, kpi, panel, pnlTable, salesVsTarget, sortTable, srcBadge, stat } from './components.js';
 import { D } from './data.js';
 import { allFn, canEditBudgets, ceoQueue, CUR, E, KPI, LF, liveBudget, liveHealth, LK, S, tierOf, ydel, yfmt, YRS } from './model.js';
@@ -220,24 +221,13 @@ P.focus=()=>{
   </div>`;
 };
 P.clients=()=>{
-  const f=(S.filter.clients||'').toLowerCase();
-  const live=D.revenue.live,dash='<span class="note">—</span>';
-  const rel=n=>n==null?dash:`<span class="num" title="Average ${n} days to pay">${'●'.repeat(n)}<span style="color:var(--line)">${'●'.repeat(5-n)}</span></span>`;
-  const rows=D.revenue.clients.filter(c=>!f||c.name.toLowerCase().includes(f)).map(c=>({
-    v:[c.name,c.value,c.value/D.revenue.trailing90*100,c.type,c.reliability,c.avgPay,c.overdue],
-    od:c.overdue,
-    c:[`${esc(c.name)}${c.repeat===false?' <span class="lite">new</span>':''}`,
-       `<span class="num">${egp(c.value,false)}</span>`,
-       `<span class="num">${(c.value/D.revenue.trailing90*100).toFixed(1)}%</span>`,
-       c.type==null?dash:`<span class="lite">${esc(c.type)}</span>`,
-       `<span style="color:${c.reliability<=2?'var(--badtx)':c.reliability>=4?'var(--goodtx)':'var(--ink2)'}">${rel(c.reliability)}</span>`,
-       c.avgPay==null?dash:`<span class="num">${c.avgPay}d</span>`,
-       c.overdue?`<span class="num" style="color:var(--badtx)">${egp(c.overdue,false)}</span>`:'<span class="note">—</span>']}));
+  const live=D.revenue.live;
   return `
   <div class="strip">
     ${live?kpi('revenue_total')+kpi('dso')+kpi('overdue_60_share')+kpi('collection_rate')+kpi('retainer_share')
       :kpi('revenue_total',{label:'Net revenue'})+kpi('retainer_share')+kpi('dso')+kpi('overdue_60_share')+kpi('revenue_at_risk')}
   </div>
+  ${clientBookPanel()}
   <div class="cols c2">
     ${live?panel('Invoiced revenue by month'+srcBadge('finance'),`${CUR()} · untaxed, net of credit notes · ${esc(D.months.at(-1))} is ${D.revenue.monthDay} days in`,
         `<div class="pb"><figure><div class="plot" id="rev1"></div></figure></div>`)
@@ -257,15 +247,7 @@ P.clients=()=>{
         <td class="n">${esc(r.owner)}</td></tr>`;}).join('')}</tbody></table></div>
     <div class="pb"><div class="alert"><div><b>${egp(D.renewals.uncovered,false)} of retainer revenue expires with nothing in the pipeline to replace it.</b>
       Horizon Telecom alone is the second-largest account and ends in 87 days.</div></div></div>`)}
-  ${panel('Client book'+(live?srcBadge('finance'):''),live?`trailing 90 days · ${CUR()} invoiced, untaxed · click a column to sort`:'trailing 90 days · click a column to sort',
-    sortTable('clients',[{t:'Client'},{t:'Trailing 90d',n:1},{t:'Share',n:1},{t:'Type'},{t:'Reliability',n:1},{t:'Avg days to pay',n:1},{t:'Overdue',n:1}],rows,
-      {flagRow:r=>r.v[4]!=null&&r.v[4]<=2}),
-    `<input class="inp" id="fclients" placeholder="Filter clients…" value="${esc(S.filter.clients||'')}" style="width:170px">`)}
-  ${live?`<p class="note">${D.revenue.concentration==null?'No invoices in the last 90 days.':`${esc(D.revenue.topClient)} is ${D.revenue.concentration}% of trailing-90-day invoicing${D.revenue.concentration>25?' — above the 25% concentration threshold':''}.`}
-    Type, payment reliability and days to pay aren't in Odoo's invoice data yet. Odoo customers that are the same client are grouped once they're linked on the <button class="btn" data-href="/client-mapping?from=ceo" style="padding:0 6px">client-mapping page</button>.</p>`
-  :`<p class="note">Reliability is average days to pay across the client's history, so it is a property of the account rather than of an invoice.
-    The two accounts at one dot are ${egp(D.revenue.clients.filter(c=>c.reliability<=2).reduce((a,c)=>a+c.value,0),false)} of trailing-90 revenue
-    and ${egp(D.revenue.clients.filter(c=>c.reliability<=2).reduce((a,c)=>a+c.overdue,0),false)} of what is overdue. ${D.revenue.repeatClients} of ${D.revenue.activeClients} clients are repeat business.</p>`}`;
+`;
 };
 P.delivery=()=>{
   const r=D.records.delivery;

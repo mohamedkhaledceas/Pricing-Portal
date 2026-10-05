@@ -55,4 +55,8 @@ function setClientId(dealId, clientId) {
   db.prepare('UPDATE commercial_lead_deal_records SET client_id = ?, updated_at = ? WHERE deal_id = ?').run(clientId, new Date().toISOString(), dealId);
 }
 
-module.exports = { upsert, findByDealId, findByClientId, setClientId };
+function listWithClient() {
+  return db.prepare('SELECT * FROM commercial_lead_deal_records WHERE client_id IS NOT NULL ORDER BY updated_at DESC').all();
+}
+
+module.exports = { upsert, findByDealId, findByClientId, setClientId, listWithClient };

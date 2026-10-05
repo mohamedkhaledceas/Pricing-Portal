@@ -28,4 +28,30 @@ function insert({ name, website, primaryContactEmail }) {
   return findById(Number(lastInsertRowid));
 }
 
-module.exports = { listActive, findById, insert };
+/* Every client, active or not, with the profile fields the client book
+   shows. Inactive clients keep their history, so they're listed too. */
+const toClientProfile = (row) => ({
+  id: row.id,
+  name: row.name,
+  status: row.status,
+  country: row.country,
+  industry: row.industry,
+  website: row.website,
+  companySize: row.company_size,
+  primaryContactName: row.primary_contact_name,
+  primaryContactEmail: row.primary_contact_email,
+  primaryContactPhone: row.primary_contact_phone,
+  accountManager: row.account_manager,
+  currency: row.currency,
+});
+
+function listAllProfiles() {
+  return db.prepare('SELECT * FROM clients ORDER BY name COLLATE NOCASE').all().map(toClientProfile);
+}
+
+function findProfileById(id) {
+  const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+  return row ? toClientProfile(row) : null;
+}
+
+module.exports = { listActive, findById, insert, listAllProfiles, findProfileById };

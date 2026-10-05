@@ -30,4 +30,6 @@ module.exports = {
   // Read interface for the CEO Control Room (ceo-dashboard) — never the
   // repositories directly, same rule as finance's financeMetricsService.
   getPipelineSummary: dealsService.getPipelineSummary,
+  getClientDeals: dealsService.getClientDeals,
+  getDealsForClient: dealsService.getDealsForClient,
 };

@@ -19,6 +19,7 @@ const { transaction } = require('./repositories/unitOfWork');
 
 const createOdooSyncService = require('./services/odooSyncService');
 const createFinanceMetricsService = require('./services/financeMetricsService');
+const createCustomerLedgerService = require('./services/customerLedgerService');
 const createClientMappingService = require('./services/clientMappingService');
 const createClientMappingController = require('./controllers/clientMappingController');
 const createFinanceRouter = require('./routes/index');
@@ -40,6 +41,11 @@ const financeMetricsService = createFinanceMetricsService({
   invoiceRepository, paymentRepository, syncStateRepository, linkRepository,
 });
 
+// Read by the CEO Control Room's client book (same public-interface rule).
+const customerLedgerService = createCustomerLedgerService({
+  invoiceRepository, paymentRepository, partnerRepository, clientRepository, linkRepository,
+});
+
 const clientMappingService = createClientMappingService({
   clientRepository, partnerRepository, linkRepository, invoiceRepository, transaction, audit,
 });
@@ -56,4 +62,6 @@ function startSchedule() {
   startOdooSyncSchedule({ odooSyncService, logger, intervalMinutes: config.odooSyncMinutes });
 }
 
-module.exports = { router, odooSyncService, financeMetricsService, startOdooSyncSchedule: startSchedule };
+module.exports = {
+  router, odooSyncService, financeMetricsService, customerLedgerService, startOdooSyncSchedule: startSchedule,
+};

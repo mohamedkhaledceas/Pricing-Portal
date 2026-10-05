@@ -2,7 +2,7 @@
    (migration 032). Only SQL here. removeByIds exists on purpose: this is a
    cache of Odoo, so a record deleted in Odoo is removed here too. */
 const db = require('../../../../db');
-const { toOpenInvoice } = require('../models/odooRecord.model');
+const { toOpenInvoice, toInvoice } = require('../models/odooRecord.model');
 
 const COLUMNS = [
   'odoo_id', 'company_id', 'move_type', 'name', 'partner_id', 'partner_name', 'invoice_date', 'invoice_date_due',
@@ -89,7 +89,38 @@ function summarizeByPartner() {
   `).all();
 }
 
+/* Client book (CEO Control Room): one row per customer per company, all
+   time, with this year's invoicing, what's still open and what's past due.
+   The salesperson is the one on that customer's latest invoice there. */
+function summarizeByPartnerAndCompany(yearStart, today) {
+  return db.prepare(`
+    SELECT i.partner_id AS partnerId, MAX(i.partner_name) AS partnerName, i.company_id AS companyId,
+           SUM(CASE WHEN i.invoice_date >= ? THEN i.amount_untaxed_signed ELSE 0 END) AS invoicedYtd,
+           SUM(i.amount_untaxed_signed) AS invoicedTotal,
+           SUM(i.amount_residual_signed) AS openAmount,
+           SUM(CASE WHEN i.invoice_date_due < ? THEN i.amount_residual_signed ELSE 0 END) AS overdueAmount,
+           MAX(i.invoice_date) AS lastInvoiceDate,
+           COUNT(*) AS invoiceCount,
+           (SELECT l.salesperson_name FROM odoo_invoices l
+             WHERE l.partner_id = i.partner_id AND l.company_id = i.company_id AND l.state = 'posted'
+             ORDER BY l.invoice_date DESC, l.odoo_id DESC LIMIT 1) AS salespersonName
+    FROM odoo_invoices i
+    WHERE i.state = 'posted' AND i.partner_id IS NOT NULL
+    GROUP BY i.partner_id, i.company_id
+  `).all(yearStart, today);
+}
+
+function listPostedByPartners(partnerIds) {
+  if (!partnerIds.length) return [];
+  return db.prepare(`
+    SELECT * FROM odoo_invoices
+    WHERE state = 'posted' AND partner_id IN (${partnerIds.map(() => '?').join(', ')})
+    ORDER BY invoice_date DESC, odoo_id DESC
+  `).all(...partnerIds).map(toInvoice);
+}
+
 module.exports = {
+  summarizeByPartnerAndCompany, listPostedByPartners,
   listPartnerIds, summarizeByPartner,
   upsertMany, listIdsByCompanies, removeByIds, sumUntaxedByMonth, sumTotalSigned, sumUntaxedByPartner, listOpen,
 };

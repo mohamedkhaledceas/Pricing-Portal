@@ -1,4 +1,5 @@
 import { chBars, chCols, chLine, chStack, chWater, ico } from './charts.js';
+import { loadBook } from './clientBook.js';
 import { D } from './data.js';
 import { ceoQueue, CUR, KPI, LK, pages, PAGES, S, tierOf, YRS } from './model.js';
 import { P } from './pages.js';
@@ -35,7 +36,7 @@ export function openDrill(id){
   const m=LK(id);if(!m)return;const k=m.k;
   const rec=D.records[k.drill],s=D.series[id];
   const linked=D.risks.filter(r=>r.kpi===id),dec=D.decisions.filter(d=>(d.kpis||[]).includes(id));
-  $('#dr').dataset.open='true';document.body.style.overflow='hidden';
+  $('#dr').dataset.open='true';$('#dr').classList.remove('wide');document.body.style.overflow='hidden';
   $('#dr .dbody').innerHTML=`
     <div><div class="dkick">${esc(k.component)} · ${esc(k.dept)}</div>
       <div class="dtitle">${esc(k.name)}${k.live?' <span class="mon live">LIVE</span>':''}</div>
@@ -62,7 +63,7 @@ export function openDrill(id){
     ${dec.length?`<h3 class="sec">Linked decisions</h3>${dec.map(d=>`<div class="kv"><span>${esc(d.title)}</span><span class="tier t-${tierOf(d).tier}">${tierOf(d).tier.toUpperCase()}</span></div>`).join('')}`:''}`;
   if(s)chLine($('#dtr'),{labels:D.weekLabels,values:s,fmtv:v=>fmt(k,v),ref:m.target,refLab:'target',intTicks:k.unit!=='egp'});
 }
-export const closeDrill=()=>{$('#dr').dataset.open='false';document.body.style.overflow='';};
+export const closeDrill=()=>{$('#dr').dataset.open='false';$('#dr').classList.remove('wide');document.body.style.overflow='';};
 /* ═════ shell ═════ */
 export function renderShell(){
   if(S.scope==='budget'){
@@ -108,6 +109,7 @@ export function render(){
   if(!budgetOnly){renderYearSel();renderEntSel();renderSync();}
   ['#entsel','#yr','#cmp','#syncchip'].forEach(q=>{const n=$(q);if(n)n.hidden=bare;});
   draw();
+  loadBook();
 }
 /* The brand palette has a light form and a dark form that are not variants of
    each other, so the dark class is applied explicitly rather than inherited. */

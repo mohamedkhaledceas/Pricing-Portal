@@ -35,4 +35,10 @@ function listAll() {
   return db.prepare('SELECT * FROM odoo_partners ORDER BY name COLLATE NOCASE').all().map(toPartner);
 }
 
-module.exports = { upsertMany, listIds, removeByIds, findById, listAll };
+function findByIds(odooIds) {
+  if (!odooIds.length) return [];
+  return db.prepare(`SELECT * FROM odoo_partners WHERE odoo_id IN (${odooIds.map(() => '?').join(', ')})`)
+    .all(...odooIds).map(toPartner);
+}
+
+module.exports = { upsertMany, listIds, removeByIds, findById, findByIds, listAll };

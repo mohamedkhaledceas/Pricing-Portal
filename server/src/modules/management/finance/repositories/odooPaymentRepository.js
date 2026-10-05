@@ -1,6 +1,7 @@
 /* odoo_payments — read-only mirror of Odoo account.payment (migration 032).
    Only SQL here. Same cache semantics as odooInvoiceRepository.js. */
 const db = require('../../../../db');
+const { toPayment } = require('../models/odooRecord.model');
 
 const COLUMNS = [
   'odoo_id', 'company_id', 'partner_id', 'partner_name', 'partner_type', 'payment_type', 'date', 'state',
@@ -41,4 +42,15 @@ function sumCustomerCash(companyId, states, fromDate, toDate) {
   `).get(companyId, ...states, fromDate, toDate).total;
 }
 
-module.exports = { upsertMany, listIdsByCompanies, removeByIds, sumCustomerCash };
+/* Client book detail: a customer's payments, cancelled ones excluded. */
+function listCustomerByPartners(partnerIds) {
+  if (!partnerIds.length) return [];
+  return db.prepare(`
+    SELECT * FROM odoo_payments
+    WHERE partner_type = 'customer' AND state != 'canceled'
+      AND partner_id IN (${partnerIds.map(() => '?').join(', ')})
+    ORDER BY date DESC, odoo_id DESC
+  `).all(...partnerIds).map(toPayment);
+}
+
+module.exports = { upsertMany, listIdsByCompanies, removeByIds, sumCustomerCash, listCustomerByPartners };

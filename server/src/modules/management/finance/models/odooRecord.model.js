@@ -112,7 +112,39 @@ function toOpenInvoice(row) {
   };
 }
 
+/* Client book detail. Amounts are the *_signed company-currency ones
+   (credit notes negative), same basis as every other finance figure. */
+function toInvoice(row) {
+  return {
+    odooId: row.odoo_id,
+    companyId: row.company_id,
+    partnerId: row.partner_id,
+    name: row.name,
+    isCreditNote: row.move_type === 'out_refund',
+    invoiceDate: row.invoice_date,
+    invoiceDateDue: row.invoice_date_due,
+    paymentState: row.payment_state,
+    untaxed: row.amount_untaxed_signed,
+    total: row.amount_total_signed,
+    residual: row.amount_residual_signed,
+    salespersonName: row.salesperson_name,
+  };
+}
+
+function toPayment(row) {
+  return {
+    odooId: row.odoo_id,
+    companyId: row.company_id,
+    partnerId: row.partner_id,
+    date: row.date,
+    state: row.state,
+    paymentType: row.payment_type,
+    amount: row.amount_company_currency_signed,
+    journalName: row.journal_name,
+  };
+}
+
 module.exports = {
   ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS,
-  toInvoiceRow, toPaymentRow, toPartnerRow, toPartner, toSyncState, toOpenInvoice,
+  toInvoiceRow, toPaymentRow, toPartnerRow, toPartner, toSyncState, toOpenInvoice, toInvoice, toPayment,
 };

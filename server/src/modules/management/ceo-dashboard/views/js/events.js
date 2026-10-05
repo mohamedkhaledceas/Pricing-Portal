@@ -113,8 +113,6 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('input',e=>{
   if(e.target.id==='cmdin'){cmdS=0;cmdRender(e.target.value);}
-  if(e.target.id==='fclients'){S.filter.clients=e.target.value;const pos=e.target.selectionStart;render();
-    const n=$('#fclients');if(n){n.focus();n.setSelectionRange(pos,pos);}}
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='yr'){S.year=e.target.value;if(S.cmp===S.year)S.cmp='';

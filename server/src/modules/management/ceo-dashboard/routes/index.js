@@ -8,6 +8,12 @@ const { ROLES } = require('../../../../common/constants/roles');
    - GET /api/ceo-dashboard/budget — requireBudgetViewer (ceo, admin,
      operations, people_culture). Returns only the Budget tab's data;
      operations and people_culture get no other route here.
+   - GET /api/ceo-dashboard/clients — requireCeo. The cross-company client
+     book (query: search, company, type, link, overdue, sort, currency,
+     dir, page, pageSize; 400 on anything outside the allowed values).
+   - GET /api/ceo-dashboard/clients/:key — requireCeo. One client's Odoo
+     record, deals and live ClickUp tasks (key client:<id> | partner:<id>;
+     400 malformed, 404 unknown).
 
    Gated to ROLES.CEO and ROLES.ADMIN — narrower than the broader
    USER_MANAGER_ROLES set commercial-leads uses (which also includes
@@ -23,6 +29,8 @@ function createCeoDashboardRouter({ ceoDashboardController, authenticate }) {
 
   router.get('/ceo-dashboard/control-room', authenticate, requireCeo, ceoDashboardController.controlRoom);
   router.get('/ceo-dashboard/budget', authenticate, requireBudgetViewer, ceoDashboardController.budget);
+  router.get('/ceo-dashboard/clients', authenticate, requireCeo, ceoDashboardController.clients);
+  router.get('/ceo-dashboard/clients/:key', authenticate, requireCeo, ceoDashboardController.clientDetail);
 
   return router;
 }

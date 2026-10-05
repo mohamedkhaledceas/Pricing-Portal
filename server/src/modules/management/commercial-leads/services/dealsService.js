@@ -4,6 +4,7 @@
 const { ValidationError } = require('../../../../common/errors');
 const { LISTS, INSIGHTS_LIST_ID } = require('../constants');
 const dealRepository = require('../repositories/dealRepository');
+const dealRecordRepository = require('../repositories/dealRecordRepository');
 const dailyCountsRepository = require('../repositories/dailyCountsRepository');
 const stageRepository = require('../repositories/stageRepository');
 const statusColorRepository = require('../repositories/statusColorRepository');
@@ -121,6 +122,40 @@ function getPipelineSummary() {
   };
 }
 
+/* The CEO Control Room's client book (via this module's container): every
+   deal record tied to a portal client, from any tracked list, with the
+   funnel bucket its status maps to (null for statuses outside the funnel,
+   e.g. the Active Clients list's own). */
+const LIST_NAMES = { pipeline: 'Pipeline', activeClients: 'Active clients', offboarding: 'Offboarding' };
+const LIST_KEY_BY_ID = new Map(Object.entries(LISTS).map(([key, id]) => [id, key]));
+
+function toClientDeal(row) {
+  const list = LIST_KEY_BY_ID.get(row.list_id) || null;
+  return {
+    clientId: row.client_id,
+    dealId: row.deal_id,
+    name: row.name,
+    status: row.status.trim(),
+    bucket: mapStatusToBucket(row.status),
+    list,
+    listName: LIST_NAMES[list] || 'Other',
+    value: row.value,
+    currency: row.currency,
+    salesPerson: row.sales_person,
+    accountManager: row.account_manager,
+    createdAt: row.clickup_created_at,
+    updatedAt: row.clickup_updated_at,
+  };
+}
+
+function getClientDeals() {
+  return dealRecordRepository.listWithClient().map(toClientDeal);
+}
+
+function getDealsForClient(clientId) {
+  return dealRecordRepository.findByClientId(clientId).map(toClientDeal);
+}
+
 // Wraps a value in quotes and doubles any embedded quotes whenever it
 // contains a comma, quote, or newline — the one thing the older KPI-export
 // precedent (kpiScoringService.exportHistoryCsv) skips, safely only because
@@ -167,4 +202,5 @@ function exportDealsCsv(listKey) {
 
 module.exports = {
   getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis, getPipelineSummary, exportDealsCsv,
+  getClientDeals, getDealsForClient,
 };
