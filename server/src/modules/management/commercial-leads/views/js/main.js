@@ -58,6 +58,7 @@ function bindUi() {
   // "Unauthorized" screen instead of anywhere useful.
   $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
   $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
+  $('#btnClientMapping').addEventListener('click', () => { window.location.href = '/client-mapping?from=commercial-lead'; });
   bindDealsUi();
   bindQuarterlyUi();
 }

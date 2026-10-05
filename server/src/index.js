@@ -61,6 +61,7 @@ const employeesHtmlPath = path.join(__dirname, 'modules', 'employees', 'views', 
 const plannerHtmlPath = path.join(__dirname, 'modules', 'pricing', 'views', 'index.html');
 const commercialLeadHtmlPath = path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views', 'index.html');
 const ceoDashboardHtmlPath = path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views', 'index.html');
+const clientMappingHtmlPath = path.join(__dirname, 'modules', 'management', 'finance', 'views', 'index.html');
 const loginHtmlPath = path.join(__dirname, 'modules', 'auth', 'views', 'index.html');
 
 /* Content-Security-Policy — see docs/security.md §2 for the full audit
@@ -78,7 +79,7 @@ const loginHtmlPath = path.join(__dirname, 'modules', 'auth', 'views', 'index.ht
    frontend alone has ~90 inline style="" attributes, and migrating
    those off is a separate, much larger effort than adding CSP. */
 const inlineScriptHashesAllowed = Array.from(new Set(
-  [employeesHtmlPath, plannerHtmlPath, commercialLeadHtmlPath, ceoDashboardHtmlPath, loginHtmlPath]
+  [employeesHtmlPath, plannerHtmlPath, commercialLeadHtmlPath, ceoDashboardHtmlPath, clientMappingHtmlPath, loginHtmlPath]
     .flatMap(inlineScriptHashes),
 ));
 app.use(helmet({
@@ -167,6 +168,14 @@ app.get('/ceo', (req, res) => {
 });
 app.use('/ceo', express.static(path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views')));
 
+/* Client mapping review (ClickUp clients <-> Odoo customers) — its own page,
+   linked from the CEO dashboard, Margin Planner and Commercial Lead headers;
+   API gated to ceo/admin/operations, see modules/management/finance/. */
+app.get('/client-mapping', (req, res) => {
+  res.sendFile(clientMappingHtmlPath);
+});
+app.use('/client-mapping', express.static(path.join(__dirname, 'modules', 'management', 'finance', 'views')));
+
 /* /login — the one place auth (sign in / sign up) lives. Every other page
    redirects here when a silent refresh fails; on success this page's own
    JS redirects to '/' and lets the destination page pull a fresh access
@@ -227,4 +236,5 @@ httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);
   management.startReconciliationSchedule();
   management.scheduleQuarterFreeze();
+  management.startOdooSyncSchedule();
 });

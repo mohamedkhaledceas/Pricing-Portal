@@ -1,0 +1,216 @@
+/* Revenue + Collections figures for one entity, computed from the Odoo
+   cache tables (docs/adr/0013 §10). This is finance's public read
+   interface — the CEO dashboard calls it, never the repositories.
+
+   Definitions (ADR-0013, "Definitions"):
+   - Revenue: posted customer invoices minus credit notes, by invoice date,
+     untaxed (VAT excluded, media pass-through included), company currency.
+   - Collection rate: cash collected in the period ÷ amount billed in the
+     period × 100. Both sides include VAT — cash received does, so billing
+     has to as well or the rate is understated by the VAT share.
+   - Aging: by due date (most invoices have no payment term, so the share
+     without one is reported alongside).
+   - DSO: open receivables ÷ the last 90 days' billing × 90.
+
+   Customers are grouped by portal client when a person has linked the
+   Odoo customer to one (docs/adr/0013 §8) — so duplicate Odoo records for
+   the same client add up, and concentration isn't understated — and by
+   the Odoo customer itself otherwise. Links are read on every call, so a
+   change on the client-mapping page shows here immediately.
+
+   All dates are calendar dates in Africa/Cairo, as YYYY-MM-DD strings —
+   the same form Odoo stores invoice_date / payment date in. */
+const { ValidationError } = require('../../../../common/errors');
+const { ENTITIES, COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS } = require('../constants');
+
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const TOP_CLIENTS = 10;
+const TRAILING_DAYS = 90;
+const AGING_BUCKETS = [
+  { name: 'Not yet due', maxDays: 0 },
+  { name: '1–30 days', maxDays: 30 },
+  { name: '31–60 days', maxDays: 60 },
+  { name: '61–90 days', maxDays: 90 },
+  { name: '90+ days', maxDays: Infinity },
+];
+
+function cairoToday() {
+  // en-CA formats as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const toUtc = (date) => Date.parse(`${date}T00:00:00Z`);
+const addDays = (date, days) => new Date(toUtc(date) + days * DAY_MS).toISOString().slice(0, 10);
+const daysBetween = (from, to) => Math.round((toUtc(to) - toUtc(from)) / DAY_MS);
+const round = (value) => Math.round(value);
+const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
+
+function createFinanceMetricsService({
+  invoiceRepository, paymentRepository, syncStateRepository, linkRepository, today = cairoToday,
+}) {
+  /* partnerId -> { key, clientId, name } for this call. */
+  function buildCustomerResolver() {
+    const linked = new Map(linkRepository.listLinkedWithClientNames().map((l) => [l.odooPartnerId, l]));
+    return (partnerId, partnerName) => {
+      const link = linked.get(partnerId);
+      return link
+        ? { key: `client:${link.clientId}`, clientId: link.clientId, name: link.clientName }
+        : { key: `partner:${partnerId}`, clientId: null, name: partnerName };
+    };
+  }
+
+  function entityOrThrow(entityKey) {
+    const entity = ENTITIES[entityKey];
+    if (!entity) throw new ValidationError(`Unknown finance entity "${entityKey}".`);
+    return entity;
+  }
+
+  function buildRevenue(companyId, asOf, overdueByKey, resolve) {
+    const year = asOf.slice(0, 4);
+    const monthIndex = Number(asOf.slice(5, 7)) - 1;
+    const byMonth = new Map(
+      invoiceRepository.sumUntaxedByMonth(companyId, `${year}-01-01`, asOf).map((m) => [m.month, m.total]),
+    );
+    const months = MONTH_LABELS.slice(0, monthIndex + 1);
+    const actual = months.map((_, i) => round(byMonth.get(`${year}-${String(i + 1).padStart(2, '0')}`) || 0));
+
+    const trailingFrom = addDays(asOf, -(TRAILING_DAYS - 1));
+    const byCustomer = new Map();
+    for (const p of invoiceRepository.sumUntaxedByPartner(companyId, trailingFrom, asOf)) {
+      const who = resolve(p.partnerId, p.partnerName);
+      const c = byCustomer.get(who.key) || { ...who, partnerIds: [], total: 0, am: null, amShare: -Infinity };
+      c.partnerIds.push(p.partnerId);
+      c.total += p.total;
+      // Salesperson of the Odoo record contributing most to this customer.
+      if (p.total > c.amShare) { c.am = p.salespersonName; c.amShare = p.total; }
+      byCustomer.set(who.key, c);
+    }
+    const customers = [...byCustomer.values()].sort((a, b) => b.total - a.total);
+    const trailing90 = round(customers.reduce((sum, c) => sum + c.total, 0));
+    const toClient = (c) => ({
+      key: c.key,
+      clientId: c.clientId,
+      linked: c.clientId !== null,
+      name: c.name,
+      value: round(c.total),
+      am: c.am,
+      overdue: round(overdueByKey.get(c.key) || 0),
+    });
+    const clients = customers.slice(0, TOP_CLIENTS).map(toClient);
+    const rest = customers.slice(TOP_CLIENTS);
+    if (rest.length) {
+      clients.push({
+        key: null,
+        clientId: null,
+        linked: false,
+        name: `Other (${rest.length} ${rest.length === 1 ? 'client' : 'clients'})`,
+        value: round(rest.reduce((sum, c) => sum + c.total, 0)),
+        am: null,
+        overdue: round(rest.reduce((sum, c) => sum + (overdueByKey.get(c.key) || 0), 0)),
+      });
+    }
+    const top = customers[0] || null;
+
+    return {
+      ytd: round(actual.reduce((sum, v) => sum + v, 0)),
+      mtd: actual[monthIndex],
+      monthDay: Number(asOf.slice(8, 10)),
+      months,
+      actual,
+      trailing90,
+      clients,
+      topClient: top ? top.name : null,
+      concentration: top && trailing90 > 0 ? pct(top.total, trailing90) : null,
+      concentrationThreshold: FINANCE_THRESHOLDS.concentrationPct,
+    };
+  }
+
+  function buildCollections(companyId, asOf, openInvoices, resolve) {
+    const aging = AGING_BUCKETS.map((b) => ({ name: b.name, value: 0 }));
+    const overdueByKey = new Map();
+    const detailByKey = new Map();
+    let receivables = 0;
+    let past60 = 0;
+    let withoutTerms = 0;
+
+    for (const inv of openInvoices) {
+      receivables += inv.residual;
+      if (inv.invoiceDateDue === inv.invoiceDate) withoutTerms += 1;
+      const daysPastDue = inv.invoiceDateDue ? daysBetween(inv.invoiceDateDue, asOf) : 0;
+      aging[AGING_BUCKETS.findIndex((b) => daysPastDue <= b.maxDays)].value += inv.residual;
+      if (daysPastDue > FINANCE_THRESHOLDS.agedWatchDays) past60 += inv.residual;
+      if (daysPastDue > 0) {
+        const who = resolve(inv.partnerId, inv.partnerName);
+        overdueByKey.set(who.key, (overdueByKey.get(who.key) || 0) + inv.residual);
+        const d = detailByKey.get(who.key) || {
+          key: who.key, clientId: who.clientId, linked: who.clientId !== null, name: who.name,
+          value: 0, days: 0, invoices: 0, am: inv.salespersonName,
+        };
+        d.value += inv.residual;
+        d.days = Math.max(d.days, daysPastDue);
+        d.invoices += 1;
+        detailByKey.set(who.key, d);
+      }
+    }
+
+    const monthStart = `${asOf.slice(0, 7)}-01`;
+    const billedMtd = invoiceRepository.sumTotalSigned(companyId, monthStart, asOf);
+    const collectedMtd = paymentRepository.sumCustomerCash(companyId, COLLECTED_PAYMENT_STATES, monthStart, asOf);
+    const billed90 = invoiceRepository.sumTotalSigned(companyId, addDays(asOf, -(TRAILING_DAYS - 1)), asOf);
+
+    const detail = [...detailByKey.values()]
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .map((d) => ({ ...d, value: round(d.value) }));
+
+    return {
+      collections: {
+        receivables: round(receivables),
+        openInvoices: openInvoices.length,
+        aging: aging.map((a) => ({ ...a, value: round(a.value) })),
+        // From the aging buckets, not `detail`: detail drops customers whose
+        // credit notes leave them net negative, which would overstate this.
+        overdue: round(aging.slice(1).reduce((sum, a) => sum + a.value, 0)),
+        overdue60plus: round(past60),
+        overdue60pct: pct(past60, receivables),
+        withoutTermsPct: pct(withoutTerms, openInvoices.length),
+        dso: billed90 > 0 ? Math.round((receivables / billed90) * TRAILING_DAYS) : null,
+        dsoTarget: FINANCE_THRESHOLDS.dsoTargetDays,
+        billedMtd: round(billedMtd),
+        collectedMtd: round(collectedMtd),
+        collectionRate: pct(collectedMtd, billedMtd),
+        collectionRateTarget: FINANCE_THRESHOLDS.collectionRateTargetPct,
+        agedRiskDays: FINANCE_THRESHOLDS.agedRiskDays,
+        detail,
+      },
+      overdueByKey,
+    };
+  }
+
+  function getEntityFinance(entityKey) {
+    const { companyId, currency } = entityOrThrow(entityKey);
+    const asOf = today();
+    const resolve = buildCustomerResolver();
+    const { collections, overdueByKey } = buildCollections(companyId, asOf, invoiceRepository.listOpen(companyId), resolve);
+    return { asOf, currency, revenue: buildRevenue(companyId, asOf, overdueByKey, resolve), collections };
+  }
+
+  /* One status for Odoo as a whole: ok only when every synced model's last
+     run succeeded; "as of" is the older of the models' last successes. The
+     error text stays in the server log, not the response. */
+  function getSyncStatus() {
+    const states = syncStateRepository.listAll();
+    if (!states.length) return { status: 'never', lastSuccessAt: null };
+    const failed = states.some((s) => s.lastStatus === 'error');
+    const successes = states.map((s) => s.lastSuccessAt).filter(Boolean).sort();
+    return {
+      status: failed ? 'error' : 'ok',
+      lastSuccessAt: successes.length === states.length ? successes[0] : null,
+    };
+  }
+
+  return { getEntityFinance, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]) };
+}
+
+module.exports = createFinanceMetricsService;

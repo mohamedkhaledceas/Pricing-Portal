@@ -83,6 +83,7 @@ function bindNavButtons() {
   $('#brandLogo').addEventListener('click', () => { window.scrollTo({ top: 0 }); });
   $('#btnEmployees').addEventListener('click', () => { window.location.href = '/'; });
   $('#btnCommercialLead').addEventListener('click', () => { window.location.href = '/commercial-lead'; });
+  $('#btnClientMapping').addEventListener('click', () => { window.location.href = '/client-mapping?from=planner'; });
   $('#btnLoadErrorRetry').addEventListener('click', () => { window.location.reload(); });
 }
 
@@ -99,6 +100,8 @@ function updateLoginUi() {
   $('#btnLogin').hidden = true;
   if (auth.user) {
     $('#btnCommercialLead').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
+    // Same role set the client-mapping API is gated to.
+    $('#btnClientMapping').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
     window.AccountMenu.mount($('#accountMenuWrap'), {
       apiFetch: apiRequest,
       currentUser: auth.user,

@@ -59,4 +59,16 @@ module.exports = Object.freeze({
   // see each controller's own check.
   clickupWebhookSecret: process.env.CLICKUP_WEBHOOK_SECRET,
   clickupKpiWebhookSecret: process.env.CLICKUP_KPI_WEBHOOK_SECRET,
+  // Odoo JSON-2 API (docs/adr/0013). Key-only auth — no username needed.
+  // The key belongs to a personal Odoo account (no integration seat
+  // available), so it carries that person's full Odoo permissions; the
+  // client that reads it (common/integrations/odooClient.js) is read-only
+  // by construction for that reason. Unset means the client fails at call
+  // time, not here — same "don't throw from config" reasoning as jwtSecret.
+  odooUrl: process.env.ODOO_URL ? process.env.ODOO_URL.replace(/\/+$/, '') : undefined,
+  odooDb: process.env.ODOO_DB,
+  odooApiKey: process.env.ODOO_API_KEY,
+  // Incremental Odoo sync interval (management/finance). Should divide 60
+  // evenly — it's used as a */N cron minute field.
+  odooSyncMinutes: Number(process.env.ODOO_SYNC_MINUTES || 15),
 });
