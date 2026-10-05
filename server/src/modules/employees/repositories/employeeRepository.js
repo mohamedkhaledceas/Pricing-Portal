@@ -148,7 +148,36 @@ function setClickupUserId(id, clickupUserId) {
   db.prepare('UPDATE employees SET clickup_user_id = ? WHERE id = ?').run(clickupUserId, id);
 }
 
+// Workforce summary for the CEO Control Room (services/workforceSummaryService.js).
+// "Active" means both the roster row and the login are active — a revoked
+// user whose roster row wasn't deactivated isn't headcount.
+function countActiveByDepartmentAndType() {
+  return db
+    .prepare(
+      `SELECT COALESCE(d.label, 'No department') AS department, e.employment_type AS employment_type, COUNT(*) AS n
+       FROM employees e
+       JOIN users u ON u.id = e.user_id
+       LEFT JOIN departments d ON d.code = e.department
+       WHERE e.active = 1 AND u.is_active = 1
+       GROUP BY 1, 2`
+    )
+    .all();
+}
+
+function countActiveJoinedBetween(fromDate, toDate) {
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n
+       FROM employees e
+       JOIN users u ON u.id = e.user_id
+       WHERE e.active = 1 AND u.is_active = 1 AND e.joining_date BETWEEN ? AND ?`
+    )
+    .get(fromDate, toDate).n;
+}
+
 module.exports = {
+  countActiveByDepartmentAndType,
+  countActiveJoinedBetween,
   findAll,
   findAllActive,
   findById,

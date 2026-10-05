@@ -1,14 +1,12 @@
-import { $ } from './dom.js';
-
+/* Same localStorage key and system/light/dark semantics as every other page
+   (and the shared account menu), so a theme picked here follows the user
+   around the portal. Unlike the other pages there's no logo to repaint —
+   the rail mark is drawn in CSS. */
 export function isDarkTheme() {
   const t = document.documentElement.getAttribute('data-theme');
   if (t === 'dark') return true;
   if (t === 'light') return false;
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-
-export function paintLogo() {
-  $('#brandLogo').src = isDarkTheme() ? '/logo-dark.png' : '/logo-light.png';
 }
 
 export function themePref() {
@@ -19,9 +17,8 @@ export function themePref() {
   }
 }
 
-// #theme-seg-btn elements now live inside the shared account-menu dropdown
-// (accountMenu.js), which isn't mounted yet the first time init() calls
-// this — querySelectorAll on nothing is a harmless no-op then.
+// .theme-seg-btn elements live inside the shared account-menu dropdown,
+// which isn't mounted the first time this runs — a harmless no-op then.
 export function updateAppearanceControls() {
   const pref = themePref();
   document.querySelectorAll('.theme-seg-btn').forEach((btn) => {
@@ -29,16 +26,21 @@ export function updateAppearanceControls() {
   });
 }
 
-/* Chart colors are read live from CSS custom properties at render time
-   (charts.js's V() helper), so unlike commercial-leads' bar-only charts,
-   switching theme here needs a redraw — main.js's toggle handler does that. */
+/* The top-bar chip names the theme a click switches to. */
+export function syncThemeChip() {
+  const chip = document.getElementById('theme');
+  if (chip) chip.textContent = isDarkTheme() ? 'Light' : 'Dark';
+}
+
 export function setTheme(value) {
   if (value === 'system') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', value);
   try {
     if (value === 'system') localStorage.removeItem('pricingPortalTheme');
     else localStorage.setItem('pricingPortalTheme', value);
-  } catch (err) {}
-  paintLogo();
+  } catch (err) {
+    // Storage blocked (private mode) — the theme still applies for this page view.
+  }
   updateAppearanceControls();
+  syncThemeChip();
 }

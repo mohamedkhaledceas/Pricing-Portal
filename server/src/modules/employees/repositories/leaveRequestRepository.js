@@ -116,6 +116,25 @@ function findApprovedUpcoming({ employeeIds, fromDate }) {
     .all(...employeeIds, fromDate);
 }
 
+// CEO Control Room's "away in the next 14 days" — distinct active
+// employees with an approved request overlapping [fromDate, toDate],
+// ignoring the leave types passed in (the ones that don't take a person
+// out of work, e.g. wfh). Count only — no names leave this module for it.
+function countEmployeesAwayBetween({ fromDate, toDate, excludeTypes }) {
+  const placeholders = excludeTypes.map(() => '?').join(',');
+  return db
+    .prepare(
+      `SELECT COUNT(DISTINCT lr.employee_id) AS n
+       FROM leave_requests lr
+       JOIN employees e ON e.id = lr.employee_id
+       JOIN users u ON u.id = e.user_id
+       WHERE lr.status = 'approved' AND lr.start_date <= ? AND lr.end_date >= ?
+         AND e.active = 1 AND u.is_active = 1
+         ${excludeTypes.length ? `AND lr.leave_type NOT IN (${placeholders})` : ''}`
+    )
+    .get(toDate, fromDate, ...excludeTypes).n;
+}
+
 // WFH's monthly-quota check — yearMonth like '2026-08'. pending +
 // manager_approved + approved all count against the quota (only a
 // rejected/auto_rejected/cancelled request doesn't use up the month).
@@ -176,6 +195,7 @@ module.exports = {
   findAll,
   findApprovedOverlapping,
   findApprovedUpcoming,
+  countEmployeesAwayBetween,
   findActiveOverlappingForEmployees,
   countWfhInMonth,
   updateManagerDecision,

@@ -27,4 +27,7 @@ module.exports = {
   webhookRouter,
   startReconciliationSchedule,
   scheduleQuarterFreeze: freezeService.scheduleQuarterFreeze,
+  // Read interface for the CEO Control Room (ceo-dashboard) — never the
+  // repositories directly, same rule as finance's financeMetricsService.
+  getPipelineSummary: dealsService.getPipelineSummary,
 };

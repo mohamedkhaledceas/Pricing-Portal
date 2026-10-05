@@ -7,8 +7,8 @@ const pricing = require('./modules/pricing');
    billableHours before writing this file, per the "don't duplicate, reuse
    if it already exists" instruction this was written under. This is the
    one and only server-side copy; anything that needs the company-wide cost
-   rollup (currently just the CEO Dashboard, see
-   modules/management/ceo-dashboard/repositories/mockSnapshotRepository.js)
+   rollup (currently just the CEO Control Room, see
+   modules/management/ceo-dashboard/services/controlRoomService.js)
    should call getCompanyCostSummary() rather than re-deriving it.
 
    settings/team/expenses come from modules/pricing's own narrow
@@ -58,12 +58,10 @@ function expMonthly(settings, expense) {
   return a;
 }
 
-/* Returns the same shape mockSnapshotRepository.js's `costs` block already
-   uses: { burn, payroll, fixed, headcount, billableHours, ohPerHour,
+/* Returns { burn, payroll, fixed, headcount, billableHours, ohPerHour,
    categories }. `categories` groups real (free-text) expense `cat` values
-   by their monthly-equivalent amount, descending — the mock's illustrative
-   4-category list is replaced by whatever's actually been entered in the
-   Planner's Fixed expenses tab. */
+   by their monthly-equivalent amount, descending — whatever's actually been
+   entered in the Planner's Fixed expenses tab. */
 function getCompanyCostSummary() {
   const { settings, team, expenses } = pricing.readCompanyCostInputs();
 

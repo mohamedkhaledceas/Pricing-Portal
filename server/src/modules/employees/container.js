@@ -50,6 +50,7 @@ const createKpiClickupMetricsService = require('./services/kpiClickupMetricsServ
 const createKpiClickupSyncService = require('./services/kpiClickupSyncService');
 const createKpiPeerReviewService = require('./services/kpiPeerReviewService');
 const createPlannerExportService = require('./services/plannerExportService');
+const createWorkforceSummaryService = require('./services/workforceSummaryService');
 const startClickupUserSyncSchedule = require('./jobs/clickupUserSyncSchedule');
 const { startKpiClickupListSyncSchedule } = require('./jobs/kpiClickupListSync');
 const createRosterController = require('./controllers/rosterController');
@@ -105,6 +106,7 @@ const kpiPeerReviewService = createKpiPeerReviewService({
   employeeRepository, pillarAReviewRepository, kpiPeerReviewRepository, kpiReviewWindowRepository, audit, roles: ROLES,
 });
 const plannerExportService = createPlannerExportService({ employeeRepository, employeeModel, audit });
+const workforceSummaryService = createWorkforceSummaryService({ employeeRepository, leaveRequestRepository });
 
 // Refreshes the local list/status cache the mapping-admin UI reads from —
 // same boot+interval shape as the ClickUp user sync above.
@@ -155,4 +157,7 @@ module.exports = {
   // on what "with compensation" vs "without" means for its own data.
   listEmployeesForPlanner: plannerExportService.listForPlanner,
   updateEmployeeCompensation: plannerExportService.updateCompensation,
+  // modules/management/ceo-dashboard's People blocks — aggregates only, no
+  // names or pay (see services/workforceSummaryService.js).
+  getWorkforceSummary: workforceSummaryService.getSummary,
 };

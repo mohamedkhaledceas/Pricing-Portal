@@ -6,6 +6,8 @@ Living audit + execution queue for `CeasComm_Business_Portal_Requirements.docx` 
 
 **Hard external blocker:** Odoo integration (credentials not yet in `server/.env` — user has Odoo Online access at `ceas-comm1.odoo.com`, Odoo 19 Enterprise, but hasn't generated/added an API key yet). Every pillar below is tagged **Odoo-blocked** or **Odoo-free** so work can proceed on the latter while access gets sorted.
 
+**Update (2026-10-04): Odoo access blocker cleared — connection verified, no integration code yet.** `ODOO_URL`, `ODOO_DB`, `ODOO_API_KEY` are now set in `server/.env` (`ODOO_USERNAME` left empty — not needed, see §6e). The *access* blocker is gone; the *integration* (pillar 16) is still Not Started, so every Odoo-blocked pillar remains blocked on that build work, not on credentials.
+
 ---
 
 ## 1. Master Pillar Status
@@ -27,7 +29,7 @@ Living audit + execution queue for `CeasComm_Business_Portal_Requirements.docx` 
 | 13 | Cash Flow & Cash Position | Not Started | **Blocked** | — |
 | 14 | Targets, Budgets & Forecasting | Not Started | Partial | Target/budget entry + weighted-forecast-from-pipeline are Odoo-free; actual-vs-budget is blocked. |
 | 15 | Performance Analysis by dimension | Not Started | Partial | Leads/Deals/Close-Rate breakdowns are Odoo-free; revenue/margin columns are blocked. |
-| 16 | Odoo Integration & Data Mapping | Not Started | **Blocked** (it's the blocker) | — |
+| 16 | Odoo Integration & Data Mapping | **In Progress** — ADR-0013 Accepted; steps 1 (client) + 2 (tables + sync job) done 2026-10-04; step 3a (dashboard finance backend) done 2026-10-05 | Unblocked (credentials work, finance/CRM read access confirmed) | Connection test (§6e) and read-only app/model survey (§6f) done. **ADR-0013 Accepted 2026-10-04.** Step 1 `odooClient.js` + config DONE (§6i). Step 2 tables + `management/finance` sync job DONE (§6j). Step 3a finance metrics service + CEO dashboard backend wiring DONE (§6k). ClickUp↔Odoo client-mapping backend DONE (§6l). Next: 3b dashboard frontend (FZE tab, source badges, hide undefined tiles), then 3c Consolidated via live FX. Original step 3 plan: step 3 — CEO dashboard Revenue + Collections from the cache (via finance service), FZE tab, live FX, sync-status line → cache + sync-state tables → scheduled sync job → sync-status endpoint. |
 | 17 | Users, Permissions & Audit Log | Partially real (auth+audit exist), extending | **Free** | See §3. |
 | 18 | Reports, Export & Final QA | Not Started | **Free** | `utils/tableExport.js` — no dependency on anything else being done first. |
 
@@ -123,9 +125,11 @@ Verified by reading the table's actual schema and write path — it is a disposa
 7. Design + implement field-level cost-vs-price permission gating.
 8. `utils/tableExport.js`.
 9. ADR: cross-module FK pattern (pricing ↔ management) — update `CLAUDE.md`'s module-boundary clause.
-10. ADR-0013 draft: Odoo integration strategy (can be drafted now on Odoo's known standard object shapes, verified once access lands).
+10. **ADR-0013 draft — DONE (2026-10-04), status Proposed.** `docs/adr/0013-odoo-integration-strategy.md`. Read-only JSON-2 client, cached tables owned by `management/finance`, 15-min incremental sync, 4 entity tabs, both FX modes, CEO dashboard Revenue + Collections first. Extra read-only probe for it: only 29/276 posted invoices have payment terms, 8/332 invoice lines have an analytic account, 295/332 have a product, currency rates update daily. Blocked on the ADR's 7 "Needs a decision" items (revenue definition, collection-rate formula, aging basis, targets, margin, service lines, health/risks). **Update (same day):** revenue = gross invoiced (user definition); collection rate = collected ÷ billed × 100; no rates table — live FX from a public API with in-memory cache + fixed fallback; `clients.odoo_partner_id` for per-client Odoo views, human-confirmed linking (auto-match only 16/76 Odoo invoiced customers); prototype `ceas-ceo-dashboard.html` checked — no real formulas, only thresholds, now captured in the ADR. Still open: VAT excluded? pass-through included? + items 3–7 defaults.
 
 ## 5. Blocked queue (resumes when `server/.env` has real `ODOO_*` values)
+
+**2026-10-04:** `ODOO_*` values now real and verified (§6e). This queue now waits on pillar 16 (the sync itself) being built, not on credentials.
 
 Pillars 6, 7, 9, 11, 13, 16 in full; the actuals-half of 1, 8, 10, 12, 14, 15.
 
@@ -139,6 +143,7 @@ Pillars 6, 7, 9, 11, 13, 16 in full; the actuals-half of 1, 8, 10, 12, 14, 15.
 | 2026-09-27 | Margin Planner real cost: option 2 (replace shadow salary with real `employees.salary`), derived cost-per-hour, `project_assignments` join table instead of array-of-FKs. |
 | 2026-09-27 | `commercial_lead_live_cache` ruled unsafe as a cross-module FK anchor; `clients` + `commercial_lead_deal_records` (both durable, never deleted) are the anchors instead. |
 | 2026-09-27 | Odoo: Odoo Online, `ceas-comm1`, Odoo 19 Enterprise, personal-account credentials (no dedicated integration user available). Not yet configured in `.env`. |
+| 2026-10-04 | Odoo transport: use Odoo 19's **JSON-2 API** (`POST /json/2/<model>/<method>`, `Authorization: bearer <key>`, `X-Odoo-Database` header) — key-only auth, so `ODOO_USERNAME` is unnecessary. Not XML-RPC/JSON-RPC (deprecated by Odoo in 19). To be formalized in ADR-0013. Integration stays **read-only** against Odoo until explicitly decided otherwise. |
 | 2026-09-27 | Deprioritized: Qualification Reason, Next Action/Date fields (pillar 2) — revisit later. |
 | 2026-09-27 | Data-completeness gaps (e.g., Estimated Value only 6% populated): use available data + a presentable incompleteness indicator, not a blocker. |
 
@@ -205,10 +210,219 @@ Follow-on to §6c, same session. User requested (not bugs, feature changes): an 
 
 **Still open, not resolved this session:** user mentioned a second "Go to Team Reviews" button on "the Teams page" — a full-repo search found only one such button (on Overview). Need to ask the user where the second one is/was, since it may point at a real second entry point that was missed, or may be a misremembering of the Overview button.
 
+## 6e. Odoo connection test (2026-10-04)
+
+Per explicit user request ("just test if the connection is up"), read-only only — no Odoo logic implemented, nothing written to Odoo, no repo code changed. One-off `node -e` script reading `server/.env`, key never printed.
+
+| Check | Result |
+|---|---|
+| Server reachable (`/web/webclient/version_info`) | Yes — `ceas-comm1.odoo.com`, `19.0+e` (Odoo 19 Enterprise, confirms the 2026-09-27 assumption) |
+| JSON-2 call **without** key (negative control) | `401` — auth genuinely enforced, so the next row isn't a false positive |
+| JSON-2 `res.partner/search_count` with key | `200` — 2,214 partner records |
+| JSON-2 `res.users/search_read` with key | `200` |
+
+**Not yet proven:** read access to finance/CRM models (`account.move`, `account.payment`, `sale.order`, `crm.lead`) under this personal account's permissions, and which Odoo apps are installed. Both answered by the next step (read-only survey), which also resolves the "which Odoo apps are active" open question below.
+
+## 6f. Odoo read-only survey (2026-10-04)
+
+Done right after the connection test. Two scratchpad `node` scripts using only `search_count`/`search_read`/`read_group` — nothing written to Odoo, no repo code changed, key never printed. Runs as uid 33 (the user's personal account), tz `Africa/Cairo`.
+
+**Installed apps (relevant ones):** full **Accounting** (`accountant`, `account_accountant`, `account_reports` — not Invoicing-only), Sales (`sale_management`) + **Subscriptions**, CRM, Purchase, Expenses, Project + Timesheets, analytic accounting, plus **Payroll** (`hr_payroll`). Also installed but out of scope: HR/Time Off/Appraisals/Recruitment/Attendances, Website/eCommerce/eLearning, marketing, Sign, Knowledge, WhatsApp, Studio.
+
+**Read access + volume** (all companies this account can see, combined):
+
+| Model | Records | Date range |
+|---|---|---|
+| `account.move` customer invoices/credit notes | 334 | 2024-05-20 → 2026-10-02 |
+| `account.move` vendor bills/refunds | 668 | 2024-12-31 → 2026-10-01 |
+| `account.move` journal entries | 1,234 | 2025-01-07 → 2026-10-01 |
+| `account.move.line` | 5,084 | 2024-05-20 → 2026-10-02 |
+| `account.payment` | 1,183 | 2025-01-07 → 2026-10-01 |
+| `sale.order` | 397 | 2024-12-24 → 2026-10-04 |
+| `crm.lead` | 430 | 2024-12-25 → 2026-10-04 |
+| `purchase.order` | 70 | 2025-04-07 → 2026-10-04 |
+| `hr.expense` | 284 | 2024-05-24 → 2026-09-22 |
+| `project.project` | 39 (29 with no company) | — |
+| `account.account` / `account.journal` / `account.analytic.account` | 533 / 33 / 37 | — |
+| `res.partner` (companies) | 518 | — |
+
+Every model above returned 200 — the personal account's permissions cover all finance/CRM models needed for pillars 6–13.
+
+Customer invoice states: posted/paid 229, posted/not_paid 30, posted/partial 5, posted/in_payment 5, posted/reversed 7, cancel 46, draft 1 — enough real AR data for pillar 7.
+
+**Multi-company — new finding, matters for ADR-0013.** Odoo holds **4 companies**: Ceas Comm (id 1, EGP, user's default), Ceas Comm FZE (id 2, AED), Et3alemha (id 3, EGP), Learn With Marie (id 2268, EGP). The account is allowed on 1, 2, 2268 only — requesting company 3 returns `AccessError: Access to unauthorized or invalid companies`. JSON-2 calls default to *all* allowed companies at once (default-context counts equal the all-companies counts), so the sync must filter/tag by `company_id` explicitly or it will silently mix companies. Per-company split (cust. invoices / vendor bills / payments / SOs): Ceas Comm 240/469/882/309, FZE 69/196/290/70, Learn With Marie 25/3/11/18.
+
+**Currencies:** AED, EGP, SAR, USD active; FZE reports in AED, the others in EGP. Reporting across companies needs a currency-conversion rule (ADR-0013).
+
+**Journals:** 33, duplicated per company (Customer Invoices/Vendor Bills/Misc/Cash ×3), banks: Credit Agricole EGP/USD, CIB, Emirates NBD AED/USD, Alex Bank (Personal), Others — relevant to pillar 13 (cash position).
+
+**API key expiry:** user confirmed the key was created as **persistent** (no expiry). No rotation reminder needed for expiry; it still dies if the user's account is deactivated or the key is revoked — note for `docs/operations.md` when the integration ships.
+
+## 6g. Scope answers + DB gap + Odoo payroll check (2026-10-04)
+
+**User answers to §7's new questions:**
+- **Companies:** all of them in scope. CEO dashboard prototype already models entities as Ceas Comm / Learn with Marie / Consolidated. Its mock note says LWM is "a separate analytic account" in Odoo — **wrong**: LWM is its own Odoo company (id 2268). Still open: where Ceas Comm FZE and Et3alemha sit in that entity switcher, and Et3alemha needs Odoo access granted to the integration account.
+- **Currency:** support **both** — Odoo's own rate table and a fixed portal-configured rate, selectable.
+- **Salary:** user asked whether portal salary can be fetched from Odoo instead of entered in the portal — checked below.
+
+**Portal DB has no tables for Odoo data.** Checked every table in `server/data/app.db` (31 migrations): nothing for companies/entities, invoices, vendor bills, payments, journal items/accounts, Odoo expenses, sales orders, currency rates, or sync state. `expenses` (5 rows) is the Margin Planner's manual OPEX list, `clients` has no Odoo partner link. All of it is new migrations — exact table list goes in ADR-0013.
+
+**Odoo payroll check (counts only, no salary values printed):**
+- 30 active `hr.employee` (Ceas Comm 26, FZE 4); `hr.contract` no longer exists in Odoo 19 — contract data lives on `hr.version` (`wage`, `wage_type`, `currency_id`, `contract_date_start/end`, plus UAE `l10n_ae_total_salary`).
+- **29 of 30** have a current version with `wage > 0` (22 `monthly`, 7 unset wage_type; 26 EGP, 3 AED). Read access works under the personal key.
+- `hr.payslip`: only 3 ever (April 2025) — Payroll app is installed but not used for payslips, so **contract wage, not payslips**, is the usable source.
+- **Linking is the hard part:** 11 Odoo employees have no `work_email`, only 2 are linked to an Odoo user — email matching won't cover everyone. Needs an explicit `odoo_employee_id` on `employees`, set once by a human. Couldn't measure real match rate locally: local `app.db` employees are test data (`ceastest.local`/`test.local`/`example.com` emails), real roster is on Render.
+- Feasible: yes. Proposed for ADR-0013: Odoo `hr.version.wage` becomes the source of truth for `employees.salary`/`currency`; portal salary edit becomes read-only for linked employees; existing `canViewCompensation` gate unchanged; sync writes go through `auditService.record`.
+
+## 6h. Portal-wide Odoo placement map (2026-10-04, proposal only — nothing implemented)
+
+Inspected every page (`employees`, `pricing` / Margin Planner, `commercial-leads`, `ceo-dashboard`) and its real server-side role gate. Proposed placements, all read-only from Odoo, all filtered by Odoo company (Ceas Comm / FZE / LWM; Et3alemha to be implemented later):
+
+| Page → section | Odoo data | Proposed roles |
+|---|---|---|
+| CEO Dashboard → Revenue, Collections, Pipeline-value, Company health, Risks/Actions; 4 tabs (Ceas Comm / FZE / LWM / Consolidated) | `account.move` (invoices), `account.payment`, `account.move.line`, `sale.order`/subscriptions, `crm.lead` | ceo, admin (unchanged) |
+| New Finance page — Revenue & Invoicing, AR aging, Vendor bills/AP, OPEX, Cash by bank journal, P&L | `account.move`, `account.payment`, `account.move.line`+`account.account`, `account.journal` | finance, ceo, admin (gives the dead `finance` role its first page) |
+| Commercial Lead → Active Clients (AM): invoiced / paid / outstanding per client | `account.move` by partner, via a new `clients.odoo_partner_id` link | current gate (admin/ceo/operations); open question whether to add commercial/account_management |
+| Margin Planner → Dashboard "Where the money goes": actual vs planned monthly expenses | `account.move.line` expense accounts | admin/ceo/operations (current planner gate) |
+| Margin Planner → Estimator/Projects: actual invoiced vs quoted price, actual vendor costs vs estimated direct costs | `account.move` + analytic accounts / `project.project` | admin/ceo/operations; cost figures stay behind `canViewCompensation` where salary-derived |
+| Margin Planner → Settings → Exchange rates: optional "use Odoo rates" | `res.currency.rate` | admin/ceo/operations |
+| KPIs → AM D2 "Invoices issued on time", D3 "Invoice collection rate" auto-filled instead of typed | `account.move` (`invoice_date`, `invoice_date_due`, `payment_state`, salesperson) | same as today's KPI entry gates |
+| Employees → Requests/Overview: "My expense claims" status | `hr.expense` | the employee themself + P&C; **needs the employee↔Odoo link (to be implemented with salary-from-Odoo)** |
+
+Deliberately **not** proposed: syncing Odoo Time Off (`hr_holidays`) into the portal's leave system (two sources of truth for leave), and P&C P3 retention from Odoo (portal roster already has joining/deactivation data). Odoo CRM (430 leads) vs ClickUp pipeline overlap is an open question (§7).
+
+## 6i. Odoo build step 1 — read-only client + config (2026-10-04)
+
+ADR-0013 marked **Accepted** (user: "go on" — VAT excluded, pass-through included, items 3–7 defaults).
+
+**Built:**
+- `server/src/config/index.js`: `odooUrl` (trailing slash stripped), `odooDb`, `odooApiKey` — first integration key read through `config/index.js` rather than `process.env` directly.
+- `server/src/common/integrations/odooClient.js`: exports **only** `searchRead` and `searchCount`. Every call requires an explicit integer `companyIds` list (sent as `allowed_company_ids`); `searchRead` requires an explicit field list; 30 s timeout; Odoo error bodies reduced to exception name + message (the `debug` traceback is dropped); the key never appears in any error.
+- Not wired into anything yet — no route, job, or module uses it.
+
+**Verified manually against live Odoo (reads only):**
+- Per-company counts of customer invoices: Ceas Comm 240, FZE 69, LWM 25; all three together 334 — matches the §6f survey, so company scoping works.
+- `searchRead` on FZE returned only FZE rows.
+- Failure paths: missing `companyIds` → 500 before any request; Et3alemha (id 3) → Odoo 403 `AccessError` surfaced as 502; missing field list → 500; unknown model → 404 surfaced as 502.
+- Server boots and serves `/login` (200) with the config change.
+- No lint config exists in `server/` (ESLint 9 flat config missing) — not checked by a linter, consistent with the known test-infra gap.
+
+**Note for step 2 (sync):** sorting `invoice_date desc` returns drafts (no `invoice_date`) first — the sync must filter by `state` rather than rely on date ordering.
+
+## 6j. Odoo build step 2 — cache tables + sync job (2026-10-04)
+
+Branch: **`feature/odoo-integration`** (created from `origin/main` after PR #72 merged; upstream unset so a bare push can't target `main`). Steps 1 + 2 uncommitted on it.
+
+**Built:**
+- Migration `032_create_odoo_finance_tables.js`: `odoo_invoices` (customer invoices + credit notes; `partner_id` = Odoo `commercial_partner_id`), `odoo_payments`, `odoo_sync_state` (+ `last_success_at`), `finance_settings` (single row, `CHECK id = 1`, seeded `fx_mode='live'`), `clients.odoo_partner_id` + partial unique index. No FKs into the cache tables (they're a mirror, rows can be removed).
+- New `modules/management/finance/`: `constants.js` (entity → Odoo company map: ceas 1, fze 2, lwm 2268; Et3alemha to be implemented), `models/odooRecord.model.js` (field lists + Odoo→row mappers; `false`→null, many2one→id/name), three repositories + `unitOfWork.js`, `services/odooSyncService.js` (factory DI), `jobs/odooSyncSchedule.js`, `container.js`. Wired through `management/container.js` + `index.js`; started from `src/index.js` after listen.
+- Sync: full on startup and nightly 03:00 Africa/Cairo; incremental every `ODOO_SYNC_MINUTES` (default 15, via `config/index.js`) by `write_date >=`; each model's rows + state in one transaction; one model failing doesn't stop the other. Full sync removes cached rows Odoo no longer has, **except** when Odoo returns nothing while the cache has rows (logged warning, cache kept). Rows without a company are refused. No ODOO_* env → schedule skipped with one info log.
+- No routes yet — nothing reads the tables until step 3.
+
+**Verified (on a copy of the dev DB via `DB_DIR`, not the real `server/data/app.db`):**
+- Migration: recorded in `schema_migrations`; second `finance_settings` row rejected by CHECK; linking two clients to one Odoo customer rejected by UNIQUE; clients still 174; `foreign_key_check` clean.
+- Full sync vs live Odoo: invoices 334/334, payments 1,183/1,183; per company 240 / 69 / 25; zero rows without company.
+- Posted-invoice **untaxed and outstanding totals match Odoo's own `read_group` sums exactly for all 3 companies** (compared as match/mismatch only — no amounts printed).
+- Incremental: re-fetches only the boundary record (1 per model).
+- Removal: a planted fake Ceas Comm row was removed by full sync; a planted out-of-scope (company 3) row was left alone.
+- Failure: an Et3alemha-scoped run recorded `error` state with the Odoo 403 message, cache unchanged, `last_success_at` kept; next good run reset state to `ok`.
+- Empty-answer guard: a stub client returning nothing removed 0 rows, cache intact.
+- Server boot with creds: startup full sync completed in ~0.75 s, `/login` 200, API key absent from logs. Without creds: "not scheduled" log, `/login` 200.
+
+**Not done / to note:** the real local `server/data/app.db` gets migration 032 + first sync the next time the dev server starts. Render needs `ODOO_URL`/`ODOO_DB`/`ODOO_API_KEY` (and optionally `ODOO_SYNC_MINUTES`) set before the sync runs there. Odoo 19 payment states are `draft`/`in_process`/`paid`/`canceled` — step 3 must decide whether "cash collected" counts `in_process` (posted, not yet bank-reconciled) or only `paid`.
+
+## 6k. Odoo build step 3a — finance metrics + CEO dashboard backend (2026-10-05)
+
+Step 3 split into 3a (backend), 3b (frontend), 3c (Consolidated + live FX) so each can be checked separately.
+
+**Built (uncommitted, `feature/odoo-integration`):**
+- `management/finance/services/financeMetricsService.js` (factory DI) — finance's public read interface: `getEntityFinance(entityKey)` → `{ asOf, currency, revenue, collections }`, `getSyncStatus()`, `isFinanceEntity()`. Read queries added to the invoice/payment repositories; `toOpenInvoice` mapper in the model.
+- Definitions as implemented: revenue = posted `amount_untaxed_signed` by invoice date (Cairo calendar); YTD/MTD/monthly; trailing-90-day clients (top 10 + Other, salesperson from latest invoice, overdue per client); concentration = top client ÷ trailing-90. Collections: receivables = posted open `amount_residual_signed`; aging by due date in 5 buckets (Not yet due / 1–30 / 31–60 / 61–90 / 90+); past-60 share; share of open invoices without real terms (due = invoice date); DSO = receivables ÷ last-90-days billing × 90; collection rate MTD = customer cash ÷ billed, **both VAT-inclusive** (cash includes VAT); overdue detail per client.
+- `constants.js`: `ENTITIES` (company id + currency), `COLLECTED_PAYMENT_STATES = ['paid']` (first built as `paid + in_process`; **user decision 2026-10-05: exclude `in_process`** — not reconciled to the bank = not collected; affects 8 LWM payments dated 2025-07 → 2026-07), `FINANCE_THRESHOLDS` (25% concentration, 55-day DSO, 85% collection rate, 60/90-day aging) from the ADR's carried-over rules.
+- `ceoDashboardService` converted to a factory wired in `ceo-dashboard/container.js` (was `require()`-ing the mock directly). For `ceas`/`fze`/`lwm` it replaces mock Revenue + Collections with Odoo figures, keeping only the Margin Planner's live `costs`; every other mock revenue field (targets, margin, service lines, mix, LWM funnel) is dropped per ADR-0013 definitions 4–6. Each entity carries `sources` (`odoo`/`sample`); on a cache-read failure it falls back to the mock, badged `sample`. Shell `asOf` is now today (Cairo); Odoo sync line is real from `odoo_sync_state` (error text kept in logs only), ClickUp line flagged `sample`. New `fze` entity (Revenue/Collections only); `getBrief` returns null for entities without a sample brief.
+- Not yet: no DSO history series (historic receivables need reconciliation dates we don't cache); "live projects" column (ClickUp join) and Consolidated stay for later steps.
+
+**Verified (scratch DB copy + live full sync, 334 invoices / 1,186 payments):** aging buckets sum exactly to receivables for all 3 companies; overdue total fixed to come from aging (per-client sum overstated it when credit notes leave a client net negative); unknown entity → `ValidationError`; Consolidated still sample; files pass `node --check` (no ESLint config exists in the repo).
+
+**Decisions 2026-10-05 (user):** (1) cash collected = `paid` only — applied. (2) collection rate VAT-inclusive on both cash and billed confirmed; revenue stays ex-VAT. (3) investigate reconciliation dates before accepting current-only DSO — done, see below. (4) new requirement: ClickUp ↔ Odoo client mapping with an authorized review/fix flow — next after this, design pending approval.
+
+**Reconciliation-date probe (read-only, 2026-10-05):** Odoo exposes `account.partial.reconcile` via JSON-2 — `max_date`, `amount` (company currency), `debit_move_id`/`credit_move_id` (journal items), `full_reconcile_id`, `exchange_move_id`. 288 partials touch customer-invoice receivable lines (dates 2025-01-07 → 2026-10-01). Rebuilding each invoice receivable line's residual as `balance − Σ partials` matched Odoo's current `amount_residual` on **287/287 lines exactly** (incl. 11 with FX exchange moves). So receivables as of any past date D = Σ invoice receivable lines dated ≤ D minus partials with `max_date ≤ D` — historical DSO is feasible. Needs two new cache tables (receivable lines + partials), not built yet. Caveat: `max_date` is the later of the two matched entries' accounting dates, not when someone clicked reconcile — same basis Odoo's own as-of aged receivable uses.
+
+**Frontend not updated yet — the current page expects mock-only fields (`ytdPct`, `dsoSeries`, …) and will render wrongly until 3b.** Don't merge 3a without 3b.
+
+## 6l. ClickUp ↔ Odoo client mapping — backend (2026-10-05)
+
+User priority after 3a: client mapping before the dashboard frontend, since it makes every future ClickUp/Odoo metric reliable. Decisions (user, 2026-10-05): link through portal `clients` with a link table (not a column, not a direct ClickUp-deal↔Odoo table); reviewers ceo + admin + operations. ADR-0013 §4/§8/§9 amended.
+
+**Built (uncommitted, `feature/odoo-integration`):**
+- Migration 032 edited (never applied to a real DB) to drop the planned `clients.odoo_partner_id`; new migration `033_create_client_odoo_mapping.js`: `odoo_partners` (cache) + `client_odoo_partner_links` (`linked`/`rejected`, `decided_by` FK users, partial unique index = one client per partner, `UNIQUE(client_id, odoo_partner_id)`, FK clients `ON DELETE RESTRICT`).
+- Sync: `res.partner` pass after invoices on every run — re-reads the partner ids the invoice cache references (incl. archived), drops unreferenced ones, empty-answer guard; own `odoo_sync_state` row.
+- `finance/services/clientMatcher.js` (pure): normalized-name match (legal suffixes, punctuation, accents, `.com` stripped) + company-domain match (website host / email domain; free-mail, social, shorteners and `theceas.com` ignored); rejected pairs suppressed.
+- `finance/services/clientMappingService.js`: `getOverview` (summary, every cached Odoo customer with status linked/suggested/unmatched, entities, invoice count, suggestions; active clients for manual linking), `link`, `reject` (also unlink), `createClientFromPartner` (refuses if an active client has the same normalized name; client insert + link in one transaction). Role re-checked in the service; every change audited (`client_odoo_link.link/.reject/.unlink`, `client.create_from_odoo`); no-op repeats don't audit.
+- Routes (`finance/routes/index.js`, mounted via management router): `GET /api/finance/client-mapping`, `POST …/links`, `POST …/rejections`, `POST …/clients` — `requireRole(USER_MANAGER_ROLES)`. `finance/errors.js` (`FinanceError`).
+
+**Verified (fresh scratch DB copy, live full sync 335/1,188/84 partners, server on :3099):** 16 suggested / 68 unmatched of 84 Odoo customers (one false match — CEAS staff email on a client — removed by ignoring `theceas.com`); 401 no token, 403 employee, 200 operations/ceo/admin; link, idempotent re-link, 409 partner-already-linked, 400 bad ids, 404 missing client/partner, 403 employee write; reject drops the suggestion; two duplicate Odoo partners linked to one client; unlink → re-link; create-from-Odoo 201 (clients 174→175), 409 on repeat and on an existing same-name client; audit rows match actions. Real `server/data/app.db` untouched.
+
+**Review UI (2026-10-05):** user asked for entry buttons on the CEO dashboard, Margin Planner and Commercial Lead, with the screen's location left to UI/UX judgement → its **own page, `/client-mapping`** (`modules/management/finance/views/`, served from `src/index.js`, inline scripts added to the CSP hash list). Rationale: reached from three tools, so it belongs to none of them; a `?from=ceo|planner|commercial-lead` param (whitelisted) drives a "← Back to …" header link. Own `apiClient.js`/`theme.js`/`dom.js` per the one-client-per-surface rule (frontend-architecture §3). Layout: status filter (Needs review / Unmatched / Linked / All with counts) + search; one row per Odoo customer — left: name, entity chips, posted-invoice count + last date, contact; right: suggestions with reason and Link / Not a match, "Link a different client…" picker (native datalist type-ahead), Create portal client, or linked client with inline Unlink confirm (no native dialogs). Each write reloads the overview and toasts. Entry buttons: Planner header (shown for `USER_MANAGER_ROLES` only, like its Commercial Lead button), Commercial Lead header, CEO dashboard header (both pages' audiences are already mapping roles).
+
+**Verified in Chrome (scratch DB, :3099, admin):** Planner + Commercial Lead buttons visible and open the page with the right back link; Link (suggestion) → toast, counts 14→13 / 4→5; inline unlink confirm + cancel; picker error for an unknown name; picker + Enter links. **Not verified:** CEO dashboard button visually — that page currently fails to render because its frontend still expects sample-only fields (3a, fixed by 3b); phone-width layout (browser window resize didn't apply — breakpoint CSS present, unchecked).
+
+**CEO dashboard crash fix (2026-10-05, before 3b):** user hit "values is not iterable" on `/ceo` in local dev. Causes: (1) revenue/collections tiles drew sparklines from sample-only `marginSeries`/`dsoSeries`; (2) a 3a bug — LWM's sample funnel/launch/content fields lived inside its mock `revenue` object and were dropped when revenue went live, while Pipeline/Delivery/People/Strategic still read them. Fixes: service carries those fields as `programs` (still sample); `render.js` reads `programsOf(e)`; revenue tiles render from the live shape (no-target copy, real month label, concentration tile for any entity with Odoo-named top client, escaped); new `renderLiveCollections` (5 aging buckets, null-safe DSO and collection rate, no fake DSO trend, overdue table with salesperson/invoices instead of ClickUp live projects, no-payment-term note); empty mix/funnel figure hidden. Chrome-verified on scratch DB: Ceas Comm / LWM / Consolidated render, zero JS errors, CEO-dashboard "Client mapping" button now visible. Real `app.db` confirmed migrated with the edited 032 (no `clients` column) + 033, first sync done (335 invoices / 84 partners). Local dev server must be restarted for the backend part.
+
+## 6m. Odoo build step 3b + client grouping (2026-10-05)
+
+**Built (uncommitted):**
+- **Group by linked client (finance):** `financeMetricsService` resolves each Odoo customer to its linked portal client (`client_odoo_partner_links` joined to `clients`, read on every call) and groups top clients, concentration and overdue detail by it; unlinked customers stay keyed by Odoo customer. Duplicate Odoo records for one client now add up (FZE: two Paradaim records → "Bean Bazaar" AED 19,198 vs 11,374 for one alone). Rows carry `clientId` / `linked`.
+- **Dashboard (3b):** "Ceas Comm FZE" tab; amounts follow the entity's currency (`amt()`/`setCurrency` in charts.js, replaces hard-coded EGP — AED on FZE); per-section "Live · Odoo" / "Sample data" labels; banner rewritten ("Partly live…"); entities with no sample data (FZE) show only Revenue + Collections; brief hidden when none; ClickUp sync line marked "sample, not connected yet", failed Odoo sync shows a red dot; "Monthly revenue" title when no target; negative months (FZE Aug, credit notes > invoices) drawn at 0 with the real value in tooltip/table.
+
+**Verified in Chrome (scratch DB):** all 4 tabs render with 0 JS errors and correct labels (FZE AED 440K YTD, 31.1% concentration warning; LWM EGP 1.48M; Ceas Comm EGP 4.89M; Consolidated sample). Link change reflects immediately: unlinking one Paradaim record split Bean Bazaar back into two rows on the FZE snapshot; relinking merged them again.
+
+**Next:** item 3 — commit + push branch, PR, set `ODOO_URL`/`ODOO_DB`/`ODOO_API_KEY` on Render, deploy (needs user go-ahead). Then 3c Consolidated/FX, client-mapping review (business task), Commercial Lead per-client Odoo figures. Historical DSO tables when wanted.
+
+## 6n. CEO Control Room replaces the CEO dashboard — phase 1 (2026-10-05)
+
+User supplied `ceas-control-room.html` (single-file prototype: 10 pages, 28-KPI weighted health score, entity switch, year compare, drill drawer, ⌘K, editable targets/budgets/function plans/decision queue — all data invented, all edits in-memory). Plan agreed: replace the CEO dashboard; phase 1 = port as-is on sample data, phase 2 = wire what's already real (Odoo revenue/collections, ClickUp pipeline, employees/leave), phase 3 = persist edits (tables + audit), phase 4 = wider Odoo sync (bank, vendor bills, P&L lines, SOs), phase 5 = ClickUp delivery/time, phase 6 = closed years.
+
+**Phase 1 built (uncommitted, on top of the 3b work):**
+- `/ceo` now serves the Control Room (`ceo-dashboard/views/`). Old dashboard frontend moved to `ceo-dashboard/views-legacy/` (not served) so the uncommitted 3b live-revenue wiring survives for phase 2; delete it once ported.
+- Prototype JS split mechanically into ES modules (`util`, `model`, `charts`, `components`, `pages`, `shell`, `events` + hand-written `main`, `data`, `session`, `theme`, `apiClient`); imports generated from real references, code otherwise verbatim. CSP: no inline handlers (2 `onclick`s replaced), only the theme pre-paint inline script (auto-hashed). IBM Plex self-hosted from `views/fonts/` (OFL) — no Google Fonts allow-list.
+- Data: `GET /api/ceo-dashboard/control-room` (ceo/admin, `requireRole`) → `{ controlRoom }`, served from `repositories/controlRoomSampleRepository.js` reading `repositories/data/controlRoomSample.json` (the prototype's `D`, verbatim). Old `/snapshot` + `/brief` routes untouched, unused by the UI until phase 2 folds them in.
+- Portal integration: login gate + role check, shared account menu (portal tokens aliased in its scope), theme chip goes through the portal's persisted `setTheme`, rail mark → home, "Client mapping" in the rail footer, permanent "Sample data" banner + sync chip.
+
+**Verified in Chrome (local dev, real app.db):** all 10 pages, Budget both modes, Egypt/UAE/Combined, closed year 2025 + compare, drill drawer open/close, ⌘K, target/plan/decision edits, brand/calm, light/dark/system, account menu, 400px phone layout — 0 JS errors, 0 CSP violations, all 7 font faces load. Unauthenticated API call → 401.
+
+**Known, deferred to phase 2:** live revenue/collections no longer visible on `/ceo` (they were on the old page); prototype hard-codes "2026"/"5 Oct" in narrative copy and the current-year check; URL hash isn't re-read on back/forward; string fields interpolated into HTML need an escaping audit before Odoo partner names flow in.
+
+### Phase 2 — wire what's already real (2026-10-05, uncommitted)
+
+**Server.** `GET /api/ceo-dashboard/control-room?entity=ceas|fze|lwm|all` (authenticate → 401; requireRole ceo/admin → 403; unknown entity → 400; controller has explicit try/catch → next). New `ceo-dashboard/services/controlRoomService.js` clones the sample and overlays each live source through its owner's public interface, recording `sources` (`odoo`/`clickup`/`portal`/`planner`/`sample`/`error`); a failing source logs and stays sample instead of failing the page.
+- **Finance (Odoo, per company):** invoiced revenue by month + YTD, trailing-90 client book (grouped by linked portal client), receivables, 5-bucket aging, DSO, >60-day share, collection rate MTD, drill records. KPI `revenue_total` renamed **"Invoiced revenue"** — the paid-SO revenue definition isn't built. Targets on live KPIs only where ADR-0013 carries one (DSO 55d, collection 85%); others "no target set". Sample sparklines and prior-year values removed for live KPIs. Consolidated stays sample until 3c FX.
+- **Pipeline (ClickUp):** new `commercial-leads` read interface `getPipelineSummary()` (exported from its container): open deals by funnel bucket (bucketService mapping) + current and previous quarter cohort rows via the existing `getQuarterlyKpis` (ADR-0010 — no new conversion definition) + stage durations. Counts only (Project Value is on ~7% of deals). Win rate / coverage / avg deal / sales cycle stay sample: the prototype's "won ÷ (won + lost)" would count unqualified leads as lost — needs a business definition.
+- **People (employees):** new interface `getWorkforceSummary({ today })` (employees container → `services/workforceSummaryService.js`, two new repo queries). Aggregates only, no names or pay: active headcount (roster + login active), freelancers, by department, joiners YTD, distinct employees on approved leave in the next 14 days (excluding wfh/excuse/public_holiday).
+- **Costs (Margin Planner, Ceas Comm only):** `marginPlannerSummary.getCompanyCostSummary()` — burn, payroll, fixed, overhead/hr with deep links to the Planner.
+- **Removed:** old `/snapshot` + `/brief` routes, `ceoDashboardService.js`, `mockSnapshotRepository.js`, `views-legacy/` (its live wiring is superseded by the above).
+
+**Frontend.** Entity switch = Ceas Comm / FZE / LWM / All (one cached payload per entity; failed fetch keeps the previous entity). P&L / balance sheet / cash statements always render the agency-wide sample (entity-alone branches removed). "Live · <source>" badges on live panels and LIVE tags on live KPIs; banner now "Partly live". Clients, Money (cost base + receivables; payables sample), Growth (open deals by stage + cohorts), People (headcount, away, by department) have live versions. Null-safe KPI rendering (no actual / no target → "—" / "no target set"). Sync chip shows Odoo's last sync (red dot on failure). Back/forward re-reads the hash. Top bar fits one line at laptop width. Escaping checked on every live string path (client/AM/department/category names).
+
+**Prototype bugs fixed on the way:** drill-drawer records table collapsed to 0px (flex shrink); Budget master view printed "null%" for an untracked function.
+
+**Verified in Chrome (local dev, real app.db):** all 10 pages × 4 entities with no JS errors and no "undefined"/"NaN"/"null" text; live badges where expected (none on Clients/Money under All); FZE in AED (440K YTD, collection rate "—" with no billing this month); Ceas Comm EGP 4.89M YTD, DSO 42d (634,035 ÷ 1,343,049 × 90 — FZE's 42d checked separately, 41.6), drill records render; bad entity → 400; removed route → 404; back/forward. Service also exercised directly on a scratch DB copy for all entities. Not re-checked: phone width (layout code unchanged apart from new panels using existing components).
+
+**Still sample / open:** health score composite, P&L, cash, balance sheet, budgets, delivery, strategic, decisions, risks, renewals, revenue at risk, utilisation/attrition/time-to-fill, pipeline money KPIs. Prototype narrative text still references its fictional agency and "5 October"; current-year check still hard-coded to 2026. Local planner payroll shows EGP 0 (local data has no salaries).
+
 ## 7. Open Questions
 
 - CEO-vs-`manager` role naming; `finance`'s dead-role status.
 - Exact field-level cost/price permission design (who sees what).
 - Whether the pricing↔management ADR is its own doc or folded into ADR-0013.
 - Automating Margin Planner project creation off a Closed-Won deal — good idea, explicitly deferred, not scheduled yet.
-- Which Odoo apps are actually active/used at CEAS (Accounting vs. Invoicing-only, Expenses, Purchase) — determines real scope of pillars 6–13.
+- ~~Which Odoo apps are active~~ — **Resolved 2026-10-04 (§6f):** full Accounting, Sales+Subscriptions, CRM, Purchase, Expenses, Project/Timesheets, Payroll.
+- ~~Personal-account permissions / key expiry~~ — **Resolved 2026-10-04 (§6f):** read access confirmed on every finance/CRM model; key is persistent.
+- **New (2026-10-04):** which of the 4 Odoo companies are in the Business Portal's scope? Et3alemha (id 3) isn't visible to the integration account at all — needs either access granted or a decision that it's out of scope. Learn With Marie is visible but may not belong in CEAS reporting.
+- ~~Currency rule~~ — **Answered 2026-10-04 (§6g):** support both (Odoo rates + fixed rate).
+- ~~CEO-dashboard entity mapping~~ — **Answered 2026-10-04:** Ceas Comm FZE gets **its own tab** (tabs become Ceas Comm / Ceas Comm FZE / Learn with Marie / Consolidated).
+- **To be implemented (not deferred) — Et3alemha:** in scope, parked for now by user decision 2026-10-04; needs Odoo access granted to the integration account first. Revisit after the first Odoo sync is live.
+- ~~Pipeline source of truth~~ — **Answered 2026-10-04: ClickUp** stays the pipeline source; Odoo CRM is not synced for pipeline.
+- ~~commercial/account_management on Commercial Lead~~ — **Answered 2026-10-04: no** — stays ceo/operations/admin.
+- **Decided 2026-10-04:** first Odoo build target is the **CEO Dashboard** (swap mock data for real), Finance page second.
+- **To be implemented (not deferred) — salary from Odoo:** feasible (§6g), parked by user decision 2026-10-04 for simplicity; portal-entered `employees.salary` stays the source for now.

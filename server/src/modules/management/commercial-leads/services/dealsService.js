@@ -9,6 +9,7 @@ const stageRepository = require('../repositories/stageRepository');
 const statusColorRepository = require('../repositories/statusColorRepository');
 const { toDeal } = require('../models/deal.model');
 const quarterMetricsService = require('./quarterMetricsService');
+const { mapStatusToBucket } = require('./bucketService');
 
 function getDeals() {
   const result = {};
@@ -85,6 +86,41 @@ function getQuarterlyKpis(requestedQuarter) {
   };
 }
 
+/* The CEO Control Room's pipeline block (modules/management/ceo-dashboard,
+   via this module's container). Counts only — ClickUp has a deal value on
+   too few deals (Project Value is set on ~7%) to show money honestly.
+   - open: deals in the 2026 Projects list by the funnel bucket their
+     current status maps to (bucketService), open buckets only.
+   - quarters: the current quarter's cohort row and the latest earlier one
+     (a quarter a few days old has an empty cohort), exactly as the
+     Commercial Lead page computes them (ADR-0010) — no second definition
+     of conversion.
+   - stageDurations: average days spent per status, same as that page. */
+const OPEN_BUCKETS = [
+  { bucket: 'leads', name: 'Leads' },
+  { bucket: 'qualified', name: 'Qualified' },
+  { bucket: 'onboarding', name: 'Onboarding' },
+  { bucket: 'in_progress', name: 'In progress' },
+];
+
+function getPipelineSummary() {
+  const counts = new Map(OPEN_BUCKETS.map((b) => [b.bucket, 0]));
+  for (const row of dealRepository.findAllByListId(LISTS.pipeline)) {
+    const bucket = mapStatusToBucket(row.status);
+    if (counts.has(bucket)) counts.set(bucket, counts.get(bucket) + 1);
+  }
+  const current = getQuarterlyKpis(null);
+  const previousId = current.availableQuarters.filter((q) => q < current.quarter).sort().pop();
+  const quarters = [current, previousId ? getQuarterlyKpis(previousId) : null]
+    .filter(Boolean)
+    .map((q) => ({ id: q.quarter, isCurrent: q.isCurrent, isEstimated: q.isEstimated, ...q.metrics }));
+  return {
+    open: OPEN_BUCKETS.map((b) => ({ bucket: b.bucket, name: b.name, count: counts.get(b.bucket) })),
+    quarters,
+    stageDurations: getStageDurations(),
+  };
+}
+
 // Wraps a value in quotes and doubles any embedded quotes whenever it
 // contains a comma, quote, or newline — the one thing the older KPI-export
 // precedent (kpiScoringService.exportHistoryCsv) skips, safely only because
@@ -129,4 +165,6 @@ function exportDealsCsv(listKey) {
   return lines.join('\r\n');
 }
 
-module.exports = { getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis, exportDealsCsv };
+module.exports = {
+  getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis, getPipelineSummary, exportDealsCsv,
+};

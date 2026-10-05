@@ -2,7 +2,9 @@ const express = require('express');
 const requireRole = require('../../../../common/middleware/requireRole');
 const { ROLES } = require('../../../../common/constants/roles');
 
-/* Mounted at /api in app.js: /api/ceo-dashboard/snapshot, /brief.
+/* Mounted at /api in app.js: GET /api/ceo-dashboard/control-room — the
+   only route. authenticate (401 without a valid access token), then
+   requireCeo (403 for any other role).
 
    Gated to ROLES.CEO and ROLES.ADMIN — narrower than the broader
    USER_MANAGER_ROLES set commercial-leads uses (which also includes
@@ -15,8 +17,7 @@ function createCeoDashboardRouter({ ceoDashboardController, authenticate }) {
   const router = express.Router();
   const requireCeo = requireRole([ROLES.CEO, ROLES.ADMIN]);
 
-  router.get('/ceo-dashboard/snapshot', authenticate, requireCeo, ceoDashboardController.snapshot);
-  router.get('/ceo-dashboard/brief', authenticate, requireCeo, ceoDashboardController.brief);
+  router.get('/ceo-dashboard/control-room', authenticate, requireCeo, ceoDashboardController.controlRoom);
 
   return router;
 }

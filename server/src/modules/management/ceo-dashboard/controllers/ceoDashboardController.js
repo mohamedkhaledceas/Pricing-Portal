@@ -1,19 +1,18 @@
-/* Both handlers are plain sync functions, same as commercial-leads'
-   dealsController — ceoDashboardService reads from an in-memory mock
-   object, nothing async, so a thrown ValidationError propagates through
-   Express's own synchronous error handling with no catchAsync needed. */
-function createCeoDashboardController({ ceoDashboardService }) {
-  function snapshot(req, res) {
-    const entity = req.query.entity || 'ceas';
-    res.json({ snapshot: ceoDashboardService.getSnapshot(entity) });
+/* The service is synchronous (better-sqlite3 reads), but the handler still
+   forwards errors explicitly rather than relying on Express 4 catching a
+   synchronous throw — deliberate, per the project's preference for
+   explicit error paths in new controllers. */
+function createCeoDashboardController({ controlRoomService }) {
+  function controlRoom(req, res, next) {
+    try {
+      const entity = req.query.entity || 'ceas';
+      res.json({ controlRoom: controlRoomService.getControlRoom(String(entity)) });
+    } catch (err) {
+      next(err);
+    }
   }
 
-  function brief(req, res) {
-    const entity = req.query.entity || 'ceas';
-    res.json({ brief: ceoDashboardService.getBrief(entity) });
-  }
-
-  return { snapshot, brief };
+  return { controlRoom };
 }
 
 module.exports = createCeoDashboardController;
