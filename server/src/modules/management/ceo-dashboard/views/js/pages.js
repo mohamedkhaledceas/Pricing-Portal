@@ -1,6 +1,6 @@
 import { balanceSheet, bmodeBar, decisionItem, execSummary, fnByPl, fnGrid, fnMaster, kpi, panel, pnlTable, salesVsTarget, sortTable, srcBadge, stat } from './components.js';
 import { D } from './data.js';
-import { allFn, ceoQueue, CUR, E, KPI, LF, liveBudget, liveHealth, LK, S, tierOf, ydel, yfmt, YRS } from './model.js';
+import { allFn, canEditBudgets, ceoQueue, CUR, E, KPI, LF, liveBudget, liveHealth, LK, S, tierOf, ydel, yfmt, YRS } from './model.js';
 import { egp, esc, fmt, fmtD, num, pctx, r1, sevtag, tag, TT, tval } from './util.js';
 
 /* ═════ pages ═════ */
@@ -430,7 +430,7 @@ P.budget=()=>{
   const rows=L.lines.map(b=>({
     v:[b.name,b.annual,b.spent,b.left,b.usedPct,b.variance,b.projected],
     c:[`<b style="font-weight:500">${esc(b.name)}</b>${b.edited?'<span class="mon" style="color:var(--accent);border-color:var(--accent);margin-left:5px">EDITED</span>':''}`,
-       `<input class="tin" data-bset="${esc(b.name)}" value="${b.annual.toLocaleString('en-US')}" aria-label="Annual budget for ${esc(b.name)}">
+       !canEditBudgets()?`<span class="num">${egp(b.annual,false)}</span>`:`<input class="tin" data-bset="${esc(b.name)}" value="${b.annual.toLocaleString('en-US')}" aria-label="Annual budget for ${esc(b.name)}">
         ${b.edited?`<button class="btn" data-breset="${esc(b.name)}" title="Restore EGP ${egp(b.orig)}" style="padding:1px 5px;margin-left:4px">↺</button>`:''}`,
        `<span class="num">${egp(b.ytdBudget)}</span>`,
        `<span class="num">${egp(b.spent)}</span>`,
@@ -479,7 +479,7 @@ P.budget=()=>{
 
   ${sortTable('bud',[{t:'Line'},{t:'Annual budget',n:1},{t:'Budget to date',n:1},{t:'Spent',n:1},{t:'Variance',n:1},{t:'Left for the year',n:1},{t:'% used',n:1},{t:'Projected full year',n:1},{t:'Status',n:1}],rows)}
 
-  ${panel('Set a budget','type an annual figure, press Enter — the page recalculates',`<div class="pb">
+  ${!canEditBudgets()?'':panel('Set a budget','type an annual figure, press Enter — the page recalculates',`<div class="pb">
     <div class="setrow">
       <select class="inp" id="bline" aria-label="Budget line">${L.lines.map(b=>`<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('')}</select>
       <input class="inp num" id="bval" type="number" step="10000" placeholder="Annual budget" aria-label="Annual budget" style="width:160px">

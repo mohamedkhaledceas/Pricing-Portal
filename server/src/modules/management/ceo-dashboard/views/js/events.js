@@ -1,6 +1,6 @@
 import { D } from './data.js';
 import { loadEntity } from './loader.js';
-import { addKpi, ceoQueue, KPI, PAGES, S, setBudget, setPlan, setTarget } from './model.js';
+import { addKpi, ceoQueue, KPI, pages, S, setBudget, setPlan, setTarget } from './model.js';
 import { applyBrand, closeDrill, draw, goto, openDrill, render } from './shell.js';
 import { isDarkTheme, setTheme, syncThemeChip } from './theme.js';
 import { $, esc, fmt, toast } from './util.js';
@@ -8,10 +8,10 @@ import { $, esc, fmt, toast } from './util.js';
 /* ═════ palette ═════ */
 export let cmdAll=[],cmdF=[],cmdS=0;
 export function buildCmd(){cmdAll=[
-  ...PAGES.map(p=>({t:p.name,k:'Page',go:()=>goto(p.id)})),
+  ...pages().map(p=>({t:p.name,k:'Page',go:()=>goto(p.id)})),
   ...D.kpis.map(k=>({t:k.name,k:fmt(k,k.actual),go:()=>openDrill(k.id)})),
   ...D.decisions.map(d=>({t:d.title,k:'Decision',go:()=>goto('risks')})),
-  ...D.revenue.clients.map(c=>({t:c.name,k:'Client',go:()=>goto('clients')})),
+  ...(S.scope==='budget'?[]:D.revenue.clients.map(c=>({t:c.name,k:'Client',go:()=>goto('clients')}))),
 ];}
 export const cmdOpen=()=>{$('#cmd').dataset.open='true';$('#cmdin').value='';cmdS=0;cmdRender('');setTimeout(()=>$('#cmdin').focus(),20);};
 export const cmdClose=()=>$('#cmd').dataset.open='false';
@@ -143,12 +143,13 @@ addEventListener('keydown',e=>{
     if(e.key==='ArrowUp'){e.preventDefault();cmdS=Math.max(0,cmdS-1);cmdRender($('#cmdin').value);}
     if(e.key==='Enter'&&cmdF[cmdS]){cmdClose();cmdF[cmdS].go();}
     return;}
-  if(e.key==='f'&&!/input|textarea|select/i.test(e.target.tagName)){goto('focus');return;}
-  if(/^[1-9]$/.test(e.key)&&!/input|textarea|select/i.test(e.target.tagName)&&PAGES[+e.key-1])goto(PAGES[+e.key-1].id);
+  if(e.key==='f'&&S.scope!=='budget'&&!/input|textarea|select/i.test(e.target.tagName)){goto('focus');return;}
+  if(/^[1-9]$/.test(e.key)&&!/input|textarea|select/i.test(e.target.tagName)&&pages()[+e.key-1])goto(pages()[+e.key-1].id);
 });
 /* Back/forward between pages. goto() sets S.page before the hash, so its
    own hash change is a no-op here. */
 addEventListener('hashchange',()=>{const id=location.hash.slice(1);
-  if(id!==S.page&&PAGES.some(p=>p.id===id)){S.page=id;closeDrill();render();}});
+  if(!pages().some(p=>p.id===id)){history.replaceState(null,'','#'+S.page);return;}
+  if(id!==S.page){S.page=id;closeDrill();render();}});
 let rt;
 addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(draw,140);});

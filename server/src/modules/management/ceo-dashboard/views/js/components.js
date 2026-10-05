@@ -1,6 +1,6 @@
 import { spark } from './charts.js';
 import { D } from './data.js';
-import { allFn, E, entShare, FN, LF, liveBudget, LK, planEdited, prior, S, tierOf, ydel } from './model.js';
+import { allFn, canEditFn, E, entShare, FN, LF, liveBudget, LK, planEdited, prior, S, tierOf, ydel } from './model.js';
 import { egp, esc, fmt, fmtc, num, pctx, r1, TT } from './util.js';
 
 /* ═════ components ═════ */
@@ -246,9 +246,11 @@ export function fnMaster(){
 export function fnGrid(){
   const f=LF(S.fn), CM=D.fnBudget.closedMonths, ed=planEdited(S.fn);
   const groups=[...new Set(f.categories.map(c=>c.group||''))];
-  const cell=(c,i)=>`<td class="n"><input class="tin pin ${c.plan[i]!==FN(S.fn).categories.find(x=>x.name===c.name).plan[i]?'ed':''}"
+  const editable=canEditFn(S.fn);
+  const cell=(c,i)=>editable?`<td class="n"><input class="tin pin ${c.plan[i]!==FN(S.fn).categories.find(x=>x.name===c.name).plan[i]?'ed':''}"
      data-plan="${S.fn}|${esc(c.name)}|${i}" value="${c.plan[i].toLocaleString('en-US')}"
-     aria-label="${esc(c.name)} ${D.months2[i]}"></td>`;
+     aria-label="${esc(c.name)} ${D.months2[i]}"></td>`
+    :`<td class="n"><span class="num">${egp(c.plan[i],false)}</span></td>`;
   const rows=c=>`<tr>
       <td><span style="font-weight:500">${esc(c.name)}</span>
         <div class="note">${esc(c.pl)}${c.start?' · from '+esc(c.start):''}${c.edited?' · <b style="color:var(--accent)">edited</b>':''}</div></td>

@@ -155,7 +155,18 @@ export const PAGES=[
  {id:'targets',name:'Targets',icon:'targets',crumb:'The one registry every view reads from'},
  {id:'risks',name:'Risks',icon:'risks',crumb:'Rule-based register'},
 ];
-export const S={page:'focus',brand:false,scale:0,calm:false,single:false,ent:'ceas',bmode:'function',fn:'people',plan:{},year:'2026',cmp:'',sort:{},filter:{},targets:{},budgets:{},addedKpis:[],decisions:{},acks:{},prefs:{money:150000,ceo:{cash:1,collections:1,revenue:1,pipeline:1,strategic:1,delivery:0,people:0,operations:0}},narrow:false,log:[]};
+export const S={page:'focus',scope:'full',role:null,brand:false,scale:0,calm:false,single:false,ent:'ceas',bmode:'function',fn:'people',plan:{},year:'2026',cmp:'',sort:{},filter:{},targets:{},budgets:{},addedKpis:[],decisions:{},acks:{},prefs:{money:150000,ceo:{cash:1,collections:1,revenue:1,pipeline:1,strategic:1,delivery:0,people:0,operations:0}},narrow:false,log:[]};
+/* Who sees what. 'full' (ceo, admin) is every page; 'budget' (operations,
+   people_culture) is the Budget tab alone, fed by its own narrower
+   endpoint. Within the Budget tab, CEO/admin edit everything; P&C and
+   Operations edit only the plan cells of the functions they own. The
+   server enforces the same rules once edits are saved — this only stops
+   the page offering a control the server would refuse. */
+export const pages=()=>S.scope==='budget'?PAGES.filter(p=>p.id==='budget'):PAGES;
+const FULL_EDIT_ROLES=['ceo','admin'];
+const FN_EDITORS={people_culture:['people','hiring'],operations:['ops']};
+export const canEditBudgets=()=>FULL_EDIT_ROLES.includes(S.role);
+export const canEditFn=fid=>canEditBudgets()||(FN_EDITORS[S.role]||[]).includes(fid);
 /* ═════ escalation ═════ */
 export function tierOf(d){const p=S.prefs,rs=[];let t='team';
   if(p.ceo[d.category]){t='ceo';rs.push(`You see everything in ${d.category}`);}

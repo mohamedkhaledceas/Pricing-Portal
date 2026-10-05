@@ -32,6 +32,8 @@ const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
 // 'ceo' only — see modules/management/ceo-dashboard/routes/index.js's
 // own comment on why this doesn't use USER_MANAGER_ROLES like the others.
 const CEO_DASHBOARD_ROLES = ['ceo', 'admin'];
+// Same page, Budget tab only (server: GET /api/ceo-dashboard/budget).
+const CEO_BUDGET_ONLY_ROLES = ['operations', 'people_culture'];
 
 // opts.kpiView lets a caller deep-link into a specific KPI sub-view (see
 // renderKpi's own comment) — e.g. Overview's "Go to Team Reviews" button
@@ -68,7 +70,10 @@ async function doLogout() {
 
 function bindUi() {
   $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
-  $('#btnCeoDashboard').addEventListener('click', () => { window.location.href = '/ceo'; });
+  $('#btnCeoDashboard').addEventListener('click', () => {
+    const budgetOnly = state.currentUser && CEO_BUDGET_ONLY_ROLES.includes(state.currentUser.role);
+    window.location.href = budgetOnly ? '/ceo#budget' : '/ceo';
+  });
   $('#btnMarginPlanner').addEventListener('click', () => { window.location.href = '/planner'; });
 
   $all('.nav-tab').forEach((btn) => btn.addEventListener('click', () => switchMainTab(btn.dataset.tab, btn)));
@@ -119,7 +124,9 @@ function bindUi() {
     $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
     const canSeeLeaveReport = state.currentUser && LEAVE_REPORT_ROLES.includes(state.currentUser.role);
     $('#maintab-leave-report').style.display = canSeeLeaveReport ? '' : 'none';
-    $('#btnCeoDashboard').hidden = !(state.currentUser && CEO_DASHBOARD_ROLES.includes(state.currentUser.role));
+    const dashRole = state.currentUser && state.currentUser.role;
+    $('#btnCeoDashboard').hidden = !(CEO_DASHBOARD_ROLES.includes(dashRole) || CEO_BUDGET_ONLY_ROLES.includes(dashRole));
+    $('#btnCeoDashboard').textContent = CEO_BUDGET_ONLY_ROLES.includes(dashRole) ? 'Budget' : 'CEO Dashboard';
     $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
     const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
     window.AccountMenu.mount($('#accountMenuWrap'), {

@@ -1,6 +1,6 @@
 import { chBars, chCols, chLine, chStack, chWater, ico } from './charts.js';
 import { D } from './data.js';
-import { ceoQueue, CUR, KPI, LK, PAGES, S, tierOf, YRS } from './model.js';
+import { ceoQueue, CUR, KPI, LK, pages, PAGES, S, tierOf, YRS } from './model.js';
 import { P } from './pages.js';
 import { isDarkTheme } from './theme.js';
 import { $, egp, esc, fmt, fmtc, fmtD, money, num, pctx, r1, sevtag, TT, tval, V } from './util.js';
@@ -13,9 +13,9 @@ export function draw(){
   if(g('b1'))chWater(g('b1'),{items:D.budget.bridge,fmtv:v=>'EGP '+egp(v)});
   /* Live aging has five buckets (not yet due + four overdue); the ramp has
      four steps, so "not yet due" takes the neutral colour. */
-  const aging=D.workingCapital.aging,agingCols=aging.length>4?[V('--demph'),...ramp]:ramp;
   const amount=D.revenue.live?v=>CUR()+' '+egp(v):v=>'EGP '+egp(v);
-  if(g('ar1'))chStack(g('ar1'),{segments:aging.map((a,i)=>({...a,color:agingCols[i]})),fmtv:amount});
+  if(g('ar1')){const aging=D.workingCapital.aging,agingCols=aging.length>4?[V('--demph'),...ramp]:ramp;
+    chStack(g('ar1'),{segments:aging.map((a,i)=>({...a,color:agingCols[i]})),fmtv:amount});}
   if(g('rev1'))chCols(g('rev1'),{labels:D.months,values:D.revenue.actual,target:D.revenue.target,fmtv:amount,partialLast:true});
   if(g('hc1'))chBars(g('hc1'),{items:D.people.departments.map(d=>({name:d.name,value:d.count})),fmtv:v=>num(v)+(v===1?' person':' people')});
   if(g('rag1'))chStack(g('rag1'),{segments:[{name:'On track',value:D.delivery.rag.green,color:V('--good')},
@@ -65,6 +65,12 @@ export function openDrill(id){
 export const closeDrill=()=>{$('#dr').dataset.open='false';document.body.style.overflow='';};
 /* ═════ shell ═════ */
 export function renderShell(){
+  if(S.scope==='budget'){
+    $('#railnav').innerHTML=pages().map(navItem).join('');
+    $('#railfoot').innerHTML=`<button class="ri" id="collapse">${ico('settings')}<span class="lb">Collapse rail</span></button>`;
+    $('#tabs').innerHTML='';
+    return;
+  }
   $('#railnav').innerHTML=`<div class="rsec">Overview</div>`+
     PAGES.slice(0,1).map(navItem).join('')+
     `<div class="rsec">The business</div>`+PAGES.slice(1,6).map(navItem).join('')+
@@ -88,13 +94,18 @@ export function badge(id){
 export function goto(id){S.page=id;location.hash='#'+id;render();scrollTo({top:0,behavior:'instant'});}
 export function render(){
   const closed=S.year!=='2026';
-  const p=PAGES.find(x=>x.id===S.page)||PAGES[0];
+  const p=pages().find(x=>x.id===S.page)||pages()[0];
+  // A page this viewer can't see (typed hash, shortcut) falls back to the
+  // first allowed one; keep the URL honest about what is showing.
+  if(S.page!==p.id){S.page=p.id;history.replaceState(null,'','#'+p.id);}
   $('#ptitle').textContent=closed?S.year:p.name;
   $('#pcrumb').textContent=closed?'Closed year · settled figures':p.id==='today'?D.asOfLabel:p.crumb;
   $('#page').innerHTML=closed?P.yearreview():P[p.id]();
-  renderShell();renderYearSel();renderEntSel();renderSync();
-  /* Focus shows only the controls that change what is on it. */
-  const bare=S.page==='focus';
+  renderShell();
+  /* Focus shows only the controls that change what is on it; the
+     budget-only view has no entity, year or source controls at all. */
+  const budgetOnly=S.scope==='budget',bare=S.page==='focus'||budgetOnly;
+  if(!budgetOnly){renderYearSel();renderEntSel();renderSync();}
   ['#entsel','#yr','#cmp','#syncchip'].forEach(q=>{const n=$(q);if(n)n.hidden=bare;});
   draw();
 }

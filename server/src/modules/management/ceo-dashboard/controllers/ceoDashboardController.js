@@ -12,7 +12,15 @@ function createCeoDashboardController({ controlRoomService }) {
     }
   }
 
-  return { controlRoom };
+  function budget(req, res, next) {
+    try {
+      res.json({ controlRoom: controlRoomService.getBudget() });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  return { controlRoom, budget };
 }
 
 module.exports = createCeoDashboardController;

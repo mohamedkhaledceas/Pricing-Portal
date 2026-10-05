@@ -410,6 +410,14 @@ User supplied `ceas-control-room.html` (single-file prototype: 10 pages, 28-KPI 
 
 **Still sample / open:** health score composite, P&L, cash, balance sheet, budgets, delivery, strategic, decisions, risks, renewals, revenue at risk, utilisation/attrition/time-to-fill, pipeline money KPIs. Prototype narrative text still references its fictional agency and "5 October"; current-year check still hard-coded to 2026. Local planner payroll shows EGP 0 (local data has no salaries).
 
+### Budget-only access for operations + people_culture (2026-10-05, uncommitted, branch feature/ceo-control-room)
+
+User decisions (2026-10-05): ops + P&C see **only** the Budget tab; each edits only the plan of the function it owns; annual P&L-line budgets ceo/admin only. Budget/target/plan records will be seeded from the prototype's numbers in phase 3; decision queue + risk register stay sample (a future AI layer will generate briefs/risks/suggestions); cross-company client book shows EGP and AED separately.
+
+- **Server, per route:** `GET /api/ceo-dashboard/control-room` → authenticate (401) + ceo/admin (403 otherwise), unchanged. **New** `GET /api/ceo-dashboard/budget` → authenticate (401) + ceo/admin/operations/people_culture (403 otherwise); returns only the Budget tab's blocks (budget, function plans, project budgets, the net-profit KPI) — no revenue, clients book, cash, people or sync data. Edits aren't saved yet, so there is no write route to gate until phase 3, which must enforce the same ownership rule server-side.
+- **Frontend:** role → scope (`full` / `budget`). Budget scope: rail and search show Budget only, no mobile tab bar, entity/year/compare/sync controls hidden, any other hash or shortcut falls back to `#budget` (URL corrected). Function ownership: P&C → People & Culture + Hiring, Operations → Operations; Marketing has no owning role (ceo/admin). Non-owned plan cells and the P&L-line budget inputs render read-only; Operations opens on its own function. Employees-page header button reads "Budget" for these roles and opens `/ceo#budget`.
+- **Verified** on a scratch DB copy (server on 127.0.0.1:3098, throwaway users in the copy only): curl — operations/P&C budget 200 / control-room 403, ceo 200/200, employee 403/403, no token 401. Browser as each role: ops edits only Operations (144 cells), P&C only People & Culture (60) + Hiring (108), CEO everything (+6 P&L inputs, Set-a-budget panel); `#money`/`#clients`/`#risks`, keys 3/f all stay on Budget; 0 JS errors after fixing an unguarded receivables read in `draw()`. Real local session unaffected.
+
 ## 7. Open Questions
 
 - CEO-vs-`manager` role naming; `finance`'s dead-role status.

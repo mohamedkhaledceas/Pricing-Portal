@@ -231,7 +231,43 @@ function createControlRoomService({
     return D;
   }
 
-  return { getControlRoom };
+  /* The Budget tab alone — for operations and people_culture, who may see
+     nothing else on this page. Only the blocks the Budget tab renders are
+     copied out, so revenue, clients, cash, people and payroll-by-person
+     never leave the server for these roles. net_profit is the one KPI
+     the tab shows. */
+  function getBudget() {
+    const today = now();
+    const sample = sampleRepository.getSample();
+    const netProfit = sample.kpis.find((k) => k.id === 'net_profit');
+    return structuredClone({
+      scope: 'budget',
+      asOf: CAIRO_DATE.format(today),
+      asOfLabel: CAIRO_LONG_DATE.format(today),
+      currency: 'EGP',
+      months2: sample.months2,
+      elapsed: sample.elapsed,
+      penalty: sample.penalty,
+      budget: sample.budget,
+      fnBudget: sample.fnBudget,
+      functions: sample.functions,
+      projects: { value: sample.projects.value, margin: sample.projects.margin },
+      pnl: { netProfit: sample.pnl.netProfit },
+      revenue: { ytd: sample.revenue.ytd, ytdTarget: sample.revenue.ytdTarget },
+      kpis: [netProfit],
+      series: {},
+      yearMap: {},
+      years: {},
+      records: {},
+      risks: [],
+      decisions: [],
+      components: [],
+      sources: {},
+      sync: [],
+    });
+  }
+
+  return { getControlRoom, getBudget };
 }
 
 module.exports = createControlRoomService;

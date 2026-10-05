@@ -6,6 +6,12 @@ import { S } from './model.js';
    first view and cached for the page's lifetime. */
 const cache = new Map();
 
+/* Operations / P&C: the Budget tab's data only, from its own endpoint. */
+export async function loadBudget() {
+  const { controlRoom } = await apiFetch('/api/ceo-dashboard/budget');
+  setData(controlRoom);
+}
+
 export async function loadEntity(key) {
   let data = cache.get(key);
   if (!data) {
