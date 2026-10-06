@@ -238,4 +238,5 @@ httpServer.listen(PORT, HOST, () => {
   management.scheduleQuarterFreeze();
   management.startOdooSyncSchedule();
   management.startClientSyncSchedule();
+  management.startDeliverySyncSchedule();
 });

@@ -28,6 +28,8 @@ export function draw(){
     extra:egp(l.value,false)+' contracted · '+egp(l.profit,false)+' profit'})),fmtv:v=>r1(v)+'%',ref:42,refLab:'target 42%'});
   if(g('ws1')&&D.sales&&D.sales.live)chBars(g('ws1'),{items:D.sales.products.map(p=>({name:p.name,value:p.value,
     label:egp(p.value),extra:num(p.orders)+(p.orders===1?' order':' orders')})),fmtv:v=>(D.sales.consolidated?'EGP':CUR())+' '+egp(v)});
+  if(g('stg1')&&D.deliveryLive)chBars(g('stg1'),{items:D.deliveryLive.stages.map(x=>({name:x.stage,value:x.open,
+    color:x.overdue?V('--warn'):V('--accent'),label:num(x.open)+(x.overdue?` (${num(x.overdue)})`:''),extra:num(x.overdue)+' overdue'})),fmtv:v=>num(v)+' open'});
   if(g('pp1')&&D.pipeline.live)chBars(g('pp1'),{items:D.pipeline.stages.map((s,i)=>({name:s.name,value:s.count,color:ramp[Math.min(i,3)]})),
     fmtv:v=>num(v)+(v===1?' deal':' deals')});
   else if(g('pp1'))chBars(g('pp1'),{items:D.pipeline.stages.map((s,i)=>({name:s.name,value:s.value,color:ramp[Math.min(i,3)],

@@ -458,7 +458,7 @@ Recorded 2026-10-06 — built last session, which ended before the tracker was u
 | C.2 | KPI targets + custom KPIs saved per view (Ceas Comm / FZE / LWM / All), starting empty | ✅ 2026-10-06 — see "Phase 3.2" below |
 | C.3 | Escalation routing + sign-off threshold saved | ✅ 2026-10-06 — see "Phase 3.3" below |
 | 4 | Phase 4 — wider Odoo sync (bank, vendor bills, P&L lines, SOs) | ✅ 2026-10-06 — done through the §6p steps 1–4 |
-| 5 | Phase 5 — ClickUp delivery / time | ⬜ |
+| 5 | Phase 5 — ClickUp delivery / time | 🟡 2026-10-06 — overdue work, work by stage, workload by client/person live; on-time delivery awaits the user's "delivered" definition; utilisation not measurable (no time tracked). See "Phase 5" below |
 | 6 | Phase 6 — closed years | ✅ 2026-10-06 — see "Phase 6" below (committed, not pushed) |
 | — | Blocked on business definitions: "lost" (win rate/coverage/sales cycle), paid-SO revenue, Consolidated FX (3c) | ⏸ |
 | — | Stays sample by decision: decision queue, risk register (future AI layer) | ⏸ |
@@ -572,6 +572,16 @@ User decision 2026-10-06: **targets per view** (Ceas Comm, FZE, LWM, All — eac
 - "Partly live" banner rewritten to list exactly what is still sample.
 - Figures (to 6 Oct): **Ceas Comm** 2025 revenue 2.80M / net profit 427K (15.3%) / cash 285K / DSO 45 → 2026 4.68M / −1.48M (−31.6%) / 328K / 18 (balance-sheet basis); full 2025 revenue 3.74M, net profit 296K, cash 31 Dec 573K. **FZE** 2025 AED 65K revenue, net 5K. **LWM** 2025 (from 16 Jul) EGP 204K.
 - Verified in Chrome (real local DB, viewing only): Ceas Comm 2026/2025/2024 (partial), compare vs 2025 on live KPI cards, closed-year page; FZE/LWM 2026 + 2025; All 2026 only; fallback from 2024 on company switch; 0 JS errors.
+
+### Phase 5 — delivery from ClickUp (2026-10-06, committed, not pushed)
+
+**Data-quality check first (read-only, 2026-10-06), tasks updated in the last 120 days:** Ceas Comm | Kitchen (client delivery) 1,443 tasks — due date 81%, assignee 98%, Client Name 90%, **0 hours of time tracked and no estimates**; Internal Kitchen 455; Commercial Lead 307; Process Library 952 (checklists). Tasks are closed in batches (up to 44 a day; median close 15 days after due), so close date ≠ delivery. The time-entries API returns 403 for other people's entries with the current key. **Time-in-status works** (`/task/bulk_time_in_status`): on-time over the last 90 days (623 closed Kitchen tasks with due dates) would be **A** reached "client submission" 31% (353 measurable, median +2 days) · **B** reached "approved"/"rtp" 20% (329, +6 days) · **C** earliest of client submission / approved / rtp / complete / closed 27% (622, +3 days) · D closed 8% (+14 days). **Decision pending: which definition** (C covers almost every task; lists use different workflows).
+
+**Built (user: "go ahead with the three"):**
+- New sub-module `management/delivery`: migration **044** (`clickup_delivery_tasks`, `clickup_delivery_task_assignees`, `clickup_delivery_sync_state`); `deliverySyncService` copies the Kitchen space (id 60099486) — all open tasks + tasks closed in the last 90 days, subtasks included — every 15 minutes and at startup, GET only, replaced whole in one transaction, empty answer never wipes, one run at a time (~1,276 tasks, ~36 s); `deliverySummaryService.getDeliverySummary()` = open, overdue (due before today, not closed), due this week, no due date, unassigned, by stage (canonical flow order, names lower-cased/trimmed), by client (Client Name dropdown), by person, longest overdue 25.
+- Control Room (all views — ClickUp isn't split by company): KPI **Overdue tasks** live (drill = longest overdue); **On-time delivery** and **Utilisation** marked "not measured" (reason in the drill) instead of sample. Delivery page rebuilt: cards (overdue, open, due this week, waiting on the client, on-time "not measured"), **Work by stage** chart, **Overdue by client**, **Workload by person**, **Longest overdue** (links open the task in ClickUp), and a **Not measured yet** panel (on-time, utilisation/capacity, project margin/economics/unbilled). People: utilisation/capacity panels replaced by "not measured". Banner updated.
+- Figures (6 Oct): 511 open, **261 overdue**, 53 due this week, 79 waiting on the client, 152 without a due date, 26 unassigned. Most overdue: Ceas Comm (internal) 50, Bean Bazaar 34, BIC Egypt 31, Amr Nasher 28, BIC KSA 25. "Rejected" is a working stage in ClickUp, so it counts as open; the oldest overdue task dates from Feb 2024 (ClickUp housekeeping).
+- Verified in Chrome (real local DB, viewing only): Delivery page, People, all other pages free of undefined/NaN, FZE view, 0 JS errors.
 
 ## 7. Open Questions
 

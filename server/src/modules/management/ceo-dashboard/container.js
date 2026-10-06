@@ -31,6 +31,7 @@ const { getPipelineSummary, getClientDeals, getDealsForClient } = require('../co
 const { clickupGet } = require('../../../common/integrations/clickupClient');
 const { CLIENT_NAME_FIELD_ID } = require('../clients/container');
 const { getWorkforceSummary } = require('../../employees');
+const { getDeliverySummary } = require('../delivery/container');
 
 const budgetService = createBudgetService({ budgetRepository, audit });
 const escalationService = createEscalationService({ escalationRepository, audit });
@@ -49,6 +50,7 @@ const controlRoomService = createControlRoomService({
   financeMetricsService,
   getPipelineSummary,
   getWorkforceSummary,
+  getDeliverySummary,
   getCompanyCostSummary: marginPlannerSummary.getCompanyCostSummary,
   logger,
 });
