@@ -3,6 +3,11 @@ import { balanceSheet, bmodeBar, decisionItem, execSummary, fnByPl, fnGrid, fnMa
 import { D } from './data.js';
 import { allFn, canEditBudgets, ceoQueue, CUR, E, KPI, LF, liveBudget, liveHealth, LK, S, tierOf, ydel, yfmt, YRS } from './model.js';
 import { egp, esc, fmt, fmtD, num, pctx, r1, sevtag, tag, TT, tval } from './util.js';
+import { MONTH_NAME, checksAlert, perCompanyPanel, unavail } from './live/common.js';
+import { largestInvoicesPanel, revenueByMonthPanel } from './live/clients.js';
+import { bookedVsInvoicedPanel, liveBalanceSheetPanel, liveCashPanel, liveExecSummaryPanel, livePayablesPanel, livePnlPanel } from './live/money.js';
+import { quotationsPanel, revenueByAmPanel, whatsSellingPanel } from './live/growth.js';
+import { liveDeliveryPage } from './live/delivery.js';
 
 /* ═════ pages ═════ */
 export const P={};
@@ -34,13 +39,6 @@ P.today=()=>{
       :`<div class="empty"><b>Nothing at CEO tier</b>Everything open sits with a department head.</div>`,'')}
   </div>`;
 };
-/* A failing Odoo self-check (finance dataCheckService, after each full
-   copy) — shown wherever Odoo figures lead, so they aren't trusted silently. */
-const LABEL_CHECK={balance_sheet:'Balance sheet doesn\'t balance',revenue_copies:'Revenue copies disagree',report_definitions:'Odoo report definitions changed'};
-function checksAlert(){
-  const c=D.dataChecks||[];if(!c.length)return '';
-  return `<div class="alert"><div><b>Odoo figures need checking.</b> ${c.map(x=>`${esc(LABEL_CHECK[x.key.split(':')[0]]||x.key)}${x.key.includes(':')?' ('+esc(x.key.split(':')[1])+')':''}${x.detail?': '+esc(x.detail):''}`).join(' · ')}</div></div>`;
-}
 P.money=()=>{
   const wc=D.workingCapital,e=E();
   return `
@@ -258,224 +256,6 @@ P.clients=()=>{
       Horizon Telecom alone is the second-largest account and ends in 87 days.</div></div></div>`)}
 `;
 };
-/* Live finance panels (Odoo, one company): the same numbers as Odoo's
-   Dashboards → Finance → Invoicing with Period set to this year. */
-function revenueByMonthPanel(){
-  const r=D.revenue;
-  return panel('Revenue by month'+srcBadge('finance'),`${CUR()} · untaxed, net of credit notes · ${esc(D.months.at(-1))} is ${r.monthDay} days in`,
-    `<div class="pb"><figure><div class="plot" id="rev1"></div></figure>
-      ${r.pnl?`<div class="kv push"><span>Invoiced, converted at about today's rate<div class="note">Odoo → Dashboards → Finance → Invoicing · this year to date — the figure used here</div></span>
-        <i class="num nw">EGP ${egp(r.ytd,false)}</i></div>
-      <div class="kv"><span>Odoo Profit and Loss revenue, ${esc(r.pnl.year)}<div class="note">Accounting → Reporting → Profit and Loss · AED at the year-average rate (${Object.entries(r.pnl.rates).map(([c,v])=>`${esc(c)} ${v.toFixed(4)}`).join(', ')}) · includes income posted outside invoices</div></span>
-        <i class="num nw">EGP ${egp(r.pnl.revenue,false)}</i></div>`:''}
-      <div class="kv t${r.pnl?'':' push'}"><span>Average invoice<div class="note">${num(r.documentCount)} invoices and credit notes this year</div></span>
-        <i class="num nw">${r.averageInvoice==null?'—':CUR()+' '+egp(r.averageInvoice,false)}</i></div></div>`);
-}
-const COMPANY_LABEL={ceas:'Ceas Comm',fze:'Ceas Comm FZE',lwm:'Learn with Marie'};
-const PAY_STATE={paid:['Paid','g-green'],in_payment:['In payment','g-green'],partial:['Partly paid','g-amber'],not_paid:['Unpaid','g-red'],reversed:['Reversed','']};
-/* Paged 4 at a time so the panel stays the height of "Revenue by month"
-   beside it. The page resets when the company changes. */
-const INV_PAGE_SIZE=4;
-function largestInvoicesPanel(){
-  const meta=D.revenue.consolidated?`this year · all companies · EGP untaxed, converted by Odoo · click a row for the client`
-    :`this year · ${CUR()} untaxed · ordered by amount incl. VAT, as Odoo's Top Invoices · click a row for the client`;
-  return panel('Largest invoices'+srcBadge('finance'),meta,
-    `<div id="lg-inv">${largestInvoicesBody()}</div>`);
-}
-export function largestInvoicesBody(){
-  const all=D.revenue.largestInvoices||[];
-  if(!all.length)return '<div class="empty"><b>No invoices this year</b>Nothing posted in Odoo for this company yet.</div>';
-  if(S.invPageEnt!==S.ent){S.invPage=0;S.invPageEnt=S.ent;}
-  const pages=Math.ceil(all.length/INV_PAGE_SIZE),page=Math.min(S.invPage||0,pages-1);
-  const rows=all.slice(page*INV_PAGE_SIZE,(page+1)*INV_PAGE_SIZE);
-  return `<div class="tw"><table><thead><tr><th>Invoice</th><th>Client</th><th class="n">Date</th><th class="n">Amount</th><th class="n">Status</th></tr></thead>
-      <tbody>${rows.map(i=>{const st=PAY_STATE[i.paymentState]||[i.paymentState||'—',''];
-        return `<tr class="cb-row" data-client="${esc(i.customerKey)}" tabindex="0"><td><span class="num">${esc(i.name)}</span></td>
-          <td>${esc(i.customer)}${i.company||i.salesperson?`<div class="note">${[i.company?COMPANY_LABEL[i.company]:'',i.salesperson||''].filter(Boolean).map(esc).join(' · ')}</div>`:''}</td>
-          <td class="n"><span class="num">${esc(i.invoiceDate)}</span></td>
-          <td class="n"><span class="num">${egp(i.untaxed,false)}</span></td>
-          <td class="n">${st[1]?`<span class="tag ${st[1]}">${esc(st[0])}</span>`:`<span class="lite">${esc(st[0])}</span>`}</td></tr>`;}).join('')}
-      ${'<tr aria-hidden="true"><td colspan="5">&nbsp;<div class="note">&nbsp;</div></td></tr>'.repeat(pages>1?INV_PAGE_SIZE-rows.length:0)}</tbody></table></div>
-    ${pages>1?`<div class="pb cb-pager push"><span class="note">${page*INV_PAGE_SIZE+1}–${page*INV_PAGE_SIZE+rows.length} of ${all.length}</span><div class="sp"></div>
-      <button class="btn" data-inv-page="${page-1}"${page<=0?' disabled':''}>Previous</button>
-      <span class="note">Page ${page+1} of ${pages}</span>
-      <button class="btn" data-inv-page="${page+1}"${page>=pages-1?' disabled':''}>Next</button></div>`:''}`;
-}
-/* What one company owes (Odoo): open vendor bills, staff expenses in the
-   Expenses dashboard's buckets, this year's biggest suppliers. Bills whose
-   vendor is the company itself are marked — Odoo records many internal
-   costs that way, so they aren't really suppliers. */
-function livePayablesPanel(){
-  const p=D.payablesLive,b=p.bills,x=p.expenses,cur=p.currency,bsPay=D.bsLive?D.bsLive.balanceSheet.payables:null;
-  const own=n=>String(n||'').trim().toLowerCase()===String(p.companyName||'').trim().toLowerCase();
-  const kv=(l,v,note,{t,red}={})=>`<div class="kv${t?' t':''}"><span>${l}${note?`<div class="note">${note}</div>`:''}</span><i class="num nw"${red&&v?' style="color:var(--badtx)"':''}>${sgn(v)}</i></div>`;
-  const plural=(n,w)=>`${num(n)} ${w}${n===1?'':'s'}`;
-  const openRows=b.open.slice(0,6).map(o=>`<tr><td>${esc(o.partnerName||'—')}${own(o.partnerName)?' <span class="lite">own company</span>':''}<div class="note">${esc(o.name||'')}${o.ref?' · '+esc(o.ref):''}</div></td>
-      <td class="n"><span class="num"${o.dueDate&&o.dueDate<p.asOf?' style="color:var(--badtx)"':''}>${esc(o.dueDate||'—')}</span></td>
-      <td class="n"><span class="num">${sgn(o.residual)}</span></td></tr>`).join('');
-  const supRows=b.topSuppliers.map(t=>`<div class="kv"><span>${esc(t.name||'—')}${own(t.name)?' <span class="lite">own company as vendor</span>':''}<div class="note">${plural(t.bills,'bill')}</div></span><i class="num nw">${sgn(t.value)}</i></div>`).join('');
-  return panel('Payables'+srcBadge('payables'),`${esc(cur)} · what ${esc(p.companyName)} owes · Odoo vendor bills and expenses`,
-    `<div class="pb"><div class="cols c2"><div>
-      ${kv(`Open vendor bills`,b.openTotal,plural(b.open.length,'bill')+' with something left to pay',{t:1})}
-      ${kv('Of which overdue',b.overdueTotal,plural(b.overdueCount,'bill')+' past the due date',{red:1})}
-      ${bsPay!=null?kv('Payables in the balance sheet',bsPay,bsPay!==b.openTotal?'Differs from the open bills: payments or entries in Odoo not matched to a bill':'Matches the open bills'):''}
-      ${kv('Staff expenses to reimburse',x.toReimburse.total,plural(x.toReimburse.count,'approved expense')+' — Odoo Expenses "To reimburse"',{t:1})}
-      ${kv('Awaiting approval',x.toValidate.total,plural(x.toValidate.count,'expense')+' — "To validate"')}
-      ${kv('Not submitted yet',x.toReport.total,plural(x.toReport.count,'draft expense')+' — "To report"')}
-      <p class="note" style="margin-top:10px">Bills marked "own company" have ${esc(p.companyName)} itself as the vendor — Odoo holds internal costs such as salaries and rent that way, so they aren't outside suppliers.</p>
-      </div><div>
-      ${openRows?`<h3 class="sec">Open bills</h3><div class="tw"><table><thead><tr><th>Vendor</th><th class="n">Due</th><th class="n">Left to pay</th></tr></thead><tbody>${openRows}</tbody></table></div>`:''}
-      <h3 class="sec" style="margin-top:14px">Billed this year</h3>
-      ${kv('All vendor bills, net of refunds',b.billedThisYear,'untaxed',{t:1})}
-      ${supRows||'<p class="note">No vendor bills this year.</p>'}
-    </div></div></div>`);
-}
-/* Cash and balance sheet (Odoo, one company). Under All they say so
-   instead of showing sample figures: Odoo's multi-company balance-sheet
-   conversion isn't verified, and the portal never picks a rate. */
-/* A live source that failed to load: say so instead of falling back to the
-   prototype's invented figures. */
-function unavail(source,title){
-  if(!(D.unavailable&&D.unavailable[source]))return '';
-  return panel(title,'unavailable',`<div class="empty"><b>Unavailable right now</b>The portal couldn't read this from its copy of Odoo or ClickUp. Reload in a minute; if it stays, the server log names the cause.</div>`);
-}
-function perCompanyPanel(title){
-  if(!(D.entity&&D.entity.key==='all'&&D.pnlLive))return '';
-  return panel(title,'per company',`<div class="empty"><b>Shown per company</b>Pick Ceas Comm, FZE or LWM. How Odoo converts these figures across companies hasn't been verified yet, so the portal doesn't add the companies together.</div>`);
-}
-const sgn=n=>`${n<0?'−':''}${egp(Math.abs(n),false)}`;
-function liveCashPanel(){
-  const c=D.bsLive.cash,cur=D.bsLive.currency;
-  return panel('Cash bridge'+srcBadge('balance'),`${esc(cur)} · how ${sgn(c.opening)} on 1 January became ${sgn(c.closing)} today`,
-    `<div class="pb"><figure><div class="plot" id="w1"></div></figure>
-      <h3 class="sec" style="margin-top:14px">Bank and cash accounts today</h3>
-      ${c.accounts.map(a=>`<div class="kv"><span>${esc(a.name)}${a.code?` <span class="lite">${esc(a.code)}</span>`:''}</span><i class="num nw${a.balance<0?' d-dn':''}">${sgn(a.balance)}</i></div>`).join('')}
-      <div class="kv t"><span>Closing bank balance</span><i class="num nw">${esc(cur)} ${sgn(c.closing)}</i></div>
-      <p class="note">Odoo → Dashboards → Finance → Accounting → Cash. Received and spent include transfers between the company's own accounts, as Odoo counts them. Every account is included, Alex Bank (Personal) too.</p></div>`);
-}
-function liveExecSummaryPanel(){
-  const p=D.pnlLive.current,x=D.bsLive,cur=D.pnlLive.currency;
-  const row=(l,v,{t,neg}={})=>`<div class="kv${t?' t':''}"><span>${esc(l)}</span><i class="num nw${neg&&v<0?' d-dn':''}">${sgn(v)}</i></div>`;
-  const cash=x?`${row('Cash received',x.cash.received)}${row('Cash spent',-x.cash.spent)}${row('Cash surplus',x.cash.surplus,{t:1,neg:1})}${row('Closing bank balance',x.cash.closing)}`
-    :'<p class="note">Shown per company.</p>';
-  const bs=x?`${row('Receivables',x.balanceSheet.receivables)}${row('Payables',-x.balanceSheet.payables)}${row('Short-term position',x.balanceSheet.receivables-x.balanceSheet.payables,{t:1,neg:1})}${row('Net assets',x.balanceSheet.assets-x.balanceSheet.liabilities,{neg:1})}`
-    :'<p class="note">Shown per company.</p>';
-  return panel('Executive summary'+srcBadge('pnl'),`${D.pnlLive.consolidated?'all companies':esc(D.entity?D.entity.name:'')} · ${esc(cur)} · ${D.pnlLive.year}, as in Odoo's Accounting dashboard`,
-    `<div class="pb"><div class="cols c3">
-      <div><h3 class="sec">Cash</h3>${cash}</div>
-      <div><h3 class="sec">Profitability</h3>${row('Revenue',p.revenue)}${row('Cost of revenue',-p.costOfRevenue)}${row('Gross profit',p.grossProfit,{t:1})}${row('Expenses',-(p.operatingExpenses+p.otherExpenses))}${row('Net profit',p.netProfit,{t:1,neg:1})}</div>
-      <div><h3 class="sec">Position today</h3>${bs}</div></div></div>`);
-}
-function liveBalanceSheetPanel(){
-  const b=D.bsLive.balanceSheet,cur=D.bsLive.currency;
-  const r=(l,v,{sub,t,grand}={})=>`<tr class="${grand?'grand':t?'tot':sub?'sub':''}">
-    <td>${sub?`<span style="padding-left:14px;color:var(--muted)">${esc(l)}</span>`:`<b style="font-weight:600">${esc(l)}</b>`}</td>
-    <td class="n"><span class="num${v<0?' d-dn':''}">${sgn(v)}</span></td></tr>`;
-  return panel('Balance sheet'+srcBadge('balance'),`${esc(D.entity?D.entity.name:'')} · ${esc(cur)} · ${b.balances?'balances':'DOES NOT BALANCE'}`,
-    `<div class="pb tight"><div class="tw"><table class="pnl bs"><thead><tr><th>Line</th><th class="n">As at today</th></tr></thead><tbody>
-      ${r('ASSETS',b.assets,{t:1})}
-      ${r('Bank and Cash Accounts',b.bank,{sub:1})}${r('Receivables',b.receivables,{sub:1})}${r('Current Assets',b.otherCurrentAssets,{sub:1})}${r('Prepayments',b.prepayments,{sub:1})}
-      ${r('Plus Fixed Assets',b.fixedAssets,{sub:1})}${r('Plus Non-current Assets',b.nonCurrentAssets,{sub:1})}
-      ${r('LIABILITIES',b.liabilities,{t:1})}
-      ${r('Current Liabilities',b.currentLiabilities,{sub:1})}${r('Payables',b.payables,{sub:1})}${r('Plus Non-current Liabilities',b.nonCurrentLiabilities,{sub:1})}
-      ${r('EQUITY',b.equity,{t:1})}
-      ${r('Current Year Unallocated Earnings',b.currentYearEarnings,{sub:1})}${r('Previous Years Unallocated Earnings',b.previousYearsEarnings,{sub:1})}
-      ${r('Current Year Retained Earnings',b.currentRetained,{sub:1})}${r('Previous Years Retained Earnings',b.previousRetained,{sub:1})}
-      ${r('LIABILITIES + EQUITY',b.liabilitiesAndEquity,{grand:1})}
-    </tbody></table></div>
-    <p class="note" style="padding:10px 16px 0">Odoo → Accounting → Reporting → Balance Sheet, line for line, from every posted entry since the books began. ${b.balances?'Liabilities plus equity equals assets.':'<b>Liabilities plus equity do not equal assets — check the Odoo sync.</b>'}</p></div>`);
-}
-/* Odoo's Profit and Loss, line for line (Accounting → Reporting → Profit
-   and Loss): this year beside the same period last year for one company;
-   under All, Odoo's year-average conversion and no prior year. */
-function livePnlPanel(){
-  const p=D.pnlLive,c=p.current,pr=p.prior,cur=p.currency;
-  const v=n=>`${n<0?'−':''}${egp(Math.abs(n),false)}`;
-  // Difference in money, not %: a % change across a profit/loss flip means
-  // nothing. Coloured by its effect on profit (a cost going up is red).
-  const chg=(a,b,cost)=>{if(b==null)return '';const d=a-b;if(!d)return '<span class="lite">—</span>';
-    const good=cost?d<0:d>0;return `<span class="num ${good?'d-up':'d-dn'}">${d>0?'+':'−'}${egp(Math.abs(d),false)}</span>`;};
-  const rows=[['Revenue','revenue',{t:1}],['Less Costs of Revenue','costOfRevenue',{sub:1,cost:1}],['Gross Profit','grossProfit',{t:1}],
-    ['Less Operating Expenses','operatingExpenses',{sub:1,cost:1}],['Operating Income (or Loss)','operatingIncome',{t:1}],
-    ['Plus Other Income','otherIncome',{sub:1}],['Less Other Expenses','otherExpenses',{sub:1,cost:1}],['Net Profit','netProfit',{grand:1}],
-    ['Less Allocations and Plus Withdrawals','allocations',{sub:1,cost:1}],['Net Profit Left After Allocations and Withdrawals','netProfitAfterAllocations',{t:1}]];
-  const priorLabel=pr?`${p.year-1} to ${Number(p.priorTo.slice(8))} ${MONTH_NAME[Number(p.priorTo.slice(5,7))-1]}`:'';
-  const table=`<div class="tw"><table class="pnl"><thead><tr><th>${esc(cur)}</th><th class="n">${p.year}</th>${pr?`<th class="n">${priorLabel}</th><th class="n">Difference</th>`:''}</tr></thead><tbody>
-    ${rows.map(([label,key,o])=>`<tr class="${o.grand?'grand':o.t?'tot':o.sub?'sub':''}">
-      <td>${o.sub?`<span style="padding-left:14px;color:var(--muted)">${esc(label)}</span>`:`<b style="font-weight:600">${esc(label)}</b>`}</td>
-      <td class="n"><span class="num${c[key]<0?' d-dn':''}">${v(c[key])}</span></td>
-      ${pr?`<td class="n"><span class="num">${v(pr[key])}</span></td><td class="n">${chg(c[key],pr[key],o.cost)}</td>`:''}</tr>`).join('')}
-    </tbody></table></div>`;
-  const months=`<h3 class="sec" style="margin-top:18px">Month by month</h3>
-    <div class="tw"><table><thead><tr><th>Month</th><th class="n">Revenue</th><th class="n">Gross profit</th><th class="n">Operating expenses</th><th class="n">Net profit</th><th class="n">Net margin</th></tr></thead>
-    <tbody>${p.months.map(m=>{const mg=m.revenue?r1(m.netProfit/m.revenue*100):null;return `<tr><td>${esc(m.month)}</td>
-      <td class="n"><span class="num${m.revenue<0?' d-dn':''}">${v(m.revenue)}</span></td>
-      <td class="n"><span class="num">${v(m.grossProfit)}</span></td>
-      <td class="n"><span class="num">${v(m.operatingExpenses)}</span></td>
-      <td class="n"><span class="num${m.netProfit<0?' d-dn':''}">${v(m.netProfit)}</span></td>
-      <td class="n"><span class="num">${mg==null?'—':mg+'%'}</span></td></tr>`;}).join('')}</tbody></table></div>`;
-  const note=p.consolidated
-    ?`All companies, ${esc(cur)}. AED converted at Odoo's year-average rate (${Object.entries(p.rates).map(([k,r])=>`${esc(k)} ${r.toFixed(4)}`).join(', ')}), the way Odoo's own multi-company report does — so it matches Odoo and moves a little whenever Odoo adds a day's rate. No prior-year column: Odoo has no AED rate before February 2026.`
-    :`As posted in Odoo, in ${esc(cur)}. ${p.year} covers everything posted for the year so far; ${p.year-1} is the same span last year.${D.entity&&D.entity.key==='lwm'?' Learn with Marie\'s Odoo books start in July 2025.':''}`;
-  return panel('Income statement'+srcBadge('pnl'),`${p.consolidated?'all companies':esc(D.entity?D.entity.name:'')} · Odoo Profit and Loss`,
-    `<div class="pb tight">${table}</div><div class="pb" style="padding-top:0">${months}<p class="note">${note}</p></div>`);
-}
-const MONTH_NAME=['January','February','March','April','May','June','July','August','September','October','November','December'];
-/* Sales orders (Odoo Sales Analysis, Dashboards → Sales), this year by
-   order date. "Booked" = confirmed orders, untaxed — Odoo's Sales
-   dashboard calls it Revenue; revenue here is the invoiced figure. */
-const salesMeta=()=>D.sales.consolidated?'all companies · EGP, converted by Odoo':CUR()+' untaxed';
-const QUOTE_STATE={draft:['Draft',''],sent:['Sent','g-amber']};
-function quotationsPanel(){
-  const q=D.sales.quotations,rows=q.top.slice(0,5);
-  return panel('Quotations this year'+srcBadge('sales'),`${num(q.count)} open (${num(q.drafts)} draft, ${num(q.sent)} sent) · worth ${D.sales.consolidated?'EGP':CUR()} ${egp(q.value,false)} untaxed${D.sales.consolidated?', converted by Odoo':''}`,
-    rows.length?`<div class="tw"><table><thead><tr><th>Quotation</th><th>Client</th><th class="n">Date</th><th class="n">Value</th><th class="n">Status</th></tr></thead>
-      <tbody>${rows.map(o=>{const st=QUOTE_STATE[o.state]||[o.state,''];
-        return `<tr class="cb-row" data-client="${esc(o.customerKey)}" tabindex="0"><td><span class="num">${esc(o.name)}</span></td>
-          <td>${esc(o.customer)}<div class="note">${[o.company&&D.sales.consolidated?COMPANY_LABEL[o.company]:'',o.salesperson||''].filter(Boolean).map(esc).join(' · ')}</div></td>
-          <td class="n"><span class="num">${esc(o.orderDate||'—')}</span></td>
-          <td class="n"><span class="num">${egp(o.value,false)}</span></td>
-          <td class="n">${st[1]?`<span class="tag ${st[1]}">${esc(st[0])}</span>`:`<span class="lite">${esc(st[0])}</span>`}</td></tr>`;}).join('')}</tbody></table></div>
-      <p class="note push" style="padding:8px 16px 12px">Largest 5 by value. Odoo → Sales → Orders → Quotations; Odoo's Sales dashboard counts the same.</p>`
-    :'<div class="empty"><b>No open quotations this year</b>Nothing in draft or sent in Odoo.</div>');
-}
-function whatsSellingPanel(){
-  const p=D.sales.products;
-  return panel("What's selling"+srcBadge('sales'),`confirmed orders this year · ${salesMeta()} · by product`,
-    p.length?`<div class="pb"><figure><div class="plot" id="ws1"></div></figure>
-      <p class="note push">Odoo → Dashboards → Sales → Product ("Best Sellers by Revenue"), Period: this year.</p></div>`
-    :'<div class="empty"><b>No confirmed orders this year</b></div>');
-}
-/* Money: booked (confirmed orders) beside invoiced revenue, month by
-   month. Targets aren't set until phase 3, so there is no target column. */
-function bookedVsInvoicedPanel(){
-  const b=D.sales.booked.byMonth,inv=D.revenue.actual,ms=D.months;
-  const tb=b.reduce((a,v)=>a+v,0),ti=inv.reduce((a,v)=>a+v,0);
-  return panel('Booked and invoiced'+srcBadge('sales'),`${D.sales.consolidated?'all companies · EGP, converted by Odoo':CUR()+' untaxed'} · month by month · no targets set yet`,
-    `<div class="pb"><div class="tw"><table><thead><tr><th>Month</th><th class="n">Booked</th><th class="n">Invoiced</th><th class="n">Difference</th></tr></thead><tbody>
-    ${ms.map((m,i)=>{const d=(b[i]||0)-(inv[i]||0);return `<tr><td>${esc(m)}</td>
-      <td class="n"><span class="num">${egp(b[i]||0,false)}</span></td>
-      <td class="n"><span class="num" style="${(inv[i]||0)<0?'color:var(--badtx)':''}">${egp(inv[i]||0,false)}</span></td>
-      <td class="n"><span class="num ${d<0?'d-dn':'d-up'}">${d>0?'+':d<0?'−':''}${egp(Math.abs(d),false)}</span></td></tr>`;}).join('')}
-    <tr class="tot"><td><b>Year to date</b></td><td class="n"><span class="num">${egp(tb,false)}</span></td><td class="n"><span class="num">${egp(ti,false)}</span></td>
-      <td class="n"><span class="num ${tb-ti<0?'d-dn':'d-up'}">${tb-ti>0?'+':tb-ti<0?'−':''}${egp(Math.abs(tb-ti),false)}</span></td></tr>
-    </tbody></table></div>
-    <p class="note">Booked: sales orders confirmed in the month (Odoo Sales dashboard, its "Revenue" card). Invoiced: the revenue figure. A positive difference is work sold ahead of billing.</p></div>`);
-}
-/* Odoo's "Top Salespeople" (Invoicing dashboard): revenue by the invoice's
-   salesperson, this year, net of credit notes. */
-function revenueByAmPanel(){
-  if(!D.revenue.live)return panel('Revenue by account manager','',
-    '<div class="empty"><b>Odoo revenue isn\'t available right now</b>The last Odoo sync failed or hasn\'t run yet.</div>');
-  const rows=D.revenue.bySalesperson||[],ytd=D.revenue.ytd;
-  return panel('Revenue by account manager'+srcBadge('finance'),`this year · ${D.revenue.consolidated?'all companies · EGP, converted by Odoo':CUR()} untaxed, net of credit notes · by the invoice's salesperson in Odoo`,
-    rows.length?`<div class="tw"><table><thead><tr><th>Account manager</th><th class="n">Revenue</th><th class="n">Share</th><th class="n">Invoices</th></tr></thead>
-      <tbody>${rows.map(a=>`<tr><td>${a.name?esc(a.name):'<span class="lite">No salesperson set</span>'}</td>
-        <td class="n"><span class="num">${egp(a.value,false)}</span></td>
-        <td class="n"><span class="num">${ytd>0?r1(a.value/ytd*100)+'%':'—'}</span></td>
-        <td class="n"><span class="num">${num(a.invoices)}</span></td></tr>`).join('')}</tbody></table></div>`
-    :'<div class="empty"><b>No invoices this year</b>Nothing posted in Odoo for this company yet.</div>');
-}
 P.delivery=()=>{
   if(D.deliveryLive)return liveDeliveryPage();
   if(D.unavailable&&D.unavailable.delivery)return unavail('delivery','Delivery');
@@ -518,50 +298,6 @@ P.delivery=()=>{
     <tbody>${r.rows.map(x=>`<tr><td>${esc(x[0])}</td><td>${esc(x[1])}</td><td>${esc(x[2])}</td><td>${esc(x[3])}</td>
       <td class="n"><span class="tag g-${x[4]==='red'?'red':'amber'}">${x[4]==='red'?'Red':'At risk'}</span></td></tr>`).join('')}</tbody></table></div>`)}`;
 };
-/* Delivery from ClickUp ("Ceas Comm | Kitchen", copied every 15 minutes),
-   all of CEAS — ClickUp isn't split by company. What ClickUp can't answer
-   is listed as not measured, never shown as sample. */
-const cuLink=(id,text)=>`<a href="https://app.clickup.com/t/${encodeURIComponent(id)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
-function notMeasuredStat(label,why){return `<div class="kpi" style="cursor:default" title="${esc(why)}"><span class="k">${esc(label)}</span><span class="val">—</span><span class="meta">not measured</span></div>`;}
-function liveDeliveryPage(){
-  const s=D.deliveryLive,waiting=s.stages.filter(x=>/client submission|client feedback|client approval/i.test(x.stage)).reduce((a,x)=>a+x.open,0);
-  const synced=s.sync&&s.sync.lastSuccessAt?new Date(s.sync.lastSuccessAt).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'not yet';
-  const sub=`all of CEAS · ClickUp "Ceas Comm | Kitchen" · copied ${esc(synced)}`;
-  const clientRows=s.byClient.slice(0,12).map(c=>`<tr><td>${esc(c.client)}</td><td class="n"><span class="num">${num(c.open)}</span></td>
-      <td class="n"><span class="num"${c.overdue?' style="color:var(--badtx)"':''}>${num(c.overdue)}</span></td>
-      <td class="n"><span class="num">${num(c.withClient)}</span></td><td class="n"><span class="num">${c.oldestOverdueDays==null?'—':c.oldestOverdueDays+'d'}</span></td></tr>`).join('');
-  const personRows=s.byPerson.slice(0,12).map(p=>`<tr><td>${esc(p.name)}</td><td class="n"><span class="num">${num(p.open)}</span></td>
-      <td class="n"><span class="num"${p.overdue?' style="color:var(--badtx)"':''}>${num(p.overdue)}</span></td><td class="n"><span class="num">${num(p.dueThisWeek)}</span></td></tr>`).join('');
-  const overdueRows=s.overdueTasks.slice(0,12).map(t=>`<tr><td>${cuLink(t.taskId,t.name||'(untitled)')}<div class="note">${esc(t.listName||'')}</div></td>
-      <td>${esc(t.client||'—')}</td><td><span class="lite">${esc(t.status||'')}</span></td>
-      <td class="n"><span class="num">${esc(t.dueDate)}</span></td><td class="n"><span class="num" style="color:var(--badtx)">${num(t.daysLate)}d</span></td>
-      <td>${esc(t.assignees||'—')}</td></tr>`).join('');
-  return `
-  <div class="strip">
-    ${kpi('overdue_tasks')}
-    ${stat('Open work',num(s.open),`${num(s.noDueDate)} without a due date · ${num(s.unassigned.open)} unassigned`,null,'delivery')}
-    ${stat('Due this week',num(s.dueThisWeek),'next 7 days, still open',null,'delivery')}
-    ${stat('Waiting on the client',num(waiting),'in client submission, feedback or approval',null,'delivery')}
-    ${notMeasuredStat('On-time delivery',KPI('on_time_delivery').notMeasured||'')}
-  </div>
-  <div class="cols c2 eq">
-    ${panel('Work by stage'+srcBadge('delivery'),sub,`<div class="pb"><figure><div class="plot" id="stg1"></div></figure>
-      <p class="note push">Open tasks per stage, overdue in brackets. Each ClickUp list has its own workflow; stages with the same name are counted together. "Rejected" is a working stage in ClickUp, so it counts as open.</p></div>`)}
-    ${panel('Overdue by client'+srcBadge('delivery'),'open tasks past their due date, by ClickUp "Client Name"',
-      `<div class="tw"><table><thead><tr><th>Client</th><th class="n">Open</th><th class="n">Overdue</th><th class="n">With client</th><th class="n">Oldest</th></tr></thead><tbody>${clientRows}</tbody></table></div>`)}
-  </div>
-  <div class="cols c2 eq">
-    ${panel('Workload by person'+srcBadge('delivery'),'open tasks assigned in the delivery space',
-      `<div class="tw"><table><thead><tr><th>Person</th><th class="n">Open</th><th class="n">Overdue</th><th class="n">Due this week</th></tr></thead><tbody>${personRows}</tbody></table></div>`)}
-    ${panel('Longest overdue'+srcBadge('delivery'),'open the task in ClickUp',
-      `<div class="tw"><table><thead><tr><th>Task</th><th>Client</th><th>Stage</th><th class="n">Due</th><th class="n">Late</th><th>Assigned</th></tr></thead><tbody>${overdueRows}</tbody></table></div>`)}
-  </div>
-  ${panel('Not measured yet','what ClickUp can\'t answer today — shown instead of invented figures',`<div class="pb">
-    <div class="kv"><span>On-time delivery<div class="note">Tasks are closed in batches long after the work is done, so the close date doesn't show delivery. ClickUp records when each task reached each stage — once "delivered" is defined (sent to client, approved, or ready to publish), this becomes live.</div></span><i>decision pending</i></div>
-    <div class="kv"><span>Utilisation and capacity<div class="note">Nobody logs time in ClickUp (0 hours across 3,000 recent tasks).</div></span><i>needs time tracking</i></div>
-    <div class="kv"><span>Project margin, project economics, delivered but unbilled<div class="note">ClickUp holds no costs or invoices; these would join the Margin Planner and Odoo.</div></span><i>separate piece of work</i></div>
-  </div>`)}`;
-}
 P.people=()=>`
   <div class="strip">
     ${kpi('utilisation')}${kpi('attrition')}${kpi('time_to_fill')}

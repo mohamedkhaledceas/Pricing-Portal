@@ -239,6 +239,12 @@ initRealtime(httpServer, { verifyAccessToken: authModule.verifyAccessToken });
 
 httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);
+  /* Background syncs run inside this web process (node-cron). That
+     assumes ONE server instance — as on Render today, and as SQLite on a
+     single disk requires anyway. Running two instances would run every
+     sync twice; scaling out means moving these to a separate worker first.
+     Schedules are staggered (common/jobs/stagger.js) to share ClickUp's
+     rate limit. */
   management.startReconciliationSchedule();
   management.scheduleQuarterFreeze();
   management.startOdooSyncSchedule();

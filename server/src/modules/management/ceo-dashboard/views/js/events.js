@@ -2,7 +2,7 @@ import { apiFetch } from './apiClient.js';
 import { D } from './data.js';
 import { loadEntity } from './loader.js';
 import { addKpi, ceoQueue, curYear, KPI, LB, pages, removeKpi, S, setBudget, setPlan, setTarget } from './model.js';
-import { largestInvoicesBody } from './pages.js';
+import { largestInvoicesBody } from './live/clients.js';
 import { applyBrand, closeDrill, draw, goto, openDrill, render } from './shell.js';
 import { isDarkTheme, setTheme, syncThemeChip } from './theme.js';
 import { $, esc, fmt, toast } from './util.js';

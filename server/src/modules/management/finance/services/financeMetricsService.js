@@ -25,7 +25,6 @@ const {
   ENTITIES, CONSOLIDATION_CURRENCY, COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS,
 } = require('../constants');
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const TOP_CLIENTS = 10;
 const LARGEST_INVOICES = 10;
 const TRAILING_DAYS = 90;
@@ -37,19 +36,10 @@ const AGING_BUCKETS = [
   { name: '90+ days', maxDays: Infinity },
 ];
 
-function cairoToday() {
-  // en-CA formats as YYYY-MM-DD.
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
-}
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const toUtc = (date) => Date.parse(`${date}T00:00:00Z`);
-const addDays = (date, days) => new Date(toUtc(date) + days * DAY_MS).toISOString().slice(0, 10);
-const daysBetween = (from, to) => Math.round((toUtc(to) - toUtc(from)) / DAY_MS);
-const round = (value) => Math.round(value);
-const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
-
-const { periodAverageRate, toPnlLines, invoicesOpen } = require('./reportMath');
+const { MONTH_LABELS, cairoToday, addDays, daysBetween, round, pct } = require('./metricsShared');
+const createStatementsMetrics = require('./statementsMetrics');
+const createSalesMetrics = require('./salesMetrics');
 
 function createFinanceMetricsService({
   invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, payablesRepository,
@@ -71,6 +61,13 @@ function createFinanceMetricsService({
     if (!entity) throw new ValidationError(`Unknown finance entity "${entityKey}".`);
     return entity;
   }
+  const statements = createStatementsMetrics({
+    pnlRepository, balanceRepository, invoiceRepository, cashAccountTypes, entityOrThrow, today,
+  });
+  const sales = createSalesMetrics({
+    saleReportRepository, invoiceRepository, payablesRepository, entityOrThrow, buildCustomerResolver, today,
+  });
+
 
   function buildRevenue(companyId, asOf, overdueByKey, resolve) {
     const year = asOf.slice(0, 4);
@@ -271,397 +268,8 @@ function createFinanceMetricsService({
           name: s.salespersonName, value: round(s.total), invoices: s.invoices,
         })),
       },
-      pnl: getConsolidatedPnlRevenue(year),
+      pnl: statements.getConsolidatedPnlRevenue(year),
     };
-  }
-
-  /* The Revenue line of Odoo's Profit and Loss for all companies, for the
-     whole calendar year (Odoo's "2026" filter): −(income balance) per
-     company in its own currency, then other currencies converted the way
-     Odoo's report does (periodAverageRate). Differs from the invoiced
-     figure twice over: a different conversion, and income posted outside
-     invoices counts here. */
-  function getConsolidatedPnlRevenue(year) {
-    const from = `${year}-01-01`;
-    const to = `${year}-12-31`;
-    const byCompany = new Map();
-    for (const row of pnlRepository.sumByCompanyAndType(from, to)) {
-      if (row.accountType === 'income') byCompany.set(row.companyId, -row.balance);
-    }
-    const rateCache = new Map();
-    let total = 0;
-    const rates = {};
-    for (const entity of Object.values(ENTITIES)) {
-      const own = byCompany.get(entity.companyId) || 0;
-      if (entity.currency === CONSOLIDATION_CURRENCY) { total += own; continue; }
-      if (!rateCache.has(entity.currency)) {
-        rateCache.set(entity.currency, periodAverageRate(pnlRepository.listRates(entity.currency), from, to));
-      }
-      rates[entity.currency] = rateCache.get(entity.currency);
-      total += own * rates[entity.currency];
-    }
-    return { year, revenue: round(total), rates };
-  }
-
-  /* Sales orders, year to date by order date — the same definitions as
-     Odoo's Dashboards → Sales → Sales and → Product with Period = this
-     year. entityKey 'all' reads Odoo's own EGP conversion. "Booked" is
-     Odoo's "Revenue" card on that dashboard (confirmed orders, untaxed);
-     named booked here so it is never mistaken for revenue, which is the
-     invoiced figure. Backlog is not year-limited: every confirmed order's
-     untaxed amount still to invoice. */
-  function getSalesSummary(entityKey) {
-    const consolidated = entityKey === 'all';
-    const { companyId, currency } = consolidated
-      ? { companyId: null, currency: CONSOLIDATION_CURRENCY }
-      : entityOrThrow(entityKey);
-    const asOf = today();
-    const year = asOf.slice(0, 4);
-    const yearStart = `${year}-01-01`;
-    const monthIndex = Number(asOf.slice(5, 7)) - 1;
-    const resolve = buildCustomerResolver();
-    const companyKey = new Map(Object.entries(ENTITIES).map(([key, e]) => [e.companyId, key]));
-    const toOrder = (o) => {
-      const who = resolve(o.partnerId, o.partnerName);
-      return {
-        name: o.name,
-        company: companyKey.get(o.companyId) || null,
-        customer: who.name,
-        customerKey: who.key,
-        orderDate: o.orderDate,
-        state: o.state,
-        salesperson: o.salespersonName,
-        value: round(o.value),
-        toInvoice: round(o.toInvoice),
-      };
-    };
-
-    const byState = new Map(saleReportRepository.summarizeByState(companyId, yearStart, asOf).map((r) => [r.state, r]));
-    const get = (state) => byState.get(state) || { orders: 0, value: 0 };
-    const quotationCount = get('draft').orders + get('sent').orders;
-    const booked = get('sale');
-    const byMonth = new Map(saleReportRepository.sumBookedByMonth(companyId, yearStart, asOf).map((m) => [m.month, m.total]));
-    const months = MONTH_LABELS.slice(0, monthIndex + 1);
-    const backlog = saleReportRepository.sumBacklog(companyId);
-    const links = invoiceRepository.countSalesOrderLinks(companyId, yearStart, asOf);
-
-    return {
-      asOf,
-      currency,
-      consolidated,
-      months,
-      quotations: {
-        count: quotationCount,
-        drafts: get('draft').orders,
-        sent: get('sent').orders,
-        value: round(get('draft').value + get('sent').value),
-        top: saleReportRepository.listOrders(companyId, 'quotation', yearStart, asOf, 'value', 10).map(toOrder),
-      },
-      booked: {
-        orders: booked.orders,
-        value: round(booked.value),
-        averageOrder: booked.orders ? round(booked.value / booked.orders) : null,
-        byMonth: months.map((_, i) => round(byMonth.get(`${year}-${String(i + 1).padStart(2, '0')}`) || 0)),
-        top: saleReportRepository.listOrders(companyId, 'sale', yearStart, asOf, 'value', 20).map(toOrder),
-      },
-      backlog: {
-        value: round(backlog.total),
-        orders: backlog.orders,
-        // Odoo only reduces "to invoice" through invoices made from the
-        // order — invoices without one leave their orders counted here.
-        invoicesThisYear: links.invoices,
-        invoicesWithoutOrder: links.withoutOrder || 0,
-        top: saleReportRepository.listOrders(companyId, 'sale', '0000-01-01', '9999-12-31', 'toInvoice', 20).map(toOrder),
-      },
-      products: saleReportRepository.sumByProduct(companyId, yearStart, asOf, 10).map((p) => ({
-        name: p.productName, value: round(p.value), quantity: p.quantity, orders: p.orders,
-      })),
-    };
-  }
-
-  /* Odoo's Profit and Loss, the way Accounting → Reporting → Profit and
-     Loss shows it for the calendar year (everything posted to date).
-     One company: its own currency, with the same period last year (1 Jan
-     to the same day) beside it. All: each company converted the way
-     Odoo's multi-company report does (periodAverageRate over the year);
-     no prior year, because Odoo holds no AED rate before 2026-02-01 and
-     would count every 2025 AED as 1 EGP. Months under All use the year's
-     rate, so they add up to the year. */
-  function getProfitAndLoss(entityKey) {
-    const consolidated = entityKey === 'all';
-    const asOf = today();
-    const year = Number(asOf.slice(0, 4));
-    const from = `${year}-01-01`;
-    const to = `${year}-12-31`;
-    const companies = consolidated
-      ? Object.values(ENTITIES)
-      : [entityOrThrow(entityKey)];
-    const rates = {};
-    const factor = new Map();
-    for (const e of companies) {
-      if (!consolidated || e.currency === CONSOLIDATION_CURRENCY) { factor.set(e.companyId, 1); continue; }
-      if (rates[e.currency] == null) rates[e.currency] = periodAverageRate(pnlRepository.listRates(e.currency), from, to);
-      factor.set(e.companyId, rates[e.currency]);
-    }
-    const collect = (rows) => {
-      const b = {};
-      for (const row of rows) {
-        const f = factor.get(row.companyId);
-        if (f == null) continue;
-        b[row.accountType] = (b[row.accountType] || 0) + row.balance * f;
-      }
-      return b;
-    };
-
-    const current = toPnlLines(collect(pnlRepository.sumByCompanyAndType(from, to)));
-    const priorTo = `${year - 1}${asOf.slice(4)}`;
-    const prior = consolidated ? null : toPnlLines(collect(pnlRepository.sumByCompanyAndType(`${year - 1}-01-01`, priorTo)));
-
-    const monthly = new Map();
-    for (const row of pnlRepository.sumByCompanyTypeAndMonth(from, asOf)) {
-      const f = factor.get(row.companyId);
-      if (f == null) continue;
-      const m = monthly.get(row.month) || {};
-      m[row.accountType] = (m[row.accountType] || 0) + row.balance * f;
-      monthly.set(row.month, m);
-    }
-    const monthIndex = Number(asOf.slice(5, 7)) - 1;
-    const months = MONTH_LABELS.slice(0, monthIndex + 1).map((label, i) => {
-      const key = `${year}-${String(i + 1).padStart(2, '0')}`;
-      return { month: label, ...toPnlLines(monthly.get(key) || {}) };
-    });
-
-    return {
-      asOf,
-      year,
-      priorTo,
-      currency: consolidated ? CONSOLIDATION_CURRENCY : companies[0].currency,
-      consolidated,
-      rates,
-      current,
-      prior,
-      months,
-    };
-  }
-
-  /* One company's balance sheet as at today, line for line as Odoo's
-     Accounting → Reporting → Balance Sheet (account.report 4) builds it,
-     plus the Accounting dashboard's Cash block for this year. Per company
-     only: how Odoo converts a multi-company balance sheet hasn't been
-     verified, and the portal never picks a rate.
-
-     Signs follow the report: assets are debit balances, liabilities and
-     equity credit balances shown positive. Equity's unallocated earnings
-     are every P&L line since the books began (current year shown apart),
-     so the sheet balances by construction of double entry — `balances`
-     reports whether it does, as a check on the data. */
-  function getBalanceSheet(entityKey) {
-    const { companyId, currency } = entityOrThrow(entityKey);
-    const asOf = today();
-    const year = asOf.slice(0, 4);
-    const fyStart = `${year}-01-01`;
-    const BEGIN = '0000-01-01';
-
-    const bs = {};
-    for (const r of balanceRepository.sumByType(companyId, BEGIN, asOf)) {
-      const key = r.nonTrade ? `${r.accountType}:non_trade` : r.accountType;
-      bs[key] = (bs[key] || 0) + r.balance;
-    }
-    const b = (key) => bs[key] || 0;
-    const pnlAll = Object.fromEntries(pnlRepository.sumByTypeForCompany(companyId, BEGIN, asOf).map((r) => [r.accountType, r.balance]));
-    const pnlYear = Object.fromEntries(pnlRepository.sumByTypeForCompany(companyId, fyStart, asOf).map((r) => [r.accountType, r.balance]));
-    const equityYear = balanceRepository.sumByType(companyId, fyStart, asOf)
-      .filter((r) => r.accountType === 'equity').reduce((s, r) => s + r.balance, 0);
-    const pnlTypes = ['income', 'income_other', 'expense_direct_cost', 'expense', 'expense_depreciation', 'expense_other'];
-    const sumTypes = (o, types) => types.reduce((s, t) => s + (o[t] || 0), 0);
-
-    const bank = b('asset_cash');
-    const receivables = b('asset_receivable');
-    const otherCurrentAssets = b('asset_current') + b('asset_receivable:non_trade');
-    const prepayments = b('asset_prepayments');
-    const currentAssets = bank + receivables + otherCurrentAssets + prepayments;
-    const fixedAssets = b('asset_fixed');
-    const nonCurrentAssets = b('asset_non_current');
-    const assets = currentAssets + fixedAssets + nonCurrentAssets;
-
-    const currentLiabilities = -(b('liability_current') + b('liability_credit_card') + b('liability_payable:non_trade'));
-    const payables = -b('liability_payable');
-    const nonCurrentLiabilities = -b('liability_non_current');
-    const liabilities = currentLiabilities + payables + nonCurrentLiabilities;
-
-    // CURR_YEAR_EARNINGS = net profit this year − allocations this year.
-    const currentYearEarnings = -sumTypes(pnlYear, pnlTypes) - (pnlYear.equity_unaffected || 0);
-    const allEarnings = -sumTypes(pnlAll, pnlTypes) - (pnlAll.equity_unaffected || 0);
-    const previousYearsEarnings = allEarnings - currentYearEarnings;
-    const currentRetained = -equityYear;
-    const retained = -(b('equity') + b('equity:non_trade'));
-    const previousRetained = retained - currentRetained;
-    const equity = allEarnings + retained;
-
-    const r = (n) => Math.round(n);
-    const cashFlows = balanceRepository.sumCashFlows(companyId, cashAccountTypes, fyStart, asOf);
-    const accounts = balanceRepository.listCashAccounts(companyId, cashAccountTypes, asOf)
-      .filter((a) => Math.round(a.balance * 100) !== 0)
-      .map((a) => ({ code: a.code, name: a.name, type: a.accountType, balance: r(a.balance) }));
-    const closing = accounts.reduce((s, a) => s + a.balance, 0);
-
-    // Cash runway: closing balance ÷ average monthly cash spent over the
-    // last three full months. The portal's own definition — Odoo has none.
-    const [y, m] = asOf.split('-').map(Number);
-    const threeMonthsBack = new Date(Date.UTC(y, m - 4, 1)).toISOString().slice(0, 10);
-    const lastMonthEnd = addDays(`${asOf.slice(0, 7)}-01`, -1);
-    const spent3 = balanceRepository.sumCashFlowsByMonth(companyId, cashAccountTypes, threeMonthsBack, lastMonthEnd)
-      .reduce((s, mo) => s + mo.spent, 0);
-    const avgSpent = spent3 / 3;
-
-    return {
-      asOf,
-      currency,
-      balanceSheet: {
-        bank: r(bank), receivables: r(receivables), otherCurrentAssets: r(otherCurrentAssets), prepayments: r(prepayments),
-        currentAssets: r(currentAssets), fixedAssets: r(fixedAssets), nonCurrentAssets: r(nonCurrentAssets), assets: r(assets),
-        currentLiabilities: r(currentLiabilities), payables: r(payables), nonCurrentLiabilities: r(nonCurrentLiabilities),
-        liabilities: r(liabilities),
-        currentYearEarnings: r(currentYearEarnings), previousYearsEarnings: r(previousYearsEarnings),
-        currentRetained: r(currentRetained), previousRetained: r(previousRetained), equity: r(equity),
-        liabilitiesAndEquity: r(liabilities + equity),
-        balances: Math.abs(assets - (liabilities + equity)) < 1,
-      },
-      cash: {
-        received: r(cashFlows.received),
-        spent: r(cashFlows.spent),
-        surplus: r(cashFlows.received - cashFlows.spent),
-        opening: r(closing - (cashFlows.received - cashFlows.spent)),
-        closing,
-        accounts,
-        averageMonthlySpent: r(avgSpent),
-        runwayMonths: avgSpent > 0 ? Math.round((closing / avgSpent) * 10) / 10 : null,
-      },
-    };
-  }
-
-  /* What one company owes: open vendor bills (overdue = past their due
-     date), this year's biggest suppliers, and employee expenses in the
-     buckets Odoo's Dashboards → Finance → Expenses shows — to report
-     (draft), to validate (submitted for approval; "reported" in older
-     Odoo) and to reimburse (approved). Per company, own currency. */
-  function getPayables(entityKey) {
-    const { companyId, currency } = entityOrThrow(entityKey);
-    const asOf = today();
-    const yearStart = `${asOf.slice(0, 4)}-01-01`;
-    const r = (n) => Math.round(n);
-
-    const open = invoicesOpen(payablesRepository.listOpenBills(companyId), asOf);
-    const billed = payablesRepository.sumBilled(companyId, yearStart, asOf);
-    const byState = new Map(payablesRepository.summarizeExpenses(companyId).map((s) => [s.state, s]));
-    const bucket = (states) => states.reduce((acc, st) => {
-      const s = byState.get(st);
-      return s ? { count: acc.count + s.count, total: acc.total + s.total } : acc;
-    }, { count: 0, total: 0 });
-    const toReport = bucket(['draft']);
-    const toValidate = bucket(['reported', 'submitted']);
-    const toReimburse = bucket(['approved']);
-
-    return {
-      asOf,
-      currency,
-      bills: {
-        open: open.rows.map((b) => ({ ...b, residual: r(b.residual) })),
-        openTotal: r(open.total),
-        overdueTotal: r(open.overdue),
-        overdueCount: open.overdueCount,
-        billedThisYear: r(billed.total),
-        topSuppliers: payablesRepository.sumBilledByVendor(companyId, yearStart, asOf, 6)
-          .map((s) => ({ name: s.partnerName, value: r(s.total), bills: s.bills })),
-      },
-      expenses: {
-        toReport: { count: toReport.count, total: r(toReport.total) },
-        toValidate: { count: toValidate.count, total: r(toValidate.total) },
-        toReimburse: { count: toReimburse.count, total: r(toReimburse.total) },
-        pending: payablesRepository.listExpenses(companyId, ['approved', 'reported', 'submitted', 'draft'], 5)
-          .map((e) => ({ ...e, total: r(e.total) })),
-      },
-    };
-  }
-
-  /* One company's years from Odoo, for the Control Room's year review and
-     year-on-year comparison (phase 6). Each year since its books began:
-     - ytd: 1 January to today's date in that year — revenue (invoiced, the
-       Control Room's revenue), cost of revenue, gross margin, operating
-       expenses and ratio, net profit and margin (Profit and Loss lines);
-     - at: on that same date — cash (every bank/cash/credit-card account),
-       runway (cash ÷ average monthly cash spent over the three months
-       before), receivables (trade) and DSO (receivables ÷ the 90 days'
-       billing before, VAT incl., × 90);
-     - full: closed years only — the same over the whole year, cash at
-       31 December.
-     Delivery, people and pipeline history aren't in Odoo, so those stay
-     null. Per company: Odoo holds no AED rate before 2026-02-01, so an
-     all-companies history would count 2025's AED as EGP. */
-  function getYearHistory(entityKey) {
-    const { companyId, currency } = entityOrThrow(entityKey);
-    const asOf = today();
-    const thisYear = Number(asOf.slice(0, 4));
-    // 29 February has no twin in most years; compare on the 28th then.
-    const mmdd = asOf.slice(5) === '02-29' ? '02-28' : asOf.slice(5);
-    const first = pnlRepository.firstDate(companyId);
-    const firstYear = first ? Number(first.slice(0, 4)) : thisYear;
-    const r = (n) => (n == null ? null : Math.round(n));
-    const pct = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 10 : null);
-
-    const periodFigures = (from, to) => {
-      const t = Object.fromEntries(pnlRepository.sumByTypeForCompany(companyId, from, to).map((x) => [x.accountType, x.balance]));
-      const p = toPnlLines(t);
-      const invoiced = invoiceRepository.sumUntaxedByMonth(companyId, from, to).reduce((s, m) => s + m.total, 0);
-      return {
-        revenue: r(invoiced),
-        directCost: p.costOfRevenue,
-        grossMargin: pct(p.grossProfit, p.revenue),
-        opex: p.operatingExpenses,
-        opexRatio: pct(p.operatingExpenses, p.revenue),
-        netProfit: p.netProfit,
-        netMargin: pct(p.netProfit, p.revenue),
-      };
-    };
-    const cashAt = (date) => balanceRepository.listCashAccounts(companyId, cashAccountTypes, date).reduce((s, a) => s + a.balance, 0);
-    const positionAt = (date) => {
-      const cash = cashAt(date);
-      const [y, m] = date.split('-').map(Number);
-      const spent3 = balanceRepository.sumCashFlowsByMonth(companyId, cashAccountTypes,
-        new Date(Date.UTC(y, m - 4, 1)).toISOString().slice(0, 10), addDays(`${date.slice(0, 7)}-01`, -1))
-        .reduce((s, mo) => s + mo.spent, 0);
-      const receivables = balanceRepository.sumByType(companyId, '0000-01-01', date)
-        .filter((x) => x.accountType === 'asset_receivable' && !x.nonTrade).reduce((s, x) => s + x.balance, 0);
-      const billed90 = invoiceRepository.sumTotalSigned(companyId, addDays(date, -89), date);
-      // Not meaningful → null: a runway on no or negative cash, or a DSO over
-      // a year (almost nothing billed in the window, e.g. FZE's first months).
-      const dso = billed90 > 0 ? Math.round((receivables / billed90) * 90) : null;
-      return {
-        cash: r(cash),
-        runway: spent3 > 0 && cash > 0 ? Math.round((cash / (spent3 / 3)) * 10) / 10 : null,
-        receivables: r(receivables),
-        dso: dso != null && dso <= 365 ? dso : null,
-      };
-    };
-
-    const years = {};
-    for (let y = firstYear; y <= thisYear; y += 1) {
-      const through = `${y}-${mmdd}`;
-      // Books that only began after this year's comparison date leave nothing to compare.
-      if (first && first > through) continue;
-      const closed = y < thisYear;
-      years[String(y)] = {
-        label: String(y),
-        status: closed ? 'closed' : 'current',
-        through,
-        // A year the books started part-way through: its figures are from that date.
-        partialFrom: first && first > `${y}-01-01` && first.startsWith(String(y)) ? first : null,
-        ytd: periodFigures(`${y}-01-01`, through),
-        at: positionAt(through),
-        full: closed ? { ...periodFigures(`${y}-01-01`, `${y}-12-31`), cash: r(cashAt(`${y}-12-31`)) } : null,
-      };
-    }
-    return { asOf, currency, currentYear: String(thisYear), booksStart: first, years };
   }
 
   /* One status for Odoo as a whole: ok only when every synced model's last
@@ -679,7 +287,12 @@ function createFinanceMetricsService({
   }
 
   return {
-    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getBalanceSheet, getPayables, getYearHistory, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+    getEntityFinance,
+    getConsolidatedRevenue,
+    getSyncStatus,
+    isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+    ...statements,
+    ...sales,
   };
 }
 
