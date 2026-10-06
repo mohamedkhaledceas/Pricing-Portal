@@ -28,6 +28,8 @@ const createCustomerLedgerService = require('./services/customerLedgerService');
 const createClientMappingService = require('./services/clientMappingService');
 const createClientMappingController = require('./controllers/clientMappingController');
 const createFinanceRouter = require('./routes/index');
+const createDataCheckService = require('./services/dataCheckService');
+const dataCheckRepository = require('./repositories/dataCheckRepository');
 const { startOdooSyncSchedule } = require('./jobs/odooSyncSchedule');
 const {
   ENTITIES, SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY, PNL_ACCOUNT_TYPES,
@@ -64,6 +66,18 @@ const financeMetricsService = createFinanceMetricsService({
   paymentRepository, syncStateRepository, linkRepository, cashAccountTypes: [...CASH_ACCOUNT_TYPES],
 });
 
+const dataCheckService = createDataCheckService({
+  odooClient,
+  financeMetricsService,
+  invoiceRepository,
+  invoiceReportRepository,
+  dataCheckRepository,
+  entities: ENTITIES,
+  consolidationCurrency: CONSOLIDATION_CURRENCY,
+  logger,
+  today: () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date()),
+});
+
 // Read by the CEO Control Room's client book (same public-interface rule).
 const customerLedgerService = createCustomerLedgerService({
   invoiceRepository, paymentRepository, partnerRepository, clientRepository, linkRepository, saleReportRepository,
@@ -82,9 +96,9 @@ function startSchedule() {
     logger.info('Odoo sync not scheduled — ODOO_URL/ODOO_DB/ODOO_API_KEY not set.');
     return;
   }
-  startOdooSyncSchedule({ odooSyncService, logger, intervalMinutes: config.odooSyncMinutes });
+  startOdooSyncSchedule({ odooSyncService, dataCheckService, logger, intervalMinutes: config.odooSyncMinutes });
 }
 
 module.exports = {
-  router, odooSyncService, financeMetricsService, customerLedgerService, startOdooSyncSchedule: startSchedule,
+  router, odooSyncService, financeMetricsService, customerLedgerService, dataCheckService, startOdooSyncSchedule: startSchedule,
 };

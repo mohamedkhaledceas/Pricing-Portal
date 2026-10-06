@@ -5,6 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
+    "test": "node --test \"test/*.test.js\"",
     "dev": "node --watch src/index.js",
     "seed": "node src/seed-owner.js",
     "create-user": "node src/create-user.js",

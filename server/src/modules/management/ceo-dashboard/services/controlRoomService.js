@@ -452,7 +452,7 @@ function applyPeople(D, w) {
 
 function createControlRoomService({
   sampleRepository, budgetService, targetService, escalationService, financeMetricsService, getPipelineSummary, getWorkforceSummary,
-  getDeliverySummary, getCompanyCostSummary,
+  getDeliverySummary, listDataChecks, getCompanyCostSummary,
   logger, now = () => new Date(),
 }) {
   function entityOrThrow(entityKey) {
@@ -586,6 +586,8 @@ function createControlRoomService({
     // The sample's own sync lines are invented times — never shown.
     D.sync = [];
     overlay(D, 'sync', () => { D.sync = syncLines(todayIso, D); }, sources);
+    // Self-checks run after each full Odoo copy; only failing ones are shown.
+    overlay(D, 'checks', () => { D.dataChecks = listDataChecks().filter((c) => c.status !== 'ok'); }, sources);
 
     D.sources = sources;
     return D;

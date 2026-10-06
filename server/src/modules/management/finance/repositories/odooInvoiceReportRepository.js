@@ -35,6 +35,14 @@ function sumByMonth(fromDate, toDate) {
   `).all(fromDate, toDate);
 }
 
+// One company's lines in a date range (its own currency when it is EGP — the self-check's comparison).
+function sumByMonthForCompany(companyId, fromDate, toDate) {
+  return db.prepare(`
+    SELECT COALESCE(SUM(price_subtotal_consolidated), 0) AS total FROM odoo_invoice_report_lines
+    WHERE company_id = ? AND invoice_date BETWEEN ? AND ?
+  `).get(companyId, fromDate, toDate).total;
+}
+
 // Odoo's "Average Invoice" counts distinct documents, credit notes included.
 function countDocuments(fromDate, toDate) {
   return db.prepare(`
@@ -75,5 +83,5 @@ function sumBySalesperson(fromDate, toDate) {
 }
 
 module.exports = {
-  replaceAll, countAll, sumByMonth, countDocuments, listLargestInvoices, sumBySalesperson,
+  replaceAll, countAll, sumByMonth, sumByMonthForCompany, countDocuments, listLargestInvoices, sumBySalesperson,
 };

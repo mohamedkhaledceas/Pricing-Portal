@@ -34,9 +34,17 @@ P.today=()=>{
       :`<div class="empty"><b>Nothing at CEO tier</b>Everything open sits with a department head.</div>`,'')}
   </div>`;
 };
+/* A failing Odoo self-check (finance dataCheckService, after each full
+   copy) — shown wherever Odoo figures lead, so they aren't trusted silently. */
+const LABEL_CHECK={balance_sheet:'Balance sheet doesn\'t balance',revenue_copies:'Revenue copies disagree',report_definitions:'Odoo report definitions changed'};
+function checksAlert(){
+  const c=D.dataChecks||[];if(!c.length)return '';
+  return `<div class="alert"><div><b>Odoo figures need checking.</b> ${c.map(x=>`${esc(LABEL_CHECK[x.key.split(':')[0]]||x.key)}${x.key.includes(':')?' ('+esc(x.key.split(':')[1])+')':''}${x.detail?': '+esc(x.detail):''}`).join(' · ')}</div></div>`;
+}
 P.money=()=>{
   const wc=D.workingCapital,e=E();
   return `
+  ${checksAlert()}
   <div class="strip">
     ${kpi('cash_runway')}${kpi('cash_balance')}${kpi('gross_margin')}${kpi('net_margin')}${kpi('freelancer_ratio')}
   </div>

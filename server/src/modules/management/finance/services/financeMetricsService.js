@@ -49,64 +49,7 @@ const daysBetween = (from, to) => Math.round((toUtc(to) - toUtc(from)) / DAY_MS)
 const round = (value) => Math.round(value);
 const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
 
-/* Odoo's multi-company Profit and Loss converts each company's figures at
-   the average of Odoo's daily rate over the report period: every day
-   counts once, a day takes the latest rate dated on or before it (so
-   future days carry today's), and days before the first stored rate count
-   as 1 — Odoo has no AED rate before 2026-02-01, so January counts AED as
-   EGP. Reproduced to the piastre against Odoo's own report on 2026-10-06
-   (12.794048 for 2026); never a rate the portal chose. */
-function periodAverageRate(rates, fromDate, toDate) {
-  let sum = 0;
-  let days = 0;
-  let idx = -1;
-  for (let d = fromDate; d <= toDate; d = addDays(d, 1)) {
-    while (idx + 1 < rates.length && rates[idx + 1].date <= d) idx += 1;
-    sum += idx >= 0 ? rates[idx].inverseRate : 1;
-    days += 1;
-  }
-  return days ? sum / days : 1;
-}
-
-/* Odoo's Profit and Loss lines (account.report 7) from account-type
-   balances (debit − credit, so income is negative). */
-function toPnlLines(b) {
-  const v = (type) => b[type] || 0;
-  const revenue = -v('income');
-  const costOfRevenue = v('expense_direct_cost');
-  const operatingExpenses = v('expense');
-  const otherIncome = -v('income_other');
-  const otherExpenses = v('expense_depreciation') + v('expense_other');
-  const allocations = v('equity_unaffected');
-  const grossProfit = revenue - costOfRevenue;
-  const operatingIncome = grossProfit - operatingExpenses;
-  const netProfit = operatingIncome + otherIncome - otherExpenses;
-  const r = (n) => Math.round(n);
-  return {
-    revenue: r(revenue),
-    costOfRevenue: r(costOfRevenue),
-    grossProfit: r(grossProfit),
-    operatingExpenses: r(operatingExpenses),
-    operatingIncome: r(operatingIncome),
-    otherIncome: r(otherIncome),
-    otherExpenses: r(otherExpenses),
-    netProfit: r(netProfit),
-    allocations: r(allocations),
-    netProfitAfterAllocations: r(netProfit - allocations),
-  };
-}
-
-// Open bills with their overdue share (due before today).
-function invoicesOpen(rows, asOf) {
-  let total = 0;
-  let overdue = 0;
-  let overdueCount = 0;
-  for (const b of rows) {
-    total += b.residual;
-    if (b.dueDate && b.dueDate < asOf) { overdue += b.residual; overdueCount += 1; }
-  }
-  return { rows, total, overdue, overdueCount };
-}
+const { periodAverageRate, toPnlLines, invoicesOpen } = require('./reportMath');
 
 function createFinanceMetricsService({
   invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, payablesRepository,

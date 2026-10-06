@@ -139,8 +139,11 @@ export function renderSync(){
   const o=lines.find(x=>x.source==='Odoo');
   $('#syncxt').textContent=!o?'Sample data':!worst?`Odoo ${o.at||''}`.trim()
     :worst.status==='error'?`${worst.source} sync failed`:worst.status==='stale'?`${worst.source} stale · ${worst.at||'—'}`:`${worst.source} not synced`;
-  $('#syncchip').title=lines.map(x=>`${x.source}: ${x.note||x.status}${x.at?' · last good copy '+x.at:''}`).join('\n');
-  $('#syncchip').classList.toggle('bad',!!worst);}
+  const checks=D.dataChecks||[];
+  $('#syncchip').title=lines.map(x=>`${x.source}: ${x.note||x.status}${x.at?' · last good copy '+x.at:''}`).join('\n')
+    +(checks.length?`\nOdoo checks failing: ${checks.map(c=>c.key).join(', ')}`:'');
+  if(!worst&&checks.length)$('#syncxt').textContent='Odoo check failed';
+  $('#syncchip').classList.toggle('bad',!!worst||checks.length>0);}
 export function renderYearSel(){
   const ys=$('#yr'),cs=$('#cmp');
   ys.innerHTML=YRS().map(y=>`<option value="${y}"${y===S.year?' selected':''}>${y}${D.years[y].status==='current'?'':' · closed'}</option>`).join('');

@@ -7,7 +7,7 @@
    was down. Full sync again nightly at 03:00 Cairo time. */
 const cron = require('node-cron');
 
-function startOdooSyncSchedule({ odooSyncService, logger, intervalMinutes }) {
+function startOdooSyncSchedule({ odooSyncService, dataCheckService, logger, intervalMinutes }) {
   let isRunning = false;
 
   async function runOnce(mode, trigger) {
@@ -20,6 +20,8 @@ function startOdooSyncSchedule({ odooSyncService, logger, intervalMinutes }) {
     try {
       const results = mode === 'full' ? await odooSyncService.runFull() : await odooSyncService.runIncremental();
       logger.info('Odoo sync completed.', { mode, trigger, durationMs: Date.now() - startedAt, results });
+      // After a full copy, check it still matches Odoo (dataCheckService).
+      if (mode === 'full' && dataCheckService) await dataCheckService.run();
     } catch (error) {
       // syncModel already records/logs per-model failures — this only
       // catches something unexpected escaping that.
