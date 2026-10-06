@@ -25,6 +25,7 @@ const { ENTITIES, COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS } = require('../c
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const TOP_CLIENTS = 10;
+const LARGEST_INVOICES = 10;
 const TRAILING_DAYS = 90;
 const AGING_BUCKETS = [
   { name: 'Not yet due', maxDays: 0 },
@@ -74,6 +75,28 @@ function createFinanceMetricsService({
     );
     const months = MONTH_LABELS.slice(0, monthIndex + 1);
     const actual = months.map((_, i) => round(byMonth.get(`${year}-${String(i + 1).padStart(2, '0')}`) || 0));
+    const ytd = round(actual.reduce((sum, v) => sum + v, 0));
+
+    // Same year-to-date basis as the Odoo Invoicing dashboard's cards.
+    const yearStart = `${year}-01-01`;
+    const documentCount = invoiceRepository.countPosted(companyId, yearStart, asOf);
+    const largestInvoices = invoiceRepository.listLargestInvoices(companyId, yearStart, asOf, LARGEST_INVOICES).map((i) => {
+      const who = resolve(i.partnerId, i.partnerName);
+      return {
+        name: i.name,
+        customer: who.name,
+        customerKey: who.key,
+        invoiceDate: i.invoiceDate,
+        untaxed: round(i.untaxed),
+        paymentState: i.paymentState,
+        salesperson: i.salespersonName,
+      };
+    });
+    const bySalesperson = invoiceRepository.sumUntaxedBySalesperson(companyId, yearStart, asOf).map((s) => ({
+      name: s.salespersonName,
+      value: round(s.total),
+      invoices: s.invoices,
+    }));
 
     const trailingFrom = addDays(asOf, -(TRAILING_DAYS - 1));
     const byCustomer = new Map();
@@ -113,7 +136,11 @@ function createFinanceMetricsService({
     const top = customers[0] || null;
 
     return {
-      ytd: round(actual.reduce((sum, v) => sum + v, 0)),
+      ytd,
+      documentCount,
+      averageInvoice: documentCount ? round(ytd / documentCount) : null,
+      largestInvoices,
+      bySalesperson,
       mtd: actual[monthIndex],
       monthDay: Number(asOf.slice(8, 10)),
       months,

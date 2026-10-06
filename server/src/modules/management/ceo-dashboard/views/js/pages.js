@@ -230,10 +230,9 @@ P.clients=()=>{
       :kpi('revenue_total',{label:'Net revenue'})+kpi('retainer_share')+kpi('dso')+kpi('overdue_60_share')+kpi('revenue_at_risk')}
   </div>
   ${clientBookPanel()}
-  <div class="cols c2">
-    ${live?panel('Invoiced revenue by month'+srcBadge('finance'),`${CUR()} · untaxed, net of credit notes · ${esc(D.months.at(-1))} is ${D.revenue.monthDay} days in`,
-        `<div class="pb"><figure><div class="plot" id="rev1"></div></figure></div>`)
-      :panel('Monthly revenue','against a flat monthly target',`<div class="pb"><figure><div class="plot" id="rev1"></div></figure></div>`)}
+  ${live?`<div class="cols c2 eq">${revenueByMonthPanel()}${largestInvoicesPanel()}</div>`:''}
+  <div class="cols${live?'':' c2'}">
+    ${live?'':panel('Monthly revenue','against a flat monthly target',`<div class="pb"><figure><div class="plot" id="rev1"></div></figure></div>`)}
     ${panel('Revenue at risk',`${D.atRisk.share}% of trailing 90 days`,`<div class="pb">
       ${D.atRisk.components.map(c=>`<div class="kv"><span>${esc(c.name)}<div class="note">${esc(c.detail)}</div></span><i class="num">${egp(c.value,false)}</i></div>`).join('')}
       <div class="kv t"><span>Total exposed</span><i class="num">${egp(D.atRisk.total,false)}</i></div></div>`)}
@@ -251,6 +250,56 @@ P.clients=()=>{
       Horizon Telecom alone is the second-largest account and ends in 87 days.</div></div></div>`)}
 `;
 };
+/* Live finance panels (Odoo, one company): the same numbers as Odoo's
+   Dashboards → Finance → Invoicing with Period set to this year. */
+function revenueByMonthPanel(){
+  const r=D.revenue;
+  return panel('Revenue by month'+srcBadge('finance'),`${CUR()} · untaxed, net of credit notes · ${esc(D.months.at(-1))} is ${r.monthDay} days in`,
+    `<div class="pb"><figure><div class="plot" id="rev1"></div></figure>
+      <div class="kv t push"><span>Average invoice<div class="note">${num(r.documentCount)} invoices and credit notes this year</div></span>
+        <i class="num">${r.averageInvoice==null?'—':CUR()+' '+egp(r.averageInvoice,false)}</i></div></div>`);
+}
+const PAY_STATE={paid:['Paid','g-green'],in_payment:['In payment','g-green'],partial:['Partly paid','g-amber'],not_paid:['Unpaid','g-red'],reversed:['Reversed','']};
+/* Paged 4 at a time so the panel stays the height of "Revenue by month"
+   beside it. The page resets when the company changes. */
+const INV_PAGE_SIZE=4;
+function largestInvoicesPanel(){
+  return panel('Largest invoices'+srcBadge('finance'),`this year · ${CUR()} untaxed · ordered by amount incl. VAT, as Odoo's Top Invoices · click a row for the client`,
+    `<div id="lg-inv">${largestInvoicesBody()}</div>`);
+}
+export function largestInvoicesBody(){
+  const all=D.revenue.largestInvoices||[];
+  if(!all.length)return '<div class="empty"><b>No invoices this year</b>Nothing posted in Odoo for this company yet.</div>';
+  if(S.invPageEnt!==S.ent){S.invPage=0;S.invPageEnt=S.ent;}
+  const pages=Math.ceil(all.length/INV_PAGE_SIZE),page=Math.min(S.invPage||0,pages-1);
+  const rows=all.slice(page*INV_PAGE_SIZE,(page+1)*INV_PAGE_SIZE);
+  return `<div class="tw"><table><thead><tr><th>Invoice</th><th>Client</th><th class="n">Date</th><th class="n">Amount</th><th class="n">Status</th></tr></thead>
+      <tbody>${rows.map(i=>{const st=PAY_STATE[i.paymentState]||[i.paymentState||'—',''];
+        return `<tr class="cb-row" data-client="${esc(i.customerKey)}" tabindex="0"><td><span class="num">${esc(i.name)}</span></td>
+          <td>${esc(i.customer)}${i.salesperson?`<div class="note">${esc(i.salesperson)}</div>`:''}</td>
+          <td class="n"><span class="num">${esc(i.invoiceDate)}</span></td>
+          <td class="n"><span class="num">${egp(i.untaxed,false)}</span></td>
+          <td class="n">${st[1]?`<span class="tag ${st[1]}">${esc(st[0])}</span>`:`<span class="lite">${esc(st[0])}</span>`}</td></tr>`;}).join('')}
+      ${'<tr aria-hidden="true"><td colspan="5">&nbsp;<div class="note">&nbsp;</div></td></tr>'.repeat(pages>1?INV_PAGE_SIZE-rows.length:0)}</tbody></table></div>
+    ${pages>1?`<div class="pb cb-pager push"><span class="note">${page*INV_PAGE_SIZE+1}–${page*INV_PAGE_SIZE+rows.length} of ${all.length}</span><div class="sp"></div>
+      <button class="btn" data-inv-page="${page-1}"${page<=0?' disabled':''}>Previous</button>
+      <span class="note">Page ${page+1} of ${pages}</span>
+      <button class="btn" data-inv-page="${page+1}"${page>=pages-1?' disabled':''}>Next</button></div>`:''}`;
+}
+/* Odoo's "Top Salespeople" (Invoicing dashboard): revenue by the invoice's
+   salesperson, this year, net of credit notes. */
+function revenueByAmPanel(){
+  if(!D.revenue.live)return panel('Revenue by account manager','per company',
+    '<div class="empty"><b>Pick a company</b>Revenue by account manager is shown for Ceas Comm, FZE or LWM, each in its own currency.</div>');
+  const rows=D.revenue.bySalesperson||[],ytd=D.revenue.ytd;
+  return panel('Revenue by account manager'+srcBadge('finance'),`this year · ${CUR()} untaxed, net of credit notes · by the invoice's salesperson in Odoo`,
+    rows.length?`<div class="tw"><table><thead><tr><th>Account manager</th><th class="n">Revenue</th><th class="n">Share</th><th class="n">Invoices</th></tr></thead>
+      <tbody>${rows.map(a=>`<tr><td>${a.name?esc(a.name):'<span class="lite">No salesperson set</span>'}</td>
+        <td class="n"><span class="num">${egp(a.value,false)}</span></td>
+        <td class="n"><span class="num">${ytd>0?r1(a.value/ytd*100)+'%':'—'}</span></td>
+        <td class="n"><span class="num">${num(a.invoices)}</span></td></tr>`).join('')}</tbody></table></div>`
+    :'<div class="empty"><b>No invoices this year</b>Nothing posted in Odoo for this company yet.</div>');
+}
 P.delivery=()=>{
   const r=D.records.delivery;
   return `
@@ -324,7 +373,8 @@ P.growth=()=>`
           <span class="v">${i.pct}%</span></div>
         <div class="note" style="margin:-4px 0 7px">${esc(i.owner)} · ${esc(i.next)} · <span style="color:${i.idle>21?'var(--badtx)':'var(--muted)'}">${i.idle}d idle</span></div>`).join('')}
         <div class="kv t"><span>Paused</span><i>${D.strategic.paused.map(p=>esc(p.name)+' ('+p.days+'d)').join(' · ')}</i></div></div>`)}
-  </div>`;
+  </div>
+  ${revenueByAmPanel()}`;
 /* Live pipeline (ClickUp 2026 Projects list): open deals by funnel stage,
    plus the Commercial Lead page's own quarterly cohort figures (ADR-0010).
    Counts only — too few deals carry a value to show money. */

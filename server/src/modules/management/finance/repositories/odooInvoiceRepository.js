@@ -110,6 +110,38 @@ function summarizeByPartnerAndCompany(yearStart, today) {
   `).all(yearStart, today);
 }
 
+/* Odoo Invoicing dashboard's "Average Invoice" divides invoiced revenue
+   by the number of posted documents — invoices and credit notes both. */
+function countPosted(companyId, fromDate, toDate) {
+  return db.prepare(`
+    SELECT COUNT(*) AS n FROM odoo_invoices
+    WHERE company_id = ? AND state = 'posted' AND invoice_date BETWEEN ? AND ?
+  `).get(companyId, fromDate, toDate).n;
+}
+
+/* Odoo's "Top Invoices": posted invoices (not credit notes), largest
+   amount incl. VAT first, showing the untaxed amount. */
+function listLargestInvoices(companyId, fromDate, toDate, limit) {
+  return db.prepare(`
+    SELECT * FROM odoo_invoices
+    WHERE company_id = ? AND state = 'posted' AND move_type = 'out_invoice' AND invoice_date BETWEEN ? AND ?
+    ORDER BY amount_total_signed DESC, odoo_id DESC
+    LIMIT ?
+  `).all(companyId, fromDate, toDate, limit).map(toInvoice);
+}
+
+// Odoo's "Top Salespeople": untaxed, net of credit notes, by invoice salesperson.
+function sumUntaxedBySalesperson(companyId, fromDate, toDate) {
+  return db.prepare(`
+    SELECT salesperson_name AS salespersonName, SUM(amount_untaxed_signed) AS total,
+           SUM(CASE WHEN move_type = 'out_invoice' THEN 1 ELSE 0 END) AS invoices
+    FROM odoo_invoices
+    WHERE company_id = ? AND state = 'posted' AND invoice_date BETWEEN ? AND ?
+    GROUP BY salesperson_name
+    ORDER BY total DESC
+  `).all(companyId, fromDate, toDate);
+}
+
 function listPostedByPartners(partnerIds) {
   if (!partnerIds.length) return [];
   return db.prepare(`
@@ -120,7 +152,7 @@ function listPostedByPartners(partnerIds) {
 }
 
 module.exports = {
-  summarizeByPartnerAndCompany, listPostedByPartners,
+  summarizeByPartnerAndCompany, listPostedByPartners, countPosted, listLargestInvoices, sumUntaxedBySalesperson,
   listPartnerIds, summarizeByPartner,
   upsertMany, listIdsByCompanies, removeByIds, sumUntaxedByMonth, sumTotalSigned, sumUntaxedByPartner, listOpen,
 };

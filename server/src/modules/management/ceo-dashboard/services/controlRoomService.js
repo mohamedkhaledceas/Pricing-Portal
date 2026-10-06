@@ -58,6 +58,10 @@ function applyFinance(D, f, entity) {
     target: null,
     ytd: rev.ytd,
     ytdTarget: null,
+    documentCount: rev.documentCount,
+    averageInvoice: rev.averageInvoice,
+    largestInvoices: rev.largestInvoices,
+    bySalesperson: rev.bySalesperson,
     trailing90: rev.trailing90,
     concentration: rev.concentration,
     topClient: rev.topClient,
@@ -83,11 +87,11 @@ function applyFinance(D, f, entity) {
   };
 
   setKpi('revenue_total', {
-    name: 'Invoiced revenue',
+    name: 'Revenue',
     actual: rev.ytd,
     target: null,
-    query: 'Posted customer invoices minus credit notes, untaxed, by invoice date, company currency (ADR-0013)',
-    formula: 'Year to date, invoice basis. The paid-sales-order revenue definition (2026-10-05) is not built yet, so this is labelled invoiced, not revenue.',
+    query: 'Posted customer invoices minus credit notes, untaxed, by invoice date, company currency — Odoo Dashboards → Finance → Invoicing → "Invoiced" (Period: this year)',
+    formula: 'Year to date, invoice basis. Revenue is the invoiced figure (user decision 2026-10-06, replacing the paid-sales-order definition).',
   });
   setKpi('dso', {
     actual: col.dso,

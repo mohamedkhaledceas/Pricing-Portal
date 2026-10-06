@@ -127,6 +127,13 @@ main{min-width:0;display:flex;flex-direction:column}
 .pb{padding:14px 16px}
 .pb.tight{padding:0}
 .cols{display:grid;gap:16px;align-items:start}
+/* A row whose panels share one height (Clients: revenue chart beside the
+   paged largest-invoices table); the last child of each panel is pushed
+   to the bottom so a short page doesn't shrink it. */
+.cols.eq{align-items:stretch}
+.cols.eq>.panel{display:flex;flex-direction:column}
+.cols.eq>.panel>:last-child{flex:1;display:flex;flex-direction:column}
+.cols.eq .push{margin-top:auto}
 .c2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .c3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .c21{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}

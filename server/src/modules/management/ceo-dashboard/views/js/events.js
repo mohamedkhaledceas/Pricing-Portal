@@ -1,6 +1,7 @@
 import { D } from './data.js';
 import { loadEntity } from './loader.js';
 import { addKpi, ceoQueue, KPI, pages, S, setBudget, setPlan, setTarget } from './model.js';
+import { largestInvoicesBody } from './pages.js';
 import { applyBrand, closeDrill, draw, goto, openDrill, render } from './shell.js';
 import { isDarkTheme, setTheme, syncThemeChip } from './theme.js';
 import { $, esc, fmt, toast } from './util.js';
@@ -42,6 +43,7 @@ function sourcesSummary(){
 /* ═════ events ═════ */
 document.addEventListener('click',e=>{
   const g=e.target.closest('[data-go]');if(g){goto(g.dataset.go);return;}
+  const ip=e.target.closest('[data-inv-page]');if(ip){if(!ip.disabled){S.invPage=Number(ip.dataset.invPage);const b=$('#lg-inv');if(b)b.innerHTML=largestInvoicesBody();}return;}
   const k=e.target.closest('[data-kpi]');if(k){openDrill(k.dataset.kpi);return;}
   const ev=e.target.closest('[data-ev]');if(ev){const kk=D.kpis.find(x=>x.drill===ev.dataset.ev);if(kk)openDrill(kk.id);return;}
   const s=e.target.closest('[data-sort]');if(s){const[key,i]=s.dataset.sort.split('|');

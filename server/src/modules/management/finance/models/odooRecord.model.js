@@ -119,6 +119,7 @@ function toInvoice(row) {
     odooId: row.odoo_id,
     companyId: row.company_id,
     partnerId: row.partner_id,
+    partnerName: row.partner_name,
     name: row.name,
     isCreditNote: row.move_type === 'out_refund',
     invoiceDate: row.invoice_date,

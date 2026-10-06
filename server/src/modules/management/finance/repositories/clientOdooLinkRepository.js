@@ -42,7 +42,9 @@ function listLinkedWithClientNames() {
     SELECT l.odoo_partner_id AS odooPartnerId, l.client_id AS clientId, c.name AS clientName
     FROM client_odoo_partner_links l
     JOIN clients c ON c.id = l.client_id
-    WHERE l.status = 'linked'
+    -- Only real clients (migration 034): a link to a lead or internal row
+    -- is reported under the Odoo customer itself, as the client book does.
+    WHERE l.status = 'linked' AND c.kind = 'client' AND c.is_internal = 0
   `).all();
 }
 
