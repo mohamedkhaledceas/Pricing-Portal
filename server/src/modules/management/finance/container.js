@@ -13,6 +13,7 @@ const invoiceRepository = require('./repositories/odooInvoiceRepository');
 const paymentRepository = require('./repositories/odooPaymentRepository');
 const partnerRepository = require('./repositories/odooPartnerRepository');
 const syncStateRepository = require('./repositories/odooSyncStateRepository');
+const invoiceReportRepository = require('./repositories/odooInvoiceReportRepository');
 const clientRepository = require('./repositories/clientRepository');
 const linkRepository = require('./repositories/clientOdooLinkRepository');
 const { transaction } = require('./repositories/unitOfWork');
@@ -24,21 +25,24 @@ const createClientMappingService = require('./services/clientMappingService');
 const createClientMappingController = require('./controllers/clientMappingController');
 const createFinanceRouter = require('./routes/index');
 const { startOdooSyncSchedule } = require('./jobs/odooSyncSchedule');
-const { SYNCED_COMPANY_IDS } = require('./constants');
+const { SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY } = require('./constants');
 
 const odooSyncService = createOdooSyncService({
   odooClient,
   invoiceRepository,
   paymentRepository,
   partnerRepository,
+  invoiceReportRepository,
   syncStateRepository,
   transaction,
   logger,
   companyIds: [...SYNCED_COMPANY_IDS],
+  consolidationCompanyIds: [...CONSOLIDATION_COMPANY_IDS],
+  consolidationCurrency: CONSOLIDATION_CURRENCY,
 });
 
 const financeMetricsService = createFinanceMetricsService({
-  invoiceRepository, paymentRepository, syncStateRepository, linkRepository,
+  invoiceRepository, invoiceReportRepository, paymentRepository, syncStateRepository, linkRepository,
 });
 
 // Read by the CEO Control Room's client book (same public-interface rule).

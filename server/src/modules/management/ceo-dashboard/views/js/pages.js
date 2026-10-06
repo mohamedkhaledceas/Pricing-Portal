@@ -259,12 +259,15 @@ function revenueByMonthPanel(){
       <div class="kv t push"><span>Average invoice<div class="note">${num(r.documentCount)} invoices and credit notes this year</div></span>
         <i class="num">${r.averageInvoice==null?'—':CUR()+' '+egp(r.averageInvoice,false)}</i></div></div>`);
 }
+const COMPANY_LABEL={ceas:'Ceas Comm',fze:'Ceas Comm FZE',lwm:'Learn with Marie'};
 const PAY_STATE={paid:['Paid','g-green'],in_payment:['In payment','g-green'],partial:['Partly paid','g-amber'],not_paid:['Unpaid','g-red'],reversed:['Reversed','']};
 /* Paged 4 at a time so the panel stays the height of "Revenue by month"
    beside it. The page resets when the company changes. */
 const INV_PAGE_SIZE=4;
 function largestInvoicesPanel(){
-  return panel('Largest invoices'+srcBadge('finance'),`this year · ${CUR()} untaxed · ordered by amount incl. VAT, as Odoo's Top Invoices · click a row for the client`,
+  const meta=D.revenue.consolidated?`this year · all companies · EGP untaxed, converted by Odoo · click a row for the client`
+    :`this year · ${CUR()} untaxed · ordered by amount incl. VAT, as Odoo's Top Invoices · click a row for the client`;
+  return panel('Largest invoices'+srcBadge('finance'),meta,
     `<div id="lg-inv">${largestInvoicesBody()}</div>`);
 }
 export function largestInvoicesBody(){
@@ -276,7 +279,7 @@ export function largestInvoicesBody(){
   return `<div class="tw"><table><thead><tr><th>Invoice</th><th>Client</th><th class="n">Date</th><th class="n">Amount</th><th class="n">Status</th></tr></thead>
       <tbody>${rows.map(i=>{const st=PAY_STATE[i.paymentState]||[i.paymentState||'—',''];
         return `<tr class="cb-row" data-client="${esc(i.customerKey)}" tabindex="0"><td><span class="num">${esc(i.name)}</span></td>
-          <td>${esc(i.customer)}${i.salesperson?`<div class="note">${esc(i.salesperson)}</div>`:''}</td>
+          <td>${esc(i.customer)}${i.company||i.salesperson?`<div class="note">${[i.company?COMPANY_LABEL[i.company]:'',i.salesperson||''].filter(Boolean).map(esc).join(' · ')}</div>`:''}</td>
           <td class="n"><span class="num">${esc(i.invoiceDate)}</span></td>
           <td class="n"><span class="num">${egp(i.untaxed,false)}</span></td>
           <td class="n">${st[1]?`<span class="tag ${st[1]}">${esc(st[0])}</span>`:`<span class="lite">${esc(st[0])}</span>`}</td></tr>`;}).join('')}
@@ -289,10 +292,10 @@ export function largestInvoicesBody(){
 /* Odoo's "Top Salespeople" (Invoicing dashboard): revenue by the invoice's
    salesperson, this year, net of credit notes. */
 function revenueByAmPanel(){
-  if(!D.revenue.live)return panel('Revenue by account manager','per company',
-    '<div class="empty"><b>Pick a company</b>Revenue by account manager is shown for Ceas Comm, FZE or LWM, each in its own currency.</div>');
+  if(!D.revenue.live)return panel('Revenue by account manager','',
+    '<div class="empty"><b>Odoo revenue isn\'t available right now</b>The last Odoo sync failed or hasn\'t run yet.</div>');
   const rows=D.revenue.bySalesperson||[],ytd=D.revenue.ytd;
-  return panel('Revenue by account manager'+srcBadge('finance'),`this year · ${CUR()} untaxed, net of credit notes · by the invoice's salesperson in Odoo`,
+  return panel('Revenue by account manager'+srcBadge('finance'),`this year · ${D.revenue.consolidated?'all companies · EGP, converted by Odoo':CUR()} untaxed, net of credit notes · by the invoice's salesperson in Odoo`,
     rows.length?`<div class="tw"><table><thead><tr><th>Account manager</th><th class="n">Revenue</th><th class="n">Share</th><th class="n">Invoices</th></tr></thead>
       <tbody>${rows.map(a=>`<tr><td>${a.name?esc(a.name):'<span class="lite">No salesperson set</span>'}</td>
         <td class="n"><span class="num">${egp(a.value,false)}</span></td>

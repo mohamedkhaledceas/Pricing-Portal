@@ -37,12 +37,49 @@ const ENTITY_LIST = Object.freeze([
   { key: 'ceas', name: 'Ceas Comm', short: 'Ceas Comm', currency: 'EGP', note: 'Odoo company Ceas Comm (Egypt).' },
   { key: 'fze', name: 'Ceas Comm FZE', short: 'FZE', currency: 'AED', note: 'Odoo company Ceas Comm FZE (UAE), in AED.' },
   { key: 'lwm', name: 'Learn with Marie', short: 'LWM', currency: 'EGP', note: 'Odoo company Learn With Marie.' },
-  { key: 'all', name: 'Consolidated', short: 'All', currency: 'EGP', note: 'All companies — sample until live FX conversion is built.' },
+  { key: 'all', name: 'Consolidated', short: 'All', currency: 'EGP', note: 'All companies. Revenue is Odoo\'s own EGP conversion; everything else is sample.' },
 ]);
 
 const LIVE_FINANCE_KPIS = ['revenue_total', 'dso', 'overdue_60_share', 'collection_rate'];
 
 const pctText = (part, whole) => (whole > 0 ? `${(Math.round((part / whole) * 1000) / 10).toFixed(1)}%` : '—');
+
+/* "All companies": revenue only, from Odoo's Invoices Analysis already
+   converted into EGP by Odoo (finance getConsolidatedRevenue). Receivables,
+   DSO and collections stay sample here — they exist per company only. */
+function applyConsolidatedRevenue(D, f) {
+  const rev = f.revenue;
+  D.months = rev.months;
+  D.revenue = {
+    ...D.revenue,
+    live: true,
+    consolidated: true,
+    actual: rev.actual,
+    target: null,
+    ytd: rev.ytd,
+    ytdTarget: null,
+    monthDay: rev.monthDay,
+    documentCount: rev.documentCount,
+    averageInvoice: rev.averageInvoice,
+    largestInvoices: rev.largestInvoices,
+    bySalesperson: rev.bySalesperson,
+  };
+  Object.assign(D.kpis.find((k) => k.id === 'revenue_total'), {
+    live: true,
+    currency: f.currency,
+    source: 'Odoo',
+    tolerance: null,
+    name: 'Revenue',
+    actual: rev.ytd,
+    target: null,
+    query: 'Odoo Invoices Analysis, all three companies, converted into EGP by Odoo — Odoo Dashboards → Finance → Invoicing → "Invoiced" with every company selected (Period: this year)',
+    formula: 'Year to date, invoice basis. The conversion is Odoo\'s own, at its current rates; Odoo\'s Profit and Loss converts at the year\'s average rate instead, so its Revenue line differs.',
+  });
+  delete D.series.revenue_total;
+  delete D.yearMap.revenue_total;
+  // The sample drill records describe invented clients — not under a live figure.
+  delete D.records.revenue;
+}
 
 function applyFinance(D, f, entity) {
   const cur = entity.currency;
@@ -210,6 +247,11 @@ function createControlRoomService({
     if (financeMetricsService.isFinanceEntity(entity.key)) {
       overlay('finance', () => {
         applyFinance(D, financeMetricsService.getEntityFinance(entity.key), entity);
+        sources.finance = 'odoo';
+      }, sources);
+    } else if (entity.key === 'all') {
+      overlay('finance', () => {
+        applyConsolidatedRevenue(D, financeMetricsService.getConsolidatedRevenue());
         sources.finance = 'odoo';
       }, sources);
     }

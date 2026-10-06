@@ -16,15 +16,23 @@
    customers the invoice cache references are re-read by id and the rest
    are dropped. Not filtered by company — most Odoo partners are shared
    across companies (company_id empty) — the id list already comes from
-   company-scoped invoices. A few dozen records, so no incremental mode. */
+   company-scoped invoices. A few dozen records, so no incremental mode.
+
+   The Invoices Analysis report (account.invoice.report) runs last, every
+   run, both modes: read with all three companies allowed and Ceas Comm
+   first, so Odoo itself converts every line into EGP (migration 035), and
+   the table is replaced whole — the conversion follows Odoo's rates, so an
+   unchanged line can still change value. A few hundred lines. */
 const {
-  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, toInvoiceRow, toPaymentRow, toPartnerRow,
+  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS,
+  toInvoiceRow, toPaymentRow, toPartnerRow, toInvoiceReportRow,
 } = require('../models/odooRecord.model');
 
 const PAGE_SIZE = 500;
 
 function createOdooSyncService({
-  odooClient, invoiceRepository, paymentRepository, partnerRepository, syncStateRepository, transaction, logger, companyIds,
+  odooClient, invoiceRepository, paymentRepository, partnerRepository, invoiceReportRepository, syncStateRepository,
+  transaction, logger, companyIds, consolidationCompanyIds, consolidationCurrency,
 }) {
   const SPECS = [
     {
@@ -137,6 +145,44 @@ function createOdooSyncService({
     }
   }
 
+  async function syncInvoiceReport() {
+    const model = 'account.invoice.report';
+    const runAt = new Date().toISOString();
+    try {
+      const records = [];
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        // eslint-disable-next-line no-await-in-loop
+        const page = await odooClient.searchRead(model, {
+          domain: [['state', 'not in', ['draft', 'cancel']], ['move_type', 'in', ['out_invoice', 'out_refund']]],
+          fields: ODOO_INVOICE_REPORT_FIELDS,
+          order: 'id asc',
+          limit: PAGE_SIZE,
+          offset,
+          companyIds: consolidationCompanyIds,
+        });
+        records.push(...page);
+        if (page.length < PAGE_SIZE) break;
+      }
+      // The line's currency_id is the invoice's own currency, not the one
+      // Odoo converted into — that is the first allowed company's (EGP).
+      const rows = records.map((record) => toInvoiceReportRow(record, runAt, consolidationCurrency));
+      transaction(() => {
+        // Same guard as the other syncs: never wipe on an empty answer.
+        if (rows.length === 0 && invoiceReportRepository.countAll() > 0) {
+          logger.warn('Odoo invoice report returned no lines while the cache has some — keeping the cache.');
+        } else {
+          invoiceReportRepository.replaceAll(rows);
+        }
+        syncStateRepository.recordSuccess(model, { lastWriteDate: null, recordsSynced: rows.length, runAt });
+      });
+      return { model, mode: 'replace', status: 'ok', upserted: rows.length, removed: 0 };
+    } catch (error) {
+      syncStateRepository.recordFailure(model, { error: error.message, runAt });
+      logger.error('Odoo sync failed for model.', { model, message: error.message });
+      return { model, mode: 'replace', status: 'error', error: error.message };
+    }
+  }
+
   async function run(mode) {
     const results = [];
     for (const spec of SPECS) {
@@ -144,6 +190,7 @@ function createOdooSyncService({
       results.push(await syncModel(spec, mode));
     }
     results.push(await syncPartners());
+    results.push(await syncInvoiceReport());
     return results;
   }
 

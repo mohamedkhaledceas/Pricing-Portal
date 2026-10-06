@@ -21,7 +21,9 @@
    All dates are calendar dates in Africa/Cairo, as YYYY-MM-DD strings —
    the same form Odoo stores invoice_date / payment date in. */
 const { ValidationError } = require('../../../../common/errors');
-const { ENTITIES, COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS } = require('../constants');
+const {
+  ENTITIES, CONSOLIDATION_CURRENCY, COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS,
+} = require('../constants');
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const TOP_CLIENTS = 10;
@@ -48,7 +50,7 @@ const round = (value) => Math.round(value);
 const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
 
 function createFinanceMetricsService({
-  invoiceRepository, paymentRepository, syncStateRepository, linkRepository, today = cairoToday,
+  invoiceRepository, invoiceReportRepository, paymentRepository, syncStateRepository, linkRepository, today = cairoToday,
 }) {
   /* partnerId -> { key, clientId, name } for this call. */
   function buildCustomerResolver() {
@@ -223,6 +225,52 @@ function createFinanceMetricsService({
     return { asOf, currency, revenue: buildRevenue(companyId, asOf, overdueByKey, resolve), collections };
   }
 
+  /* "All companies" revenue, year to date: Odoo's own Invoices Analysis
+     lines, converted into EGP by Odoo (migration 035) — the same figures
+     as Odoo's Invoicing dashboard with all three companies selected. Only
+     revenue: receivables, DSO and collections stay per company. */
+  function getConsolidatedRevenue() {
+    const asOf = today();
+    const year = asOf.slice(0, 4);
+    const yearStart = `${year}-01-01`;
+    const monthIndex = Number(asOf.slice(5, 7)) - 1;
+    const byMonth = new Map(invoiceReportRepository.sumByMonth(yearStart, asOf).map((m) => [m.month, m.total]));
+    const months = MONTH_LABELS.slice(0, monthIndex + 1);
+    const actual = months.map((_, i) => round(byMonth.get(`${year}-${String(i + 1).padStart(2, '0')}`) || 0));
+    const ytd = round(actual.reduce((sum, v) => sum + v, 0));
+    const documentCount = invoiceReportRepository.countDocuments(yearStart, asOf);
+    const resolve = buildCustomerResolver();
+    const companyById = new Map(Object.entries(ENTITIES).map(([key, e]) => [e.companyId, key]));
+    return {
+      asOf,
+      currency: CONSOLIDATION_CURRENCY,
+      revenue: {
+        months,
+        actual,
+        ytd,
+        monthDay: Number(asOf.slice(8, 10)),
+        documentCount,
+        averageInvoice: documentCount ? round(ytd / documentCount) : null,
+        largestInvoices: invoiceReportRepository.listLargestInvoices(yearStart, asOf, LARGEST_INVOICES).map((i) => {
+          const who = resolve(i.partnerId, i.partnerName);
+          return {
+            name: i.name,
+            company: companyById.get(i.companyId) || null,
+            customer: who.name,
+            customerKey: who.key,
+            invoiceDate: i.invoiceDate,
+            untaxed: round(i.untaxed),
+            paymentState: i.paymentState,
+            salesperson: i.salespersonName,
+          };
+        }),
+        bySalesperson: invoiceReportRepository.sumBySalesperson(yearStart, asOf).map((s) => ({
+          name: s.salespersonName, value: round(s.total), invoices: s.invoices,
+        })),
+      },
+    };
+  }
+
   /* One status for Odoo as a whole: ok only when every synced model's last
      run succeeded; "as of" is the older of the models' last successes. The
      error text stays in the server log, not the response. */
@@ -237,7 +285,9 @@ function createFinanceMetricsService({
     };
   }
 
-  return { getEntityFinance, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]) };
+  return {
+    getEntityFinance, getConsolidatedRevenue, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+  };
 }
 
 module.exports = createFinanceMetricsService;

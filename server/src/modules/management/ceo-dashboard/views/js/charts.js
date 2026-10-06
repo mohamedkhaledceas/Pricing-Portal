@@ -43,16 +43,21 @@ export function chLine(m,{labels,values,fmtv,ref,refLab,intTicks=true,h=180}){
 }
 export function chCols(m,{labels,values,target,fmtv,partialLast}){
   m.innerHTML='';const W=m.clientWidth||600,H=206,p={t:16,r:10,b:26,l:50};
-  const pw=W-p.l-p.r,ph=H-p.t-p.b,max=niceMax(Math.max(...values,target||0),4);
-  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`,height:H,role:'img'},m),Y=v=>p.t+ph-(v/max)*ph;
-  for(let i=0;i<=4;i++){const v=max*i/4,y=Y(v);
+  const pw=W-p.l-p.r,ph=H-p.t-p.b,hi=Math.max(...values,target||0),lo=Math.min(...values,0);
+  /* A month can net negative (a credit note larger than that month's
+     invoices), so the axis extends below zero when it has to. */
+  const step=niceMax(hi-lo,4)/4,max=lo<0?Math.ceil(hi/step)*step:step*4,min=lo<0?Math.floor(lo/step)*step:0;
+  const ticks=Math.round((max-min)/step);
+  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`,height:H,role:'img'},m),Y=v=>p.t+ph-((v-min)/(max-min))*ph;
+  for(let i=0;i<=ticks;i++){const v=min+step*i,y=Y(v);
     el('line',{x1:p.l,x2:W-p.r,y1:y,y2:y,stroke:V('--grid'),'stroke-width':1},svg);
     const t=el('text',{x:p.l-7,y:y+3.5,'text-anchor':'end',fill:V('--muted'),'font-size':10,'font-family':V('--f-mono')},svg);t.textContent=money(v);}
   const band=pw/values.length,bw=Math.min(22,band*.52);
   if(target){const y=Y(target);el('line',{x1:p.l,x2:W-p.r,y1:y,y2:y,stroke:V('--axis'),'stroke-width':1},svg);
     const t=el('text',{x:W-p.r,y:y-5,'text-anchor':'end',fill:V('--muted'),'font-size':10},svg);t.textContent='target '+money(target);}
-  values.forEach((v,i)=>{const x=p.l+band*i+(band-bw)/2,y=Y(v),h=p.t+ph-y,part=partialLast&&i===values.length-1;
-    const q=el('path',{d:barV(x,y,bw,h,3),fill:part?V('--o1'):V('--accent')},svg);
+  if(min<0){const z=Y(0);el('line',{x1:p.l,x2:W-p.r,y1:z,y2:z,stroke:V('--axis'),'stroke-width':1},svg);}
+  values.forEach((v,i)=>{const x=p.l+band*i+(band-bw)/2,y=Y(Math.max(v,0)),h=Math.abs(Y(v)-Y(0)),part=partialLast&&i===values.length-1;
+    const q=el('path',{d:barV(x,y,bw,h,3),fill:v<0?V('--crit'):part?V('--o1'):V('--accent')},svg);
     hov(q,`<div class="tk">${esc(labels[i])}${part?' · month to date':''}</div><b>${fmtv(v)}</b>`);
     const t=el('text',{x:p.l+band*i+band/2,y:H-8,'text-anchor':'middle',fill:V('--muted'),'font-size':10},svg);t.textContent=labels[i];});
 }

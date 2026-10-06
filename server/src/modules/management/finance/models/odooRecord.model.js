@@ -14,9 +14,37 @@ const ODOO_PAYMENT_FIELDS = [
 
 const ODOO_PARTNER_FIELDS = ['id', 'name', 'email', 'website', 'vat', 'is_company', 'write_date'];
 
+// account.invoice.report (Invoices Analysis) — one record per invoice line.
+const ODOO_INVOICE_REPORT_FIELDS = [
+  'id', 'move_id', 'move_type', 'company_id', 'invoice_date', 'partner_id', 'invoice_user_id',
+  'product_id', 'product_categ_id', 'price_subtotal',
+];
+
 const orNull = (value) => (value === false || value === undefined ? null : value);
 const m2oId = (value) => (Array.isArray(value) ? value[0] : null);
 const m2oName = (value) => (Array.isArray(value) ? value[1] : null);
+
+/* price_subtotal arrives already converted by Odoo into the first allowed
+   company's currency (migration 035) — stored as is, labelled with that
+   currency (record.currency_id is the invoice's own currency). */
+function toInvoiceReportRow(record, syncedAt, consolidatedCurrency) {
+  return {
+    odoo_id: record.id,
+    move_id: m2oId(record.move_id),
+    move_name: m2oName(record.move_id),
+    move_type: record.move_type,
+    company_id: m2oId(record.company_id),
+    invoice_date: orNull(record.invoice_date),
+    partner_id: m2oId(record.partner_id),
+    partner_name: m2oName(record.partner_id),
+    salesperson_name: m2oName(record.invoice_user_id),
+    product_name: m2oName(record.product_id),
+    category_name: m2oName(record.product_categ_id),
+    price_subtotal_consolidated: record.price_subtotal || 0,
+    consolidated_currency: consolidatedCurrency,
+    synced_at: syncedAt,
+  };
+}
 
 function toInvoiceRow(record, syncedAt) {
   return {
@@ -146,6 +174,6 @@ function toPayment(row) {
 }
 
 module.exports = {
-  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS,
-  toInvoiceRow, toPaymentRow, toPartnerRow, toPartner, toSyncState, toOpenInvoice, toInvoice, toPayment,
+  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS,
+  toInvoiceReportRow, toInvoiceRow, toPaymentRow, toPartnerRow, toPartner, toSyncState, toOpenInvoice, toInvoice, toPayment,
 };

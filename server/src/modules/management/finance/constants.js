@@ -17,6 +17,14 @@ const ENTITY_COMPANY_IDS = Object.freeze(
 
 const SYNCED_COMPANY_IDS = Object.freeze(Object.values(ENTITY_COMPANY_IDS));
 
+/* "All companies" figures are Odoo's own conversion, never the portal's
+   (user decision 2026-10-06). Odoo converts into the currency of the
+   first allowed company, so Ceas Comm (EGP) must stay first here. */
+const CONSOLIDATION_COMPANY_IDS = Object.freeze([
+  ENTITIES.ceas.companyId, ENTITIES.fze.companyId, ENTITIES.lwm.companyId,
+]);
+const CONSOLIDATION_CURRENCY = ENTITIES.ceas.currency;
+
 /* Odoo 19 payment states that count as cash collected. `in_process` (posted
    but not yet matched to a bank statement line) is deliberately excluded —
    user decision 2026-10-05: unreconciled to the bank is not collected. */
@@ -33,5 +41,6 @@ const FINANCE_THRESHOLDS = Object.freeze({
 });
 
 module.exports = {
-  ENTITIES, ENTITY_COMPANY_IDS, SYNCED_COMPANY_IDS, COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS,
+  ENTITIES, ENTITY_COMPANY_IDS, SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY,
+  COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS,
 };
