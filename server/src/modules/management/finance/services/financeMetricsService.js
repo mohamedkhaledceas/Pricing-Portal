@@ -96,9 +96,21 @@ function toPnlLines(b) {
   };
 }
 
+// Open bills with their overdue share (due before today).
+function invoicesOpen(rows, asOf) {
+  let total = 0;
+  let overdue = 0;
+  let overdueCount = 0;
+  for (const b of rows) {
+    total += b.residual;
+    if (b.dueDate && b.dueDate < asOf) { overdue += b.residual; overdueCount += 1; }
+  }
+  return { rows, total, overdue, overdueCount };
+}
+
 function createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, paymentRepository,
-  syncStateRepository, linkRepository, cashAccountTypes, today = cairoToday,
+  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, payablesRepository,
+  paymentRepository, syncStateRepository, linkRepository, cashAccountTypes, today = cairoToday,
 }) {
   /* partnerId -> { key, clientId, name } for this call. */
   function buildCustomerResolver() {
@@ -585,6 +597,50 @@ function createFinanceMetricsService({
     };
   }
 
+  /* What one company owes: open vendor bills (overdue = past their due
+     date), this year's biggest suppliers, and employee expenses in the
+     buckets Odoo's Dashboards → Finance → Expenses shows — to report
+     (draft), to validate (submitted for approval; "reported" in older
+     Odoo) and to reimburse (approved). Per company, own currency. */
+  function getPayables(entityKey) {
+    const { companyId, currency } = entityOrThrow(entityKey);
+    const asOf = today();
+    const yearStart = `${asOf.slice(0, 4)}-01-01`;
+    const r = (n) => Math.round(n);
+
+    const open = invoicesOpen(payablesRepository.listOpenBills(companyId), asOf);
+    const billed = payablesRepository.sumBilled(companyId, yearStart, asOf);
+    const byState = new Map(payablesRepository.summarizeExpenses(companyId).map((s) => [s.state, s]));
+    const bucket = (states) => states.reduce((acc, st) => {
+      const s = byState.get(st);
+      return s ? { count: acc.count + s.count, total: acc.total + s.total } : acc;
+    }, { count: 0, total: 0 });
+    const toReport = bucket(['draft']);
+    const toValidate = bucket(['reported', 'submitted']);
+    const toReimburse = bucket(['approved']);
+
+    return {
+      asOf,
+      currency,
+      bills: {
+        open: open.rows.map((b) => ({ ...b, residual: r(b.residual) })),
+        openTotal: r(open.total),
+        overdueTotal: r(open.overdue),
+        overdueCount: open.overdueCount,
+        billedThisYear: r(billed.total),
+        topSuppliers: payablesRepository.sumBilledByVendor(companyId, yearStart, asOf, 6)
+          .map((s) => ({ name: s.partnerName, value: r(s.total), bills: s.bills })),
+      },
+      expenses: {
+        toReport: { count: toReport.count, total: r(toReport.total) },
+        toValidate: { count: toValidate.count, total: r(toValidate.total) },
+        toReimburse: { count: toReimburse.count, total: r(toReimburse.total) },
+        pending: payablesRepository.listExpenses(companyId, ['approved', 'reported', 'submitted', 'draft'], 5)
+          .map((e) => ({ ...e, total: r(e.total) })),
+      },
+    };
+  }
+
   /* One status for Odoo as a whole: ok only when every synced model's last
      run succeeded; "as of" is the older of the models' last successes. The
      error text stays in the server log, not the response. */
@@ -600,7 +656,7 @@ function createFinanceMetricsService({
   }
 
   return {
-    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getBalanceSheet, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getBalanceSheet, getPayables, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
   };
 }
 

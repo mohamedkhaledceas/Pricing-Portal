@@ -17,6 +17,7 @@ const invoiceReportRepository = require('./repositories/odooInvoiceReportReposit
 const pnlRepository = require('./repositories/odooPnlRepository');
 const saleReportRepository = require('./repositories/odooSaleReportRepository');
 const balanceRepository = require('./repositories/odooBalanceRepository');
+const payablesRepository = require('./repositories/odooPayablesRepository');
 const clientRepository = require('./repositories/clientRepository');
 const linkRepository = require('./repositories/clientOdooLinkRepository');
 const { transaction } = require('./repositories/unitOfWork');
@@ -47,6 +48,7 @@ const odooSyncService = createOdooSyncService({
   saleReportRepository,
   balanceRepository,
   balanceAccountTypes: [...BALANCE_ACCOUNT_TYPES],
+  payablesRepository,
   syncStateRepository,
   transaction,
   logger,
@@ -58,8 +60,8 @@ const odooSyncService = createOdooSyncService({
 });
 
 const financeMetricsService = createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, paymentRepository,
-  syncStateRepository, linkRepository, cashAccountTypes: [...CASH_ACCOUNT_TYPES],
+  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, payablesRepository,
+  paymentRepository, syncStateRepository, linkRepository, cashAccountTypes: [...CASH_ACCOUNT_TYPES],
 });
 
 // Read by the CEO Control Room's client book (same public-interface rule).

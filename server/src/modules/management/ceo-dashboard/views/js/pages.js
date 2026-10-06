@@ -67,7 +67,7 @@ P.money=()=>{
     ${D.bsLive?liveBalanceSheetPanel():perCompanyPanel('Balance sheet')||panel('Balance sheet',`${esc(e.name)} · ${e.balances?'balanced':'DOES NOT BALANCE'}`,`<div class="pb tight">${balanceSheet()}</div>`)}
     ${D.sales&&D.sales.live&&D.revenue.live?bookedVsInvoicedPanel():panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
   </div>
-  <div class="cols c2">
+  <div class="cols${D.payablesLive?'':' c2'}">
     ${wc.live?receivablesPanel():panel('Working capital',`Net 30-day position ${egp(wc.net30)}`,`<div class="pb">
       <figure><figcaption><b>Receivables</b> ${egp(wc.receivables,false)} · DSO ${wc.dso} days</figcaption><div class="plot" id="ar1"></div></figure>
       <div class="kv" style="margin-top:14px"><span>Owed to freelancers</span><i class="num">${egp(wc.freelancer,false)}</i></div>
@@ -75,14 +75,14 @@ P.money=()=>{
       <div class="kv"><span>Of which past 30 days</span><i class="num">${egp(wc.over30,false)} · ${wc.over30Pct}%</i></div>
       <div class="alert w" style="margin-top:12px"><div>You are financing your clients and being financed by your freelancers.
         ${egp(wc.over30,false)} of what you owe is past 30 days; ${egp(wc.overdue60,false)} of what you are owed is past 60.</div></div></div>`)}
-    ${wc.live?panel('Payables','sample — vendor bills aren\'t synced from Odoo yet',`<div class="pb">
+    ${D.payablesLive?livePayablesPanel():perCompanyPanel('Payables')||(wc.live?panel('Payables','sample — vendor bills aren\'t synced from Odoo yet',`<div class="pb">
       <div class="kv"><span>Owed to freelancers</span><i class="num">${egp(wc.freelancer,false)}</i></div>
       <div class="kv"><span>Owed to suppliers and vendors</span><i class="num">${egp(wc.supplier,false)}</i></div>
       <div class="kv"><span>Of which past 30 days</span><i class="num">${egp(wc.over30,false)} · ${wc.over30Pct}%</i></div></div>`)
     :panel('Subscriptions',`${egp(D.subscriptions.runrate,false)} a month · ${egp(D.subscriptions.runrate*12,false)} a year`,
     `<div class="pb"><div class="alert w"><div><b>${egp(D.subscriptions.renew30,false)} a month auto-renews within 30 days.</b>
       Adobe on 14 October at ${egp(62000,false)} with three of twelve seats unused — cutting those three saves about ${egp(186000,false)} a year.
-      The full register lives in Odoo; this is the only line that needs a decision.</div></div></div>`)}
+      The full register lives in Odoo; this is the only line that needs a decision.</div></div></div>`))}
   </div>`;
 }
 
@@ -293,12 +293,41 @@ export function largestInvoicesBody(){
       <span class="note">Page ${page+1} of ${pages}</span>
       <button class="btn" data-inv-page="${page+1}"${page>=pages-1?' disabled':''}>Next</button></div>`:''}`;
 }
+/* What one company owes (Odoo): open vendor bills, staff expenses in the
+   Expenses dashboard's buckets, this year's biggest suppliers. Bills whose
+   vendor is the company itself are marked — Odoo records many internal
+   costs that way, so they aren't really suppliers. */
+function livePayablesPanel(){
+  const p=D.payablesLive,b=p.bills,x=p.expenses,cur=p.currency,bsPay=D.bsLive?D.bsLive.balanceSheet.payables:null;
+  const own=n=>String(n||'').trim().toLowerCase()===String(p.companyName||'').trim().toLowerCase();
+  const kv=(l,v,note,{t,red}={})=>`<div class="kv${t?' t':''}"><span>${l}${note?`<div class="note">${note}</div>`:''}</span><i class="num nw"${red&&v?' style="color:var(--badtx)"':''}>${sgn(v)}</i></div>`;
+  const plural=(n,w)=>`${num(n)} ${w}${n===1?'':'s'}`;
+  const openRows=b.open.slice(0,6).map(o=>`<tr><td>${esc(o.partnerName||'—')}${own(o.partnerName)?' <span class="lite">own company</span>':''}<div class="note">${esc(o.name||'')}${o.ref?' · '+esc(o.ref):''}</div></td>
+      <td class="n"><span class="num"${o.dueDate&&o.dueDate<p.asOf?' style="color:var(--badtx)"':''}>${esc(o.dueDate||'—')}</span></td>
+      <td class="n"><span class="num">${sgn(o.residual)}</span></td></tr>`).join('');
+  const supRows=b.topSuppliers.map(t=>`<div class="kv"><span>${esc(t.name||'—')}${own(t.name)?' <span class="lite">own company as vendor</span>':''}<div class="note">${plural(t.bills,'bill')}</div></span><i class="num nw">${sgn(t.value)}</i></div>`).join('');
+  return panel('Payables'+srcBadge('payables'),`${esc(cur)} · what ${esc(p.companyName)} owes · Odoo vendor bills and expenses`,
+    `<div class="pb"><div class="cols c2"><div>
+      ${kv(`Open vendor bills`,b.openTotal,plural(b.open.length,'bill')+' with something left to pay',{t:1})}
+      ${kv('Of which overdue',b.overdueTotal,plural(b.overdueCount,'bill')+' past the due date',{red:1})}
+      ${bsPay!=null?kv('Payables in the balance sheet',bsPay,bsPay!==b.openTotal?'Differs from the open bills: payments or entries in Odoo not matched to a bill':'Matches the open bills'):''}
+      ${kv('Staff expenses to reimburse',x.toReimburse.total,plural(x.toReimburse.count,'approved expense')+' — Odoo Expenses "To reimburse"',{t:1})}
+      ${kv('Awaiting approval',x.toValidate.total,plural(x.toValidate.count,'expense')+' — "To validate"')}
+      ${kv('Not submitted yet',x.toReport.total,plural(x.toReport.count,'draft expense')+' — "To report"')}
+      <p class="note" style="margin-top:10px">Bills marked "own company" have ${esc(p.companyName)} itself as the vendor — Odoo holds internal costs such as salaries and rent that way, so they aren't outside suppliers.</p>
+      </div><div>
+      ${openRows?`<h3 class="sec">Open bills</h3><div class="tw"><table><thead><tr><th>Vendor</th><th class="n">Due</th><th class="n">Left to pay</th></tr></thead><tbody>${openRows}</tbody></table></div>`:''}
+      <h3 class="sec" style="margin-top:14px">Billed this year</h3>
+      ${kv('All vendor bills, net of refunds',b.billedThisYear,'untaxed',{t:1})}
+      ${supRows||'<p class="note">No vendor bills this year.</p>'}
+    </div></div></div>`);
+}
 /* Cash and balance sheet (Odoo, one company). Under All they say so
    instead of showing sample figures: Odoo's multi-company balance-sheet
    conversion isn't verified, and the portal never picks a rate. */
 function perCompanyPanel(title){
   if(!(D.entity&&D.entity.key==='all'&&D.pnlLive))return '';
-  return panel(title,'per company',`<div class="empty"><b>Shown per company</b>Pick Ceas Comm, FZE or LWM. Odoo's way of converting a combined ${esc(title.toLowerCase())} hasn't been verified yet, so the portal doesn't add the companies together.</div>`);
+  return panel(title,'per company',`<div class="empty"><b>Shown per company</b>Pick Ceas Comm, FZE or LWM. How Odoo converts these figures across companies hasn't been verified yet, so the portal doesn't add the companies together.</div>`);
 }
 const sgn=n=>`${n<0?'−':''}${egp(Math.abs(n),false)}`;
 function liveCashPanel(){

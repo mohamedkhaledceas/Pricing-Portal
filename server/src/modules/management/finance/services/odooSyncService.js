@@ -38,7 +38,11 @@
    Balance-sheet journal items (migration 039) run last, every run: every
    posted item on balance-sheet accounts since each company's books began,
    with its account's code, name and non-trade flag. Replaced whole;
-   ~3,600 lines. */
+   ~3,600 lines.
+
+   Vendor bills (in_invoice / in_refund, every state) and employee
+   expenses (hr.expense) close the run (migration 040), per company,
+   replaced whole — a few hundred each. */
 const {
   ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS, ODOO_SALE_REPORT_FIELDS,
   toInvoiceRow, toPaymentRow, toPartnerRow, toInvoiceReportRow, toSaleReportRow,
@@ -48,7 +52,7 @@ const PAGE_SIZE = 500;
 
 function createOdooSyncService({
   odooClient, invoiceRepository, paymentRepository, partnerRepository, invoiceReportRepository, pnlRepository,
-  saleReportRepository, balanceRepository, balanceAccountTypes,
+  saleReportRepository, balanceRepository, balanceAccountTypes, payablesRepository,
   syncStateRepository, transaction, logger, companyIds, consolidationCompanyIds, consolidationCurrency,
   pnlAccountTypes, foreignCurrencies,
 }) {
@@ -340,6 +344,77 @@ function createOdooSyncService({
     }
   }
 
+  const m2o = (v, i) => (Array.isArray(v) ? v[i] : null);
+  const orNull = (v) => (v === false || v === undefined ? null : v);
+
+  async function syncPayables() {
+    const model = 'account.move (vendor bills) + hr.expense';
+    const runAt = new Date().toISOString();
+    try {
+      const bills = [];
+      const expenses = [];
+      for (const companyId of companyIds) {
+        // eslint-disable-next-line no-await-in-loop
+        const billRecords = await readAll('account.move', {
+          domain: [['company_id', '=', companyId], ['move_type', 'in', ['in_invoice', 'in_refund']]],
+          fields: ['id', 'move_type', 'name', 'ref', 'commercial_partner_id', 'invoice_date', 'invoice_date_due', 'state',
+            'payment_state', 'amount_untaxed_signed', 'amount_total_signed', 'amount_residual_signed'],
+          companyIds: [companyId],
+        });
+        // Odoo signs purchases negative; stored with a bill positive.
+        bills.push(...billRecords.map((r) => ({
+          odoo_id: r.id,
+          company_id: companyId,
+          move_type: r.move_type,
+          name: orNull(r.name),
+          ref: orNull(r.ref),
+          partner_id: m2o(r.commercial_partner_id, 0),
+          partner_name: m2o(r.commercial_partner_id, 1),
+          invoice_date: orNull(r.invoice_date),
+          invoice_date_due: orNull(r.invoice_date_due),
+          state: r.state,
+          payment_state: orNull(r.payment_state),
+          untaxed: -(r.amount_untaxed_signed || 0),
+          total: -(r.amount_total_signed || 0),
+          residual: -(r.amount_residual_signed || 0),
+          synced_at: runAt,
+        })));
+        // eslint-disable-next-line no-await-in-loop
+        const expenseRecords = await readAll('hr.expense', {
+          domain: [['company_id', '=', companyId]],
+          fields: ['id', 'name', 'employee_id', 'date', 'state', 'payment_mode', 'total_amount', 'product_id'],
+          companyIds: [companyId],
+        });
+        expenses.push(...expenseRecords.map((r) => ({
+          odoo_id: r.id,
+          company_id: companyId,
+          name: orNull(r.name),
+          employee_name: m2o(r.employee_id, 1),
+          date: orNull(r.date),
+          state: r.state,
+          payment_mode: orNull(r.payment_mode),
+          total_amount: r.total_amount || 0,
+          product_name: m2o(r.product_id, 1),
+          synced_at: runAt,
+        })));
+      }
+      transaction(() => {
+        if (bills.length === 0 && payablesRepository.countBills() > 0) {
+          logger.warn('Odoo vendor bills came back empty while the cache has some — keeping the cache.');
+        } else {
+          payablesRepository.replaceBills(bills);
+        }
+        payablesRepository.replaceExpenses(expenses);
+        syncStateRepository.recordSuccess(model, { lastWriteDate: null, recordsSynced: bills.length + expenses.length, runAt });
+      });
+      return { model, mode: 'replace', status: 'ok', upserted: bills.length + expenses.length, removed: 0 };
+    } catch (error) {
+      syncStateRepository.recordFailure(model, { error: error.message, runAt });
+      logger.error('Odoo sync failed for model.', { model, message: error.message });
+      return { model, mode: 'replace', status: 'error', error: error.message };
+    }
+  }
+
   async function run(mode) {
     const results = [];
     for (const spec of SPECS) {
@@ -352,6 +427,7 @@ function createOdooSyncService({
     results.push(await syncInvoiceReport());
     results.push(await syncPnl());
     results.push(await syncBalances());
+    results.push(await syncPayables());
     return results;
   }
 

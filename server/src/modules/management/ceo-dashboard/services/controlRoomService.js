@@ -355,7 +355,7 @@ function createControlRoomService({
     const today = now();
     const todayIso = CAIRO_DATE.format(today);
     const D = structuredClone(sampleRepository.getSample());
-    const sources = { finance: 'sample', pnl: 'sample', balance: 'sample', sales: 'sample', pipeline: 'sample', people: 'sample', costs: 'sample' };
+    const sources = { finance: 'sample', pnl: 'sample', balance: 'sample', payables: 'sample', sales: 'sample', pipeline: 'sample', people: 'sample', costs: 'sample' };
 
     D.asOf = todayIso;
     D.asOfLabel = CAIRO_LONG_DATE.format(today);
@@ -383,6 +383,11 @@ function createControlRoomService({
         overlay('balance', () => {
           applyBalance(D, financeMetricsService.getBalanceSheet(entity.key));
           sources.balance = 'odoo';
+        }, sources);
+        overlay('payables', () => {
+          // Bills whose vendor is the company itself are flagged on the page.
+          D.payablesLive = { ...financeMetricsService.getPayables(entity.key), companyName: entity.name };
+          sources.payables = 'odoo';
         }, sources);
       }
       overlay('sales', () => {
