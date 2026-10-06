@@ -1,3 +1,4 @@
+import { apiFetch } from './apiClient.js';
 import { D } from './data.js';
 import { render } from './shell.js';
 import { $, egp, fmt, num, pctx, r1, toast } from './util.js';
@@ -50,17 +51,20 @@ export function prior(id){
   if(!m||!y)return null;
   const v=y[m[0]][m[1]];return v===undefined?null:v;}
 /* ═════ budget: planned vs spent vs left ═════
-   Annual budgets are editable the same way targets are — held in state, never
-   written into a component, and every derived figure recomputed at render. */
+   Annual budgets and function plans are saved on the server (phase 3,
+   budgetService): an edit is sent first and only written into D once the
+   server accepts it. "Edited" means changed from the workbook seed. */
+const putJson=(path,body)=>apiFetch(path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 export function LB(name){
   const b=D.budget.lines.find(x=>x.name===name);if(!b)return null;
   const annual=(S.budgets[name]!==undefined)?S.budgets[name]:b.annual;
   const share=D.budget.yearShareExact;   /* the exact elapsed share — the
      displayed 76.3% is rounded for reading and must never be used to compute */
   const ytdBudget=Math.round(annual*share), spent=b.spent;
+  const seed=b.seedAnnual!==undefined?b.seedAnnual:b.annual;
   return {...b,annual,ytdBudget,spent,left:annual-spent,variance:ytdBudget-spent,
     usedPct:annual?r1(spent/annual*100):0,pacePct:r1(share*100),
-    projected:b.projected,edited:S.budgets[name]!==undefined,orig:b.annual,
+    projected:b.projected,edited:annual!==seed,orig:seed,
     overrun:b.projected-annual};}
 export function liveBudget(){
   const lines=D.budget.lines.map(l=>LB(l.name));
@@ -72,10 +76,12 @@ export function liveBudget(){
     projected,overrun:projected-annual,
     usedPct:annual?r1(spent/annual*100):0,
     ratio:r1(annual/D.budget.revPlanYear*100)};}
-export function setBudget(name,v,note){
+export async function setBudget(name,v,note){
   const b=D.budget.lines.find(x=>x.name===name);if(!b)return;
   const was=LB(name);
-  if(v===b.annual)delete S.budgets[name];else S.budgets[name]=v;
+  try{await putJson('/api/ceo-dashboard/budget/lines/'+encodeURIComponent(name),{annual:Math.round(v),note:note||null});}
+  catch(err){toast('Not saved — '+(err.message||'the server refused the change'));render();return;}
+  b.annual=Math.round(v);delete S.budgets[name];
   const now=LB(name);
   S.log.unshift({a:'budget',name,from:'EGP '+egp(was.annual),to:'EGP '+egp(now.annual),note});
   toast(`${name} budget EGP ${egp(now.annual)} · ${now.usedPct}% spent · EGP ${egp(now.left)} left`);
@@ -106,18 +112,19 @@ export function planAt(fid,cat,i){
   const o=S.plan[fid]&&S.plan[fid][cat];
   if(o&&o[i]!==undefined)return o[i];
   return FN(fid).categories.find(c=>c.name===cat).plan[i];}
-export function setPlan(fid,cat,i,v){
-  const base=FN(fid).categories.find(c=>c.name===cat).plan[i];
-  S.plan[fid]=S.plan[fid]||{}; S.plan[fid][cat]=S.plan[fid][cat]||{};
-  if(v===base)delete S.plan[fid][cat][i]; else S.plan[fid][cat][i]=v;
+export async function setPlan(fid,cat,i,v){
+  const c=FN(fid).categories.find(x=>x.name===cat),base=c.plan[i];
+  try{await putJson('/api/ceo-dashboard/budget/plan',{functionId:fid,category:cat,month:i,amount:Math.round(v)});}
+  catch(err){toast('Not saved — '+(err.message||'the server refused the change'));render();return;}
+  c.plan[i]=Math.round(v);if(S.plan[fid]&&S.plan[fid][cat])delete S.plan[fid][cat][i];
   const f=LF(fid);
   S.log.unshift({a:'plan',name:`${FN(fid).name} · ${cat} · ${D.months2[i]}`,
     from:'EGP '+egp(base),to:'EGP '+egp(v),note:''});
   toast(`${cat} ${D.months2[i]} EGP ${egp(v)} · ${FN(fid).name} annual now EGP ${egp(f.annual)}`);
   render();}
+// Plan cells changed from the workbook seed.
 export function planEdited(fid){
-  const o=S.plan[fid];if(!o)return 0;
-  return Object.values(o).reduce((a,m)=>a+Object.keys(m).length,0);}
+  return FN(fid).categories.reduce((a,c)=>a+(c.seedPlan?c.plan.filter((v,i)=>v!==c.seedPlan[i]).length:0),0);}
 /* Live view of a function: every total recomputed, none stored. */
 export function LF(fid){
   const f=FN(fid), CM=D.fnBudget.closedMonths;
@@ -132,7 +139,7 @@ export function LF(fid){
     return {...c,plan,annual:plan.reduce((a,b)=>a+b,0),
       quarters:[0,3,6,9].map(i=>plan.slice(i,i+3).reduce((a,b)=>a+b,0)),
       planYtd,actualYtd,planTracked,variance:planTracked-actualYtd,
-      edited:!!(S.plan[fid]&&S.plan[fid][c.name]&&Object.keys(S.plan[fid][c.name]).length)};});
+      edited:!!(c.seedPlan&&plan.some((v,i)=>v!==c.seedPlan[i]))};});
   const monthly=D.months2.map((_,i)=>cats.reduce((a,c)=>a+c.plan[i],0));
   const planYtd=monthly.slice(0,CM).reduce((a,b)=>a+b,0);
   const actualYtd=cats.reduce((a,c)=>a+c.actualYtd,0);

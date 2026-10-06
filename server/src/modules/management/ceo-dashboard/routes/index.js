@@ -14,6 +14,12 @@ const { ROLES } = require('../../../../common/constants/roles');
    - GET /api/ceo-dashboard/clients/:key — requireClientBookViewer. One client's Odoo
      record, deals and live ClickUp tasks (key client:<id> | partner:<id>;
      400 malformed, 404 unknown).
+   - PUT /api/ceo-dashboard/budget/lines/:name — requireCeo. Saves one P&L
+     line's annual budget (body: annual, note).
+   - PUT /api/ceo-dashboard/budget/plan — requireBudgetViewer, then the
+     service checks the function is the caller's own (ceo/admin: all;
+     people_culture: people + hiring; operations: ops) — 403 otherwise.
+     Body: functionId, category, month (0–11), amount, note.
 
    /control-room is gated to ROLES.CEO and ROLES.ADMIN — narrower than the broader
    USER_MANAGER_ROLES set commercial-leads uses (which also includes
@@ -31,6 +37,8 @@ function createCeoDashboardRouter({ ceoDashboardController, authenticate }) {
 
   router.get('/ceo-dashboard/control-room', authenticate, requireCeo, ceoDashboardController.controlRoom);
   router.get('/ceo-dashboard/budget', authenticate, requireBudgetViewer, ceoDashboardController.budget);
+  router.put('/ceo-dashboard/budget/lines/:name', authenticate, requireCeo, ceoDashboardController.updateBudgetLine);
+  router.put('/ceo-dashboard/budget/plan', authenticate, requireBudgetViewer, ceoDashboardController.updateFunctionPlan);
   router.get('/ceo-dashboard/clients', authenticate, requireClientBookViewer, ceoDashboardController.clients);
   router.get('/ceo-dashboard/clients/:key', authenticate, requireClientBookViewer, ceoDashboardController.clientDetail);
 

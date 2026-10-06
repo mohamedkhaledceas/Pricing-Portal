@@ -86,7 +86,7 @@ function mountAccountMenu() {
   applyBrand();
   if (S.scope === 'limited') {
     $('.samplebar').innerHTML = '<div><b>Budget.</b> These are the starting budget figures from the workbook. '
-      + 'You can change the plan for the functions you own; changes aren\'t saved yet.'
+      + 'You can change the plan for the functions you own; every change is saved and logged.'
       + (pages().some((p) => p.id === 'clients') ? ' The client book is live from Odoo and ClickUp.' : '') + '</div>';
   }
   const hash = (location.hash || '').slice(1);

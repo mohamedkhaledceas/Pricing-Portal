@@ -1,6 +1,6 @@
 import { D } from './data.js';
 import { loadEntity } from './loader.js';
-import { addKpi, ceoQueue, KPI, pages, S, setBudget, setPlan, setTarget } from './model.js';
+import { addKpi, ceoQueue, KPI, LB, pages, S, setBudget, setPlan, setTarget } from './model.js';
 import { largestInvoicesBody } from './pages.js';
 import { applyBrand, closeDrill, draw, goto, openDrill, render } from './shell.js';
 import { isDarkTheme, setTheme, syncThemeChip } from './theme.js';
@@ -62,8 +62,9 @@ document.addEventListener('click',e=>{
     const id=$('#tkpi').value,v=parseFloat(String($('#tval').value).replace(/,/g,'')),note=$('#tnote').value.trim(),k=KPI(id);
     if(isNaN(v)){toast('Enter a target value first');return;}
     setTarget(id,v,note);return;}
+  // Restoring saves the workbook figure back — it's a change like any other, and audited.
   const br=e.target.closest('[data-breset]');if(br){const n=br.dataset.breset;
-    delete S.budgets[n];toast(n+' budget restored');render();return;}
+    setBudget(n,LB(n).orig,'restored to the workbook figure');return;}
   const fd=e.target.closest('[data-fdone]');if(fd){S.decisions[fd.dataset.fdone]={option:null};
     const left=ceoQueue().filter(d=>!S.decisions[d.id]).length;
     toast(left?`Recorded · ${left} left`:'Queue clear');render();return;}
@@ -87,7 +88,8 @@ document.addEventListener('click',e=>{
   const fb=e.target.closest('[data-fn]');if(fb){S.fn=fb.dataset.fn;
     if(S.page!=='budget'||S.bmode!=='function'){S.bmode='function';goto('budget');}else render();return;}
   const en=e.target.closest('[data-ent]');if(en){switchEntity(en.dataset.ent);return;}
-  if(e.target.closest('#bresetall')){S.budgets={};toast('All budgets restored');render();return;}
+  if(e.target.closest('#bresetall')){(async()=>{for(const l of D.budget.lines){const b=LB(l.name);
+    if(b.edited)await setBudget(l.name,b.orig,'restored to the workbook figure');}})();return;}
   if(e.target.closest('#bapply')){
     const n=$('#bline').value,v=parseFloat(String($('#bval').value).replace(/,/g,'')),note=$('#bnote').value.trim();
     if(isNaN(v)||v<0){toast('Enter an annual budget first');return;}

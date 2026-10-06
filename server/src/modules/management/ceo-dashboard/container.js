@@ -11,6 +11,9 @@ const createControlRoomSampleRepository = require('./repositories/controlRoomSam
 const createControlRoomService = require('./services/controlRoomService');
 const createClientBookService = require('./services/clientBookService');
 const createClientTasksService = require('./services/clientTasksService');
+const createBudgetService = require('./services/budgetService');
+const budgetRepository = require('./repositories/budgetRepository');
+const audit = require('../../../common/audit');
 const createCeoDashboardController = require('./controllers/ceoDashboardController');
 const createCeoDashboardRouter = require('./routes/index');
 
@@ -23,8 +26,10 @@ const { clickupGet } = require('../../../common/integrations/clickupClient');
 const { CLIENT_NAME_FIELD_ID } = require('../clients/container');
 const { getWorkforceSummary } = require('../../employees');
 
+const budgetService = createBudgetService({ budgetRepository, audit });
 const controlRoomService = createControlRoomService({
   sampleRepository: createControlRoomSampleRepository(),
+  budgetService,
   financeMetricsService,
   getPipelineSummary,
   getWorkforceSummary,
@@ -38,7 +43,7 @@ const clientBookService = createClientBookService({
   clientTasksService: createClientTasksService({ clickupGet, clientNameFieldId: CLIENT_NAME_FIELD_ID }),
   logger,
 });
-const ceoDashboardController = createCeoDashboardController({ controlRoomService, clientBookService });
+const ceoDashboardController = createCeoDashboardController({ controlRoomService, clientBookService, budgetService });
 const router = createCeoDashboardRouter({ ceoDashboardController, authenticate });
 
 module.exports = { router };

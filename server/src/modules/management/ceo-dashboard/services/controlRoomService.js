@@ -200,6 +200,23 @@ function applySales(D, s) {
   };
 }
 
+/* Saved budgets (budgetService, migration 041) replace the sample's
+   P&L-line budgets and function plans; the seeds ride along so the page
+   can mark what has been changed from the workbook. */
+function applyBudgets(D, state) {
+  for (const line of D.budget.lines) {
+    const saved = state.lines[line.name];
+    if (saved) Object.assign(line, { annual: saved.annual, seedAnnual: saved.seedAnnual });
+  }
+  for (const fn of D.functions) {
+    for (const cat of fn.categories) {
+      const saved = state.plans[fn.id] && state.plans[fn.id][cat.name];
+      if (saved) Object.assign(cat, { plan: saved.plan, seedPlan: saved.seed });
+    }
+  }
+  D.budgetSaved = true;
+}
+
 function applyFinance(D, f, entity) {
   const cur = entity.currency;
   const { revenue: rev, collections: col } = f;
@@ -314,7 +331,7 @@ function applyPeople(D, w) {
 }
 
 function createControlRoomService({
-  sampleRepository, financeMetricsService, getPipelineSummary, getWorkforceSummary, getCompanyCostSummary,
+  sampleRepository, budgetService, financeMetricsService, getPipelineSummary, getWorkforceSummary, getCompanyCostSummary,
   logger, now = () => new Date(),
 }) {
   function entityOrThrow(entityKey) {
@@ -362,6 +379,8 @@ function createControlRoomService({
     D.entity = entity;
     D.entityList = ENTITY_LIST;
     D.currency = entity.currency;
+
+    overlay('budget', () => applyBudgets(D, budgetService.getState()), sources);
 
     if (financeMetricsService.isFinanceEntity(entity.key)) {
       overlay('finance', () => {
@@ -426,7 +445,7 @@ function createControlRoomService({
     const today = now();
     const sample = sampleRepository.getSample();
     const netProfit = sample.kpis.find((k) => k.id === 'net_profit');
-    return structuredClone({
+    const D = structuredClone({
       scope: 'budget',
       asOf: CAIRO_DATE.format(today),
       asOfLabel: CAIRO_LONG_DATE.format(today),
@@ -451,6 +470,13 @@ function createControlRoomService({
       sources: {},
       sync: [],
     });
+    try {
+      applyBudgets(D, budgetService.getState());
+    } catch (error) {
+      // Same rule as the Control Room's overlays: show the workbook figures rather than fail.
+      logger.error('Budget tab: saved budgets unreadable — showing the workbook figures', { error: error.message });
+    }
+    return D;
   }
 
   return { getControlRoom, getBudget };

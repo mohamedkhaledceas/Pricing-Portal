@@ -683,7 +683,7 @@ P.budget=()=>{
       <input class="inp num" id="bval" type="number" step="10000" placeholder="Annual budget" aria-label="Annual budget" style="width:160px">
       <input class="inp" id="bnote" placeholder="Why it changed (logged with the version)" aria-label="Reason">
       <button class="btn pri" id="bapply">Apply budget</button>
-      ${Object.keys(S.budgets).length?`<button class="btn" id="bresetall">Reset all ${Object.keys(S.budgets).length}</button>`:''}
+      ${(n=>n?`<button class="btn" id="bresetall">Restore all ${n} to the workbook</button>`:'')(D.budget.lines.filter(l=>l.seedAnnual!==undefined&&l.annual!==l.seedAnnual).length)}
     </div>
     <p class="note" style="margin-top:9px">Budgets are annual and pro-rated to the day, so "budget to date" always matches how much of the year has actually passed. Changing one never restates a closed month.</p>
     ${L.annual!==D.budget.opexBudgetYear?`<div class="alert w" style="margin-top:12px"><div><b>Overhead budget now EGP ${egp(L.annual)}.</b>
