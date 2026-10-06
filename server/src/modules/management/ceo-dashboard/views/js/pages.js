@@ -49,7 +49,7 @@ P.money=()=>{
     `<div class="pb"><figure><div class="plot" id="w1"></div></figure>
      <div class="alert" style="margin-top:12px"><div><b>Two bars explain the year.</b> Drawings exceeded profit by ${egp(D.cash.drawings-D.pnl.netProfit)},
        and ${egp(D.cash.arSwing)} more is sitting unpaid with clients than in January. The owner account is shown separately and never nets into business cash.</div></div></div>`)}
-  ${panel('Income statement',`Year to date · 1 January to 5 October${S.cmp?' · against '+S.cmp:''}`,`<div class="pb tight">
+  ${D.pnlLive?livePnlPanel():panel('Income statement',`Year to date · 1 January to 5 October${S.cmp?' · against '+S.cmp:''}`,`<div class="pb tight">
       ${pnlTable()}</div><div class="pb" style="padding-top:0">
       <div class="alert" style="margin-top:12px"><div><b>${egp(D.pnl.freelancerCost,false)} — ${D.pnl.freelancerRatio}% of revenue — went to freelancers and contractors</b>
         against a 25% ceiling. Gross margin is ${LK('gross_margin').ach}% of target and net margin ${LK('net_margin').ach}%:
@@ -293,6 +293,42 @@ export function largestInvoicesBody(){
       <span class="note">Page ${page+1} of ${pages}</span>
       <button class="btn" data-inv-page="${page+1}"${page>=pages-1?' disabled':''}>Next</button></div>`:''}`;
 }
+/* Odoo's Profit and Loss, line for line (Accounting → Reporting → Profit
+   and Loss): this year beside the same period last year for one company;
+   under All, Odoo's year-average conversion and no prior year. */
+function livePnlPanel(){
+  const p=D.pnlLive,c=p.current,pr=p.prior,cur=p.currency;
+  const v=n=>`${n<0?'−':''}${egp(Math.abs(n),false)}`;
+  // Difference in money, not %: a % change across a profit/loss flip means
+  // nothing. Coloured by its effect on profit (a cost going up is red).
+  const chg=(a,b,cost)=>{if(b==null)return '';const d=a-b;if(!d)return '<span class="lite">—</span>';
+    const good=cost?d<0:d>0;return `<span class="num ${good?'d-up':'d-dn'}">${d>0?'+':'−'}${egp(Math.abs(d),false)}</span>`;};
+  const rows=[['Revenue','revenue',{t:1}],['Less Costs of Revenue','costOfRevenue',{sub:1,cost:1}],['Gross Profit','grossProfit',{t:1}],
+    ['Less Operating Expenses','operatingExpenses',{sub:1,cost:1}],['Operating Income (or Loss)','operatingIncome',{t:1}],
+    ['Plus Other Income','otherIncome',{sub:1}],['Less Other Expenses','otherExpenses',{sub:1,cost:1}],['Net Profit','netProfit',{grand:1}],
+    ['Less Allocations and Plus Withdrawals','allocations',{sub:1,cost:1}],['Net Profit Left After Allocations and Withdrawals','netProfitAfterAllocations',{t:1}]];
+  const priorLabel=pr?`${p.year-1} to ${Number(p.priorTo.slice(8))} ${MONTH_NAME[Number(p.priorTo.slice(5,7))-1]}`:'';
+  const table=`<div class="tw"><table class="pnl"><thead><tr><th>${esc(cur)}</th><th class="n">${p.year}</th>${pr?`<th class="n">${priorLabel}</th><th class="n">Difference</th>`:''}</tr></thead><tbody>
+    ${rows.map(([label,key,o])=>`<tr class="${o.grand?'grand':o.t?'tot':o.sub?'sub':''}">
+      <td>${o.sub?`<span style="padding-left:14px;color:var(--muted)">${esc(label)}</span>`:`<b style="font-weight:600">${esc(label)}</b>`}</td>
+      <td class="n"><span class="num${c[key]<0?' d-dn':''}">${v(c[key])}</span></td>
+      ${pr?`<td class="n"><span class="num">${v(pr[key])}</span></td><td class="n">${chg(c[key],pr[key],o.cost)}</td>`:''}</tr>`).join('')}
+    </tbody></table></div>`;
+  const months=`<h3 class="sec" style="margin-top:18px">Month by month</h3>
+    <div class="tw"><table><thead><tr><th>Month</th><th class="n">Revenue</th><th class="n">Gross profit</th><th class="n">Operating expenses</th><th class="n">Net profit</th><th class="n">Net margin</th></tr></thead>
+    <tbody>${p.months.map(m=>{const mg=m.revenue?r1(m.netProfit/m.revenue*100):null;return `<tr><td>${esc(m.month)}</td>
+      <td class="n"><span class="num${m.revenue<0?' d-dn':''}">${v(m.revenue)}</span></td>
+      <td class="n"><span class="num">${v(m.grossProfit)}</span></td>
+      <td class="n"><span class="num">${v(m.operatingExpenses)}</span></td>
+      <td class="n"><span class="num${m.netProfit<0?' d-dn':''}">${v(m.netProfit)}</span></td>
+      <td class="n"><span class="num">${mg==null?'—':mg+'%'}</span></td></tr>`;}).join('')}</tbody></table></div>`;
+  const note=p.consolidated
+    ?`All companies, ${esc(cur)}. AED converted at Odoo's year-average rate (${Object.entries(p.rates).map(([k,r])=>`${esc(k)} ${r.toFixed(4)}`).join(', ')}), the way Odoo's own multi-company report does — so it matches Odoo and moves a little whenever Odoo adds a day's rate. No prior-year column: Odoo has no AED rate before February 2026.`
+    :`As posted in Odoo, in ${esc(cur)}. ${p.year} covers everything posted for the year so far; ${p.year-1} is the same span last year.${D.entity&&D.entity.key==='lwm'?' Learn with Marie\'s Odoo books start in July 2025.':''}`;
+  return panel('Income statement'+srcBadge('pnl'),`${p.consolidated?'all companies':esc(D.entity?D.entity.name:'')} · Odoo Profit and Loss`,
+    `<div class="pb tight">${table}</div><div class="pb" style="padding-top:0">${months}<p class="note">${note}</p></div>`);
+}
+const MONTH_NAME=['January','February','March','April','May','June','July','August','September','October','November','December'];
 /* Sales orders (Odoo Sales Analysis, Dashboards → Sales), this year by
    order date. "Booked" = confirmed orders, untaxed — Odoo's Sales
    dashboard calls it Revenue; revenue here is the invoiced figure. */

@@ -68,6 +68,34 @@ function periodAverageRate(rates, fromDate, toDate) {
   return days ? sum / days : 1;
 }
 
+/* Odoo's Profit and Loss lines (account.report 7) from account-type
+   balances (debit − credit, so income is negative). */
+function toPnlLines(b) {
+  const v = (type) => b[type] || 0;
+  const revenue = -v('income');
+  const costOfRevenue = v('expense_direct_cost');
+  const operatingExpenses = v('expense');
+  const otherIncome = -v('income_other');
+  const otherExpenses = v('expense_depreciation') + v('expense_other');
+  const allocations = v('equity_unaffected');
+  const grossProfit = revenue - costOfRevenue;
+  const operatingIncome = grossProfit - operatingExpenses;
+  const netProfit = operatingIncome + otherIncome - otherExpenses;
+  const r = (n) => Math.round(n);
+  return {
+    revenue: r(revenue),
+    costOfRevenue: r(costOfRevenue),
+    grossProfit: r(grossProfit),
+    operatingExpenses: r(operatingExpenses),
+    operatingIncome: r(operatingIncome),
+    otherIncome: r(otherIncome),
+    otherExpenses: r(otherExpenses),
+    netProfit: r(netProfit),
+    allocations: r(allocations),
+    netProfitAfterAllocations: r(netProfit - allocations),
+  };
+}
+
 function createFinanceMetricsService({
   invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, paymentRepository,
   syncStateRepository, linkRepository, today = cairoToday,
@@ -396,6 +424,71 @@ function createFinanceMetricsService({
     };
   }
 
+  /* Odoo's Profit and Loss, the way Accounting → Reporting → Profit and
+     Loss shows it for the calendar year (everything posted to date).
+     One company: its own currency, with the same period last year (1 Jan
+     to the same day) beside it. All: each company converted the way
+     Odoo's multi-company report does (periodAverageRate over the year);
+     no prior year, because Odoo holds no AED rate before 2026-02-01 and
+     would count every 2025 AED as 1 EGP. Months under All use the year's
+     rate, so they add up to the year. */
+  function getProfitAndLoss(entityKey) {
+    const consolidated = entityKey === 'all';
+    const asOf = today();
+    const year = Number(asOf.slice(0, 4));
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+    const companies = consolidated
+      ? Object.values(ENTITIES)
+      : [entityOrThrow(entityKey)];
+    const rates = {};
+    const factor = new Map();
+    for (const e of companies) {
+      if (!consolidated || e.currency === CONSOLIDATION_CURRENCY) { factor.set(e.companyId, 1); continue; }
+      if (rates[e.currency] == null) rates[e.currency] = periodAverageRate(pnlRepository.listRates(e.currency), from, to);
+      factor.set(e.companyId, rates[e.currency]);
+    }
+    const collect = (rows) => {
+      const b = {};
+      for (const row of rows) {
+        const f = factor.get(row.companyId);
+        if (f == null) continue;
+        b[row.accountType] = (b[row.accountType] || 0) + row.balance * f;
+      }
+      return b;
+    };
+
+    const current = toPnlLines(collect(pnlRepository.sumByCompanyAndType(from, to)));
+    const priorTo = `${year - 1}${asOf.slice(4)}`;
+    const prior = consolidated ? null : toPnlLines(collect(pnlRepository.sumByCompanyAndType(`${year - 1}-01-01`, priorTo)));
+
+    const monthly = new Map();
+    for (const row of pnlRepository.sumByCompanyTypeAndMonth(from, asOf)) {
+      const f = factor.get(row.companyId);
+      if (f == null) continue;
+      const m = monthly.get(row.month) || {};
+      m[row.accountType] = (m[row.accountType] || 0) + row.balance * f;
+      monthly.set(row.month, m);
+    }
+    const monthIndex = Number(asOf.slice(5, 7)) - 1;
+    const months = MONTH_LABELS.slice(0, monthIndex + 1).map((label, i) => {
+      const key = `${year}-${String(i + 1).padStart(2, '0')}`;
+      return { month: label, ...toPnlLines(monthly.get(key) || {}) };
+    });
+
+    return {
+      asOf,
+      year,
+      priorTo,
+      currency: consolidated ? CONSOLIDATION_CURRENCY : companies[0].currency,
+      consolidated,
+      rates,
+      current,
+      prior,
+      months,
+    };
+  }
+
   /* One status for Odoo as a whole: ok only when every synced model's last
      run succeeded; "as of" is the older of the models' last successes. The
      error text stays in the server log, not the response. */
@@ -411,7 +504,7 @@ function createFinanceMetricsService({
   }
 
   return {
-    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
   };
 }
 

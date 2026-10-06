@@ -36,9 +36,21 @@ function sumByCompanyAndType(fromDate, toDate) {
   `).all(fromDate, toDate);
 }
 
+// Same, split by month (YYYY-MM).
+function sumByCompanyTypeAndMonth(fromDate, toDate) {
+  return db.prepare(`
+    SELECT company_id AS companyId, account_type AS accountType, substr(date, 1, 7) AS month, SUM(balance) AS balance
+    FROM odoo_pnl_lines
+    WHERE date BETWEEN ? AND ?
+    GROUP BY company_id, account_type, month
+  `).all(fromDate, toDate);
+}
+
 function listRates(currency) {
   return db.prepare('SELECT date, inverse_rate AS inverseRate FROM odoo_currency_rates WHERE currency = ? ORDER BY date')
     .all(currency);
 }
 
-module.exports = { replaceLines, replaceRates, countLines, sumByCompanyAndType, listRates };
+module.exports = {
+  replaceLines, replaceRates, countLines, sumByCompanyAndType, sumByCompanyTypeAndMonth, listRates,
+};

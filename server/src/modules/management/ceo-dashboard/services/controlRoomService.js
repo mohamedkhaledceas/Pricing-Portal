@@ -85,6 +85,37 @@ function applyConsolidatedRevenue(D, f) {
   delete D.records.revenue;
 }
 
+/* Odoo's Profit and Loss (finance getProfitAndLoss) — one company in its
+   own currency, or All in Odoo's year-average conversion. The four profit
+   KPIs come straight from its lines; their sample targets are dropped
+   (targets arrive with phase 3). */
+function applyPnl(D, p) {
+  D.pnlLive = p;
+  const c = p.current;
+  const pctOf = (part) => (c.revenue ? Math.round((part / c.revenue) * 1000) / 10 : null);
+  const where = p.consolidated
+    ? `Odoo Accounting → Reporting → Profit and Loss, all companies, ${p.year} — AED at the year-average rate`
+    : `Odoo Accounting → Reporting → Profit and Loss, ${p.year}`;
+  const setKpi = (id, fields) => Object.assign(D.kpis.find((k) => k.id === id), {
+    live: true, currency: p.currency, source: 'Odoo', tolerance: null, target: null, drill: 'pnl_live', query: where,
+  }, fields);
+  setKpi('gross_margin', { actual: pctOf(c.grossProfit), formula: 'Gross profit ÷ revenue (P&L lines Revenue and Less Costs of Revenue).' });
+  setKpi('net_margin', { actual: pctOf(c.netProfit), formula: 'Net profit ÷ revenue (P&L line Net Profit, before allocations and withdrawals).' });
+  setKpi('net_profit', { actual: c.netProfit, formula: 'P&L line Net Profit: revenue + other income − costs of revenue − operating and other expenses.' });
+  setKpi('opex_ratio', { actual: pctOf(c.operatingExpenses), formula: 'Operating expenses ÷ revenue (P&L line Less Operating Expenses).' });
+  for (const id of ['gross_margin', 'net_margin', 'net_profit', 'opex_ratio']) {
+    delete D.series[id];
+    delete D.yearMap[id];
+  }
+  const cur = p.currency;
+  D.records.pnl_live = {
+    columns: ['Month', `Revenue (${cur})`, `Gross profit (${cur})`, `Operating expenses (${cur})`, `Net profit (${cur})`],
+    rows: p.months.map((m) => [m.month, m.revenue, m.grossProfit, m.operatingExpenses, m.netProfit]),
+    source: 'Odoo · posted journal items on profit-and-loss accounts',
+    note: p.consolidated ? `AED converted at Odoo's year-average rate (${Object.values(p.rates).map((r) => r.toFixed(4)).join(', ')}).` : `In ${cur}, as posted in Odoo.`,
+  };
+}
+
 /* Sales orders (Odoo Sales Analysis via finance getSalesSummary), for one
    company or — under All — in Odoo's own EGP conversion. */
 function applySales(D, s) {
@@ -281,7 +312,7 @@ function createControlRoomService({
     const today = now();
     const todayIso = CAIRO_DATE.format(today);
     const D = structuredClone(sampleRepository.getSample());
-    const sources = { finance: 'sample', sales: 'sample', pipeline: 'sample', people: 'sample', costs: 'sample' };
+    const sources = { finance: 'sample', pnl: 'sample', sales: 'sample', pipeline: 'sample', people: 'sample', costs: 'sample' };
 
     D.asOf = todayIso;
     D.asOfLabel = CAIRO_LONG_DATE.format(today);
@@ -301,6 +332,10 @@ function createControlRoomService({
       }, sources);
     }
     if (financeMetricsService.isFinanceEntity(entity.key) || entity.key === 'all') {
+      overlay('pnl', () => {
+        applyPnl(D, financeMetricsService.getProfitAndLoss(entity.key));
+        sources.pnl = 'odoo';
+      }, sources);
       overlay('sales', () => {
         applySales(D, financeMetricsService.getSalesSummary(entity.key));
         sources.sales = 'odoo';
