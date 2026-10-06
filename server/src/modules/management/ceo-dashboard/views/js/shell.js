@@ -130,10 +130,17 @@ export function renderEntSel(){
   $('#entsel').innerHTML=D.entityList.map(e=>
     `<button data-ent="${esc(e.key)}" aria-pressed="${S.ent===e.key}" title="${esc(e.name)} — ${esc(e.note)}">${esc(e.short)}</button>`).join('');}
 /* Odoo's last good sync, or the failure, on the top-bar chip. */
+/* The chip names the worst sync: failed, stale (last good copy too old) or
+   never run; all good → Odoo's last copy time. Hover lists every sync. */
 export function renderSync(){
-  const o=(D.sync||[]).find(x=>x.source==='Odoo'),chip=$('#syncchip');
-  $('#syncxt').textContent=!o?'Sample data':o.status==='ok'?`Odoo ${o.at||''}`.trim():o.status==='error'?'Odoo sync failed':'Odoo not synced';
-  chip.classList.toggle('bad',!!o&&o.status!=='ok');}
+  const lines=D.sync||[];
+  const tracked=lines.filter(x=>x.status!=null&&x.note!=='webhooks');
+  const worst=tracked.find(x=>x.status==='error')||tracked.find(x=>x.status==='stale')||tracked.find(x=>x.status!=='ok');
+  const o=lines.find(x=>x.source==='Odoo');
+  $('#syncxt').textContent=!o?'Sample data':!worst?`Odoo ${o.at||''}`.trim()
+    :worst.status==='error'?`${worst.source} sync failed`:worst.status==='stale'?`${worst.source} stale · ${worst.at||'—'}`:`${worst.source} not synced`;
+  $('#syncchip').title=lines.map(x=>`${x.source}: ${x.note||x.status}${x.at?' · last good copy '+x.at:''}`).join('\n');
+  $('#syncchip').classList.toggle('bad',!!worst);}
 export function renderYearSel(){
   const ys=$('#yr'),cs=$('#cmp');
   ys.innerHTML=YRS().map(y=>`<option value="${y}"${y===S.year?' selected':''}>${y}${D.years[y].status==='current'?'':' · closed'}</option>`).join('');

@@ -43,13 +43,13 @@ P.money=()=>{
 
   ${costBase()}
 
-  ${D.pnlLive?liveExecSummaryPanel():panel('Executive summary','agency-wide sample · year to date',`<div class="pb">${execSummary()}</div>`)}
+  ${D.pnlLive?liveExecSummaryPanel():unavail('pnl','Executive summary')||panel('Executive summary','agency-wide sample · year to date',`<div class="pb">${execSummary()}</div>`)}
 
-  ${D.cash.live?liveCashPanel():perCompanyPanel('Cash bridge')||panel('Cash bridge',`How ${egp(D.cash.opening)} became ${egp(D.cash.balance)}`,
+  ${D.cash.live?liveCashPanel():unavail('balance','Cash bridge')||perCompanyPanel('Cash bridge')||panel('Cash bridge',`How ${egp(D.cash.opening)} became ${egp(D.cash.balance)}`,
     `<div class="pb"><figure><div class="plot" id="w1"></div></figure>
      <div class="alert" style="margin-top:12px"><div><b>Two bars explain the year.</b> Drawings exceeded profit by ${egp(D.cash.drawings-D.pnl.netProfit)},
        and ${egp(D.cash.arSwing)} more is sitting unpaid with clients than in January. The owner account is shown separately and never nets into business cash.</div></div></div>`)}
-  ${D.pnlLive?livePnlPanel():panel('Income statement',`Year to date · 1 January to 5 October${S.cmp?' · against '+S.cmp:''}`,`<div class="pb tight">
+  ${D.pnlLive?livePnlPanel():unavail('pnl','Income statement')||panel('Income statement',`Year to date · 1 January to 5 October${S.cmp?' · against '+S.cmp:''}`,`<div class="pb tight">
       ${pnlTable()}</div><div class="pb" style="padding-top:0">
       <div class="alert" style="margin-top:12px"><div><b>${egp(D.pnl.freelancerCost,false)} — ${D.pnl.freelancerRatio}% of revenue — went to freelancers and contractors</b>
         against a 25% ceiling. Gross margin is ${LK('gross_margin').ach}% of target and net margin ${LK('net_margin').ach}%:
@@ -64,18 +64,18 @@ P.money=()=>{
           <td class="n"><span class="num" style="color:${m.margin<10?'var(--badtx)':m.margin<14?'var(--ink2)':'var(--goodtx)'}">${m.margin}%</span></td></tr>`).join('')}</tbody></table></div>
       <p class="note">October is five days. Operating margin has fallen in four of the last five months while revenue held.</p></div>`)}
   <div class="cols c2">
-    ${D.bsLive?liveBalanceSheetPanel():perCompanyPanel('Balance sheet')||panel('Balance sheet',`${esc(e.name)} · ${e.balances?'balanced':'DOES NOT BALANCE'}`,`<div class="pb tight">${balanceSheet()}</div>`)}
-    ${D.sales&&D.sales.live&&D.revenue.live?bookedVsInvoicedPanel():panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
+    ${D.bsLive?liveBalanceSheetPanel():unavail('balance','Balance sheet')||perCompanyPanel('Balance sheet')||panel('Balance sheet',`${esc(e.name)} · ${e.balances?'balanced':'DOES NOT BALANCE'}`,`<div class="pb tight">${balanceSheet()}</div>`)}
+    ${D.sales&&D.sales.live&&D.revenue.live?bookedVsInvoicedPanel():unavail('sales','Booked and invoiced')||unavail('finance','Booked and invoiced')||panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
   </div>
   <div class="cols${D.payablesLive?'':' c2'}">
-    ${wc.live?receivablesPanel():panel('Working capital',`Net 30-day position ${egp(wc.net30)}`,`<div class="pb">
+    ${wc.live?receivablesPanel():unavail('finance','Receivables')||panel('Working capital',`Net 30-day position ${egp(wc.net30)}`,`<div class="pb">
       <figure><figcaption><b>Receivables</b> ${egp(wc.receivables,false)} · DSO ${wc.dso} days</figcaption><div class="plot" id="ar1"></div></figure>
       <div class="kv" style="margin-top:14px"><span>Owed to freelancers</span><i class="num">${egp(wc.freelancer,false)}</i></div>
       <div class="kv"><span>Owed to suppliers and vendors</span><i class="num">${egp(wc.supplier,false)}</i></div>
       <div class="kv"><span>Of which past 30 days</span><i class="num">${egp(wc.over30,false)} · ${wc.over30Pct}%</i></div>
       <div class="alert w" style="margin-top:12px"><div>You are financing your clients and being financed by your freelancers.
         ${egp(wc.over30,false)} of what you owe is past 30 days; ${egp(wc.overdue60,false)} of what you are owed is past 60.</div></div></div>`)}
-    ${D.payablesLive?livePayablesPanel():perCompanyPanel('Payables')||(wc.live?panel('Payables','sample — vendor bills aren\'t synced from Odoo yet',`<div class="pb">
+    ${D.payablesLive?livePayablesPanel():unavail('payables','Payables')||perCompanyPanel('Payables')||(wc.live?panel('Payables','sample — vendor bills aren\'t synced from Odoo yet',`<div class="pb">
       <div class="kv"><span>Owed to freelancers</span><i class="num">${egp(wc.freelancer,false)}</i></div>
       <div class="kv"><span>Owed to suppliers and vendors</span><i class="num">${egp(wc.supplier,false)}</i></div>
       <div class="kv"><span>Of which past 30 days</span><i class="num">${egp(wc.over30,false)} · ${wc.over30Pct}%</i></div></div>`)
@@ -232,7 +232,7 @@ P.clients=()=>{
   ${clientBookPanel()}
   ${live?`<div class="cols c2 eq">${revenueByMonthPanel()}${largestInvoicesPanel()}</div>`:''}
   <div class="cols${live?'':' c2'}">
-    ${live?'':panel('Monthly revenue','against a flat monthly target',`<div class="pb"><figure><div class="plot" id="rev1"></div></figure></div>`)}
+    ${live?'':unavail('finance','Revenue by month')||panel('Monthly revenue','against a flat monthly target',`<div class="pb"><figure><div class="plot" id="rev1"></div></figure></div>`)}
     ${panel('Revenue at risk',`${D.atRisk.share}% of trailing 90 days`,`<div class="pb">
       ${D.atRisk.components.map(c=>`<div class="kv"><span>${esc(c.name)}<div class="note">${esc(c.detail)}</div></span><i class="num">${egp(c.value,false)}</i></div>`).join('')}
       <div class="kv t"><span>Total exposed</span><i class="num">${egp(D.atRisk.total,false)}</i></div></div>`)}
@@ -325,6 +325,12 @@ function livePayablesPanel(){
 /* Cash and balance sheet (Odoo, one company). Under All they say so
    instead of showing sample figures: Odoo's multi-company balance-sheet
    conversion isn't verified, and the portal never picks a rate. */
+/* A live source that failed to load: say so instead of falling back to the
+   prototype's invented figures. */
+function unavail(source,title){
+  if(!(D.unavailable&&D.unavailable[source]))return '';
+  return panel(title,'unavailable',`<div class="empty"><b>Unavailable right now</b>The portal couldn't read this from its copy of Odoo or ClickUp. Reload in a minute; if it stays, the server log names the cause.</div>`);
+}
 function perCompanyPanel(title){
   if(!(D.entity&&D.entity.key==='all'&&D.pnlLive))return '';
   return panel(title,'per company',`<div class="empty"><b>Shown per company</b>Pick Ceas Comm, FZE or LWM. How Odoo converts these figures across companies hasn't been verified yet, so the portal doesn't add the companies together.</div>`);
@@ -464,6 +470,7 @@ function revenueByAmPanel(){
 }
 P.delivery=()=>{
   if(D.deliveryLive)return liveDeliveryPage();
+  if(D.unavailable&&D.unavailable.delivery)return unavail('delivery','Delivery');
   const r=D.records.delivery;
   return `
   <div class="strip">
@@ -572,7 +579,7 @@ P.growth=()=>`
   </div>
   ${D.sales&&D.sales.live&&D.sales.backlog.invoicesWithoutOrder>0?`<div class="alert w" style="margin-bottom:16px"><div><b>Contracted backlog is overstated.</b> ${esc(D.sales.backlogNote)}</div></div>`:''}
   <div class="cols c2">
-    ${D.pipeline.live?pipelinePanel():panel('Pipeline by stage',`${D.pipeline.stages.reduce((a,s)=>a+s.count,0)} open · ${egp(D.pipeline.weighted)} weighted`,
+    ${D.pipeline.live?pipelinePanel():unavail('pipeline','Open deals by stage')||panel('Pipeline by stage',`${D.pipeline.stages.reduce((a,s)=>a+s.count,0)} open · ${egp(D.pipeline.weighted)} weighted`,
       `<div class="pb"><figure><div class="plot" id="pp1"></div></figure></div>`)}
     ${panel('Strategic initiatives',`${D.strategic.items.filter(i=>i.rag==='green').length} of ${D.strategic.items.length} on track`,
       `<div class="pb">${D.strategic.items.map(i=>`

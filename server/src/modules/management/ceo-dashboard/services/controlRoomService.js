@@ -41,6 +41,16 @@ const ENTITY_LIST = Object.freeze([
 ]);
 
 const LIVE_FINANCE_KPIS = ['revenue_total', 'dso', 'overdue_60_share', 'collection_rate'];
+// KPIs each live source fills — blanked, not left on sample, when it fails.
+const SOURCE_KPIS = {
+  finance: LIVE_FINANCE_KPIS,
+  pnl: ['gross_margin', 'net_margin', 'net_profit', 'opex_ratio'],
+  balance: ['cash_balance', 'cash_runway'],
+  sales: ['backlog', 'avg_deal_size'],
+  delivery: ['overdue_tasks'],
+};
+// A sync that runs every 15 minutes is stale once its last good copy is older than this.
+const STALE_AFTER_MS = 2 * 60 * 60 * 1000;
 const COMPANY_SHORT = { ceas: 'Ceas Comm', fze: 'FZE', lwm: 'LWM' };
 
 const pctText = (part, whole) => (whole > 0 ? `${(Math.round((part / whole) * 1000) / 10).toFixed(1)}%` : '—');
@@ -452,26 +462,42 @@ function createControlRoomService({
   }
 
   /* Runs one source's overlay; on failure the block stays sample. */
-  function overlay(source, fn, sources) {
+  /* Runs one source's overlay. On failure the source is marked
+     unavailable — its KPIs show "—" and the page shows "unavailable" in
+     place of its panels — never the sample's invented figures. */
+  function overlay(D, source, fn, sources) {
     try {
       fn();
       return true;
     } catch (error) {
-      logger.error('Control Room: live read failed — block stays on sample data', { source, error: error.message });
+      logger.error('Control Room: live read failed — source marked unavailable', { source, error: error.message });
       sources[source] = 'error';
+      D.unavailable = { ...(D.unavailable || {}), [source]: true };
+      for (const id of SOURCE_KPIS[source] || []) {
+        const k = D.kpis.find((x) => x.id === id);
+        if (k) Object.assign(k, { live: false, unavailable: true, actual: null, source: 'Unavailable' });
+        delete D.series[id];
+        delete D.yearMap[id];
+      }
       return false;
     }
   }
 
   /* `at` is short for the top-bar chip: the time for a sync earlier today,
      the date otherwise. */
-  function syncLines(todayIso) {
+  function syncLines(todayIso, D) {
+    const stamp = (iso) => {
+      const last = iso ? new Date(iso) : null;
+      if (!last) return null;
+      return CAIRO_DATE.format(last) === todayIso ? CAIRO_TIME.format(last) : CAIRO_DAY_MONTH.format(last);
+    };
+    // "stale": the last good copy is too old — the sync keeps failing or stopped.
+    const state = (status, iso) => (status === 'ok' && iso && now() - new Date(iso) > STALE_AFTER_MS ? 'stale' : status);
     const odoo = financeMetricsService.getSyncStatus();
-    const last = odoo.lastSuccessAt ? new Date(odoo.lastSuccessAt) : null;
-    let at = null;
-    if (last) at = CAIRO_DATE.format(last) === todayIso ? CAIRO_TIME.format(last) : CAIRO_DAY_MONTH.format(last);
+    const delivery = D.deliveryLive && D.deliveryLive.sync;
     return [
-      { source: 'Odoo', status: odoo.status, at },
+      { source: 'Odoo', status: state(odoo.status, odoo.lastSuccessAt), at: stamp(odoo.lastSuccessAt) },
+      ...(delivery ? [{ source: 'ClickUp delivery', status: state(delivery.lastStatus || 'never', delivery.lastSuccessAt), at: stamp(delivery.lastSuccessAt) }] : []),
       // Commercial Lead's cache is pushed by ClickUp webhooks plus a
       // reconciliation job; it has no single "last synced" stamp to show.
       { source: 'ClickUp', status: 'ok', at: null, note: 'webhooks' },
@@ -491,72 +517,75 @@ function createControlRoomService({
     D.entityList = ENTITY_LIST;
     D.currency = entity.currency;
 
-    overlay('budget', () => applyBudgets(D, budgetService.getState()), sources);
+    overlay(D, 'budget', () => applyBudgets(D, budgetService.getState()), sources);
 
     if (financeMetricsService.isFinanceEntity(entity.key)) {
-      overlay('finance', () => {
+      overlay(D, 'finance', () => {
         applyFinance(D, financeMetricsService.getEntityFinance(entity.key), entity);
         sources.finance = 'odoo';
       }, sources);
     } else if (entity.key === 'all') {
-      overlay('finance', () => {
+      overlay(D, 'finance', () => {
         applyConsolidatedRevenue(D, financeMetricsService.getConsolidatedRevenue());
         sources.finance = 'odoo';
       }, sources);
     }
     if (financeMetricsService.isFinanceEntity(entity.key) || entity.key === 'all') {
-      overlay('pnl', () => {
+      overlay(D, 'pnl', () => {
         applyPnl(D, financeMetricsService.getProfitAndLoss(entity.key));
         sources.pnl = 'odoo';
       }, sources);
       if (entity.key !== 'all') {
-        overlay('balance', () => {
+        overlay(D, 'balance', () => {
           applyBalance(D, financeMetricsService.getBalanceSheet(entity.key));
           sources.balance = 'odoo';
         }, sources);
-        overlay('years', () => {
+        overlay(D, 'years', () => {
           applyYears(D, financeMetricsService.getYearHistory(entity.key));
           sources.years = 'odoo';
         }, sources);
-        overlay('payables', () => {
+        overlay(D, 'payables', () => {
           // Bills whose vendor is the company itself are flagged on the page.
           D.payablesLive = { ...financeMetricsService.getPayables(entity.key), companyName: entity.name };
           sources.payables = 'odoo';
         }, sources);
       }
-      overlay('sales', () => {
+      overlay(D, 'sales', () => {
         applySales(D, financeMetricsService.getSalesSummary(entity.key));
         sources.sales = 'odoo';
       }, sources);
     }
-    overlay('pipeline', () => {
+    overlay(D, 'pipeline', () => {
       applyPipeline(D, getPipelineSummary());
       sources.pipeline = 'clickup';
     }, sources);
-    overlay('delivery', () => {
+    overlay(D, 'delivery', () => {
       applyDelivery(D, getDeliverySummary());
       sources.delivery = 'clickup';
     }, sources);
-    overlay('people', () => {
+    overlay(D, 'people', () => {
       applyPeople(D, getWorkforceSummary({ today: todayIso }));
       sources.people = 'portal';
     }, sources);
     if (entity.key === 'ceas') {
-      overlay('costs', () => {
+      overlay(D, 'costs', () => {
         D.costs = getCompanyCostSummary();
         sources.costs = 'planner';
       }, sources);
     }
-    overlay('targets', () => applyTargets(D, targetService.getState(entity.key)), sources);
+    // Unreadable saved targets → no targets, never the prototype's invented ones.
+    if (!overlay(D, 'targets', () => applyTargets(D, targetService.getState(entity.key)), sources)) {
+      for (const k of D.kpis) k.target = null;
+    }
     // Saved escalation preferences (company-wide); the page copies them into its state.
-    overlay('escalation', () => { D.prefs = escalationService.getPrefs(); }, sources);
+    overlay(D, 'escalation', () => { D.prefs = escalationService.getPrefs(); }, sources);
 
     // A view without an Odoo year history never shows the sample's invented years.
     if (!D.yearsLive) currentYearOnly(D, todayIso);
 
     // The sample's own sync lines are invented times — never shown.
     D.sync = [];
-    overlay('sync', () => { D.sync = syncLines(todayIso); }, sources);
+    overlay(D, 'sync', () => { D.sync = syncLines(todayIso, D); }, sources);
 
     D.sources = sources;
     return D;
