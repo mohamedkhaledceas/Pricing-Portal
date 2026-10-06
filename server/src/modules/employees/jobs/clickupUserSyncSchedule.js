@@ -9,6 +9,7 @@
    already-documented carve-out config/index.js's own header comment
    states for clickupReconcile.js and friends (centralizing those is a
    separate pass, not this one). */
+const { staggeredMinutes } = require('../../../common/jobs/stagger');
 const cron = require('node-cron');
 const logger = require('../../../common/logger');
 const createClickupUserSync = require('../services/clickupUserSync');
@@ -36,10 +37,11 @@ function startClickupUserSyncSchedule({ employeeRepository, clickupClient, teamI
   }
 
   const minutes = Number(process.env.CLICKUP_USER_SYNC_MINUTES || 30);
-  cron.schedule(`*/${minutes} * * * *`, () => runOnce('scheduled'));
+  cron.schedule(`${staggeredMinutes(minutes, 18)} * * * *`, () => runOnce('scheduled'));
   logger.info(`ClickUp user sync scheduled every ${minutes} minute(s).`);
 
-  runOnce('startup');
+  // Startup runs are spaced out so the ClickUp syncs don't all hit its rate limit at once.
+  setTimeout(() => { runOnce('startup'); }, 20000);
 
   return clickupUserSync;
 }

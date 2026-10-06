@@ -7,10 +7,26 @@
    (see modules/employees/services/clickupLeaveSync.js) — same shape,
    just a body and a different HTTP method. */
 const { AppError } = require('../errors');
+const logger = require('../logger');
 
 const CLICKUP_BASE = 'https://api.clickup.com/api/v2';
 
-async function clickupRequest(method, path, body) {
+/* ClickUp allows 100 requests a minute per token, shared by every sync in
+   this process. A 429 means the request was not processed, so it is safe
+   to retry (writes included): wait until the reset time ClickUp sends
+   (X-RateLimit-Reset, epoch seconds), at most a minute, and try again —
+   up to MAX_RATE_LIMIT_RETRIES times before giving up as before. */
+const MAX_RATE_LIMIT_RETRIES = 3;
+const MAX_RATE_LIMIT_WAIT_MS = 60 * 1000;
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+function rateLimitWait(res, attempt) {
+  const reset = Number(res.headers.get('x-ratelimit-reset'));
+  const untilReset = reset ? reset * 1000 - Date.now() + 500 : 0;
+  return Math.min(MAX_RATE_LIMIT_WAIT_MS, Math.max(untilReset, 5000 * (attempt + 1)));
+}
+
+async function clickupRequest(method, path, body, attempt = 0) {
   const apiKey = process.env.CLICKUP_API_KEY;
   if (!apiKey) {
     throw new AppError('ClickUp integration is not configured — set CLICKUP_API_KEY.', 500);
@@ -23,6 +39,12 @@ async function clickupRequest(method, path, body) {
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+  if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+    const wait = rateLimitWait(res, attempt);
+    logger.warn('ClickUp rate limit reached — retrying.', { method, path: path.split('?')[0], attempt: attempt + 1, waitMs: wait });
+    await sleep(wait);
+    return clickupRequest(method, path, body, attempt + 1);
+  }
   if (!res.ok) {
     const responseBody = await res.text().catch(() => '');
     throw new AppError(`ClickUp API error (${res.status}) on ${method} ${path}: ${responseBody}`, 502);

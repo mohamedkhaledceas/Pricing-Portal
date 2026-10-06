@@ -5,6 +5,7 @@
    that startup run is also what backfills every deal that existed in
    ClickUp before this system started listening for webhooks at all.
    Extracted unchanged from clickupReconcile.js. */
+const { staggeredMinutes } = require('../../../../common/jobs/stagger');
 const cron = require('node-cron');
 const logger = require('../../../../common/logger');
 const { runReconciliation } = require('../services/clickupSyncService');
@@ -36,7 +37,7 @@ async function runOnce(trigger) {
 
 function startReconciliationSchedule() {
   const minutes = Number(process.env.CLICKUP_RECONCILE_MINUTES || 30);
-  cron.schedule(`*/${minutes} * * * *`, () => runOnce('scheduled'));
+  cron.schedule(`${staggeredMinutes(minutes, 3)} * * * *`, () => runOnce('scheduled'));
   logger.info(`ClickUp reconciliation scheduled every ${minutes} minute(s).`);
 
   runOnce('startup');

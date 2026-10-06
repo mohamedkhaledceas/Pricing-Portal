@@ -9,6 +9,7 @@
    With Marie), which would silently blend entities. */
 const config = require('../../config');
 const { AppError } = require('../errors');
+const logger = require('../logger');
 
 const REQUEST_TIMEOUT_MS = 30000;
 
@@ -24,7 +25,13 @@ function assertCompanyIds(companyIds) {
   }
 }
 
-async function odooRequest(model, method, params, companyIds) {
+/* Odoo Online answers 429 when called too fast. The request was not
+   processed, so wait (Retry-After when sent, else 5 s × attempt, at most a
+   minute) and retry up to 3 times. */
+const MAX_RATE_LIMIT_RETRIES = 3;
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+async function odooRequest(model, method, params, companyIds, attempt = 0) {
   assertConfigured();
   assertCompanyIds(companyIds);
 
@@ -42,6 +49,14 @@ async function odooRequest(model, method, params, companyIds) {
     });
   } catch (error) {
     throw new AppError(`Odoo request failed on ${model}/${method}: ${error.message}`, 502);
+  }
+
+  if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+    const retryAfter = Number(res.headers.get('retry-after'));
+    const wait = Math.min(60000, retryAfter > 0 ? retryAfter * 1000 : 5000 * (attempt + 1));
+    logger.warn('Odoo rate limit reached — retrying.', { model, method, attempt: attempt + 1, waitMs: wait });
+    await sleep(wait);
+    return odooRequest(model, method, params, companyIds, attempt + 1);
   }
 
   const text = await res.text();
