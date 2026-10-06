@@ -25,6 +25,9 @@ const { ROLES } = require('../../../../common/constants/roles');
    - POST /api/ceo-dashboard/kpis — requireCeo. Adds a hand-entered KPI to
      a view; POST /api/ceo-dashboard/kpis/:kpiId/archive — requireCeo,
      removes it (archived, never deleted).
+   - PUT /api/ceo-dashboard/escalation/routes/:area — requireCeo (body:
+     comesToCeo true|false); PUT /api/ceo-dashboard/escalation/threshold —
+     requireCeo (body: amount). Company-wide, not per view.
 
    /control-room is gated to ROLES.CEO and ROLES.ADMIN — narrower than the broader
    USER_MANAGER_ROLES set commercial-leads uses (which also includes
@@ -47,6 +50,8 @@ function createCeoDashboardRouter({ ceoDashboardController, authenticate }) {
   router.put('/ceo-dashboard/targets', authenticate, requireCeo, ceoDashboardController.updateTarget);
   router.post('/ceo-dashboard/kpis', authenticate, requireCeo, ceoDashboardController.addKpi);
   router.post('/ceo-dashboard/kpis/:kpiId/archive', authenticate, requireCeo, ceoDashboardController.archiveKpi);
+  router.put('/ceo-dashboard/escalation/routes/:area', authenticate, requireCeo, ceoDashboardController.updateEscalationRoute);
+  router.put('/ceo-dashboard/escalation/threshold', authenticate, requireCeo, ceoDashboardController.updateEscalationThreshold);
   router.get('/ceo-dashboard/clients', authenticate, requireClientBookViewer, ceoDashboardController.clients);
   router.get('/ceo-dashboard/clients/:key', authenticate, requireClientBookViewer, ceoDashboardController.clientDetail);
 

@@ -1,3 +1,4 @@
+import { apiFetch } from './apiClient.js';
 import { D } from './data.js';
 import { loadEntity } from './loader.js';
 import { addKpi, ceoQueue, KPI, LB, pages, removeKpi, S, setBudget, setPlan, setTarget } from './model.js';
@@ -93,7 +94,7 @@ document.addEventListener('click',e=>{
     setBudget(n,v,note);return;}
   if(e.target.closest('#nkadd')){addKpi();return;}
   const kd=e.target.closest('[data-kdel]');if(kd){removeKpi(kd.dataset.kdel);return;}
-  const pf=e.target.closest('[data-pref]');if(pf){S.prefs.ceo[pf.dataset.pref]^=1;toast('Queue re-routed');render();return;}
+  const pf=e.target.closest('[data-pref]');if(pf){setEscalation('routes/'+encodeURIComponent(pf.dataset.pref),{comesToCeo:!S.prefs.ceo[pf.dataset.pref]},'Queue re-routed');return;}
   if(e.target.closest('#collapse')){S.narrow=!S.narrow;$('#app').classList.toggle('narrow',S.narrow);setTimeout(draw,180);return;}
   if(e.target.closest('#hideamt')){const on=document.body.classList.toggle('blurred');
     $('#hideamt').textContent=on?'Show amounts':'Hide amounts';toast(on?'Figures hidden':'Figures visible');return;}
@@ -128,7 +129,15 @@ document.addEventListener('change',e=>{
   // An emptied box clears the target.
   if(ts){const raw=String(ts.value).replace(/,/g,'').trim(),v=parseFloat(raw);
     if(raw==='')setTarget(ts.dataset.tset,null);else if(!isNaN(v))setTarget(ts.dataset.tset,v);else render();return;}
-  if(e.target.id==='mth'){S.prefs.money=+e.target.value||0;toast('Threshold updated');render();}});
+  if(e.target.id==='mth'){const v=Math.round(+String(e.target.value).replace(/,/g,''));
+    if(Number.isFinite(v)&&v>=0)setEscalation('threshold',{amount:v},'Threshold updated');else render();}});
+/* Escalation preferences are company-wide and saved first; the queue only
+   re-routes once the server has the change. */
+async function setEscalation(path,body,done){
+  try{const {prefs}=await apiFetch('/api/ceo-dashboard/escalation/'+path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    S.prefs=prefs;D.prefs=structuredClone(prefs);toast(done);}
+  catch(err){toast('Not saved — '+(err.message||'the server refused the change'));}
+  render();}
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('tin')){e.target.blur();}
   if(e.key==='Enter'&&e.target.id==='railhome'){location.href='/';}

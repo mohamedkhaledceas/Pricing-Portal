@@ -362,7 +362,7 @@ function applyPeople(D, w) {
 }
 
 function createControlRoomService({
-  sampleRepository, budgetService, targetService, financeMetricsService, getPipelineSummary, getWorkforceSummary, getCompanyCostSummary,
+  sampleRepository, budgetService, targetService, escalationService, financeMetricsService, getPipelineSummary, getWorkforceSummary, getCompanyCostSummary,
   logger, now = () => new Date(),
 }) {
   function entityOrThrow(entityKey) {
@@ -460,6 +460,8 @@ function createControlRoomService({
       }, sources);
     }
     overlay('targets', () => applyTargets(D, targetService.getState(entity.key)), sources);
+    // Saved escalation preferences (company-wide); the page copies them into its state.
+    overlay('escalation', () => { D.prefs = escalationService.getPrefs(); }, sources);
 
     // The sample's own sync lines are invented times — never shown.
     D.sync = [];

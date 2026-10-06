@@ -453,10 +453,10 @@ Recorded 2026-10-06 — built last session, which ended before the tracker was u
 | B2.6 | User decisions 2026-10-06: (a) operations sees the client book; (b) the four CEAS companies — Ceas Comm, Ceas Comm FZE, Ceas Figures, Learn with Marie — are companies, never clients, and are the labels for which company a client is serviced from (a client can belong to several); (c) client book shows 10 rows by default | ✅ 2026-10-06 — (a) `GET /api/ceo-dashboard/clients` + `/clients/:key` gate → ceo/admin/operations (`requireClientBookViewer`); frontend scope `budget` renamed `limited`, per-role `LIMITED_PAGES` (operations: Budget + Clients, where Clients shows the book alone — no revenue KPIs/charts; people_culture: Budget), Client mapping in the rail, phone tab bar when >1 page, banner mentions the live client book, Employees header button reads "Budget & clients" for operations. (b) "Learn with Marie" added to `INTERNAL_CLIENT_NAMES` (next sync flags it, verified); company labels/filter now full names (Ceas Comm / Ceas Comm FZE / Learn with Marie). (c) default page size 10 (client + server). **Verified:** curl on scratch copy — operations book/detail/budget 200, control-room 403; P&C budget 200, book 403; employee 403; none 401. Chrome as a throwaway operations user (scratch copy, deleted after): rail Budget + Clients, book alone, 10 rows "1–10 of 104", drawer opens, `#money` stays on an allowed page, 0 JS errors. Chrome as CEO on the real local DB: all 10 pages, KPI strip intact, 0 JS errors. |
 | B2.7 | Ceas Figures as a company label: not one of the integration's Odoo companies (only Ceas Comm 1, FZE 2, LWM 2268; Et3alemha id 3 not accessible) — needs the source of "serviced by Ceas Figures" | ⬜ question for user |
 | B2.5 | Commit + push B2 (ask first) | ✅ 2026-10-06 — user asked; committed with B2.6 + the §6p plan to feature/ceo-control-room and pushed |
-| C | Phase 3 — persist budgets, function plans, targets, custom KPIs, routing prefs | 🟡 in progress (user decisions 2026-10-06: **budgets first**; **targets start empty everywhere** — no prototype targets seeded) |
+| C | Phase 3 — persist budgets, function plans, targets, custom KPIs, routing prefs | ✅ 2026-10-06 (committed, not pushed; user decisions: budgets first; targets start empty everywhere). Decision queue + risk register stay sample by decision |
 | C.1 | Budgets + function plans saved, ownership enforced server-side | ✅ 2026-10-06 — see "Phase 3.1" below |
 | C.2 | KPI targets + custom KPIs saved per view (Ceas Comm / FZE / LWM / All), starting empty | ✅ 2026-10-06 — see "Phase 3.2" below |
-| C.3 | Escalation routing + sign-off threshold saved | ⬜ |
+| C.3 | Escalation routing + sign-off threshold saved | ✅ 2026-10-06 — see "Phase 3.3" below |
 | 4 | Phase 4 — wider Odoo sync (bank, vendor bills, P&L lines, SOs) | ⬜ |
 | 5 | Phase 5 — ClickUp delivery / time | ⬜ |
 | 6 | Phase 6 — closed years | ⬜ |
@@ -555,6 +555,14 @@ User decision 2026-10-06: **targets per view** (Ceas Comm, FZE, LWM, All — eac
 - Page: target box saves for the current view (Enter), emptied box or × clears it; "Add a KPI" saves to the current view (target and actual optional), × archives it; in-memory carry-over of added KPIs across views removed. **Health score**: an area with no targeted scored KPI is "not scored" (not 0); composite weighs only scored areas and shows coverage ("100 / 100 · 1 of 6 areas scored"); with none → "—, set targets to score". Copy no longer claims period-versioned targets — it says what happens (saved per view, logged).
 - Verified on a scratch DB copy with throwaway users (deleted after): none 401 / employee 403 / operations 403 / ceo 200|201; bad entity/unknown KPI/non-number → 400/404; custom KPI of Ceas Comm unreachable from FZE (404); audit rows correct; Chrome as CEO: empty-state health, set DSO 45 → persists across reload, × clears, FZE's 60% gross margin stays in FZE, custom NPS only in Ceas Comm; all 10 pages free of NaN/undefined; 0 JS errors.
 - Not changed: the Budget-only payload (operations/P&C) keeps its net-profit card's workbook plan as before.
+
+### Phase 3.3 — saved escalation preferences (2026-10-06, committed, not pushed)
+
+- Migration **043**: `control_room_escalation_routes` (area PK, comes_to_ceo 0/1) seeded with the Control Room defaults (cash, collections, revenue, pipeline, strategic → CEO; delivery, people, operations → heads) and `control_room_settings` (single row, CHECK id = 1) with the sign-off threshold, seeded EGP 150,000. **Company-wide**, not per view. Updated only.
+- `escalationService` (+ `escalationRepository`): ceo/admin only (server-side); area must exist (404), comesToCeo boolean, threshold whole EGP 0–9,999,999,999; unchanged → no write; audited `control_room.escalation.update` (from/to). Routes: `PUT /api/ceo-dashboard/escalation/routes/:area`, `PUT /api/ceo-dashboard/escalation/threshold` (authenticate + ceo/admin).
+- `/control-room` payload carries `prefs`; the page copies them into its state on first load only (cached views may hold older copies) and saves each toggle/threshold before re-routing the queue; a refusal toasts the reason.
+- Verified on a scratch DB copy (throwaway users deleted): none 401 / operations 403 / ceo 200; bad area 404, non-boolean 400, negative threshold 400; audit rows; Chrome as CEO: toggle + threshold saved, kept across a view switch and a reload, 0 JS errors.
+- Phase 3 complete. Still sample by decision: decision queue, risk register (future AI layer).
 
 ## 7. Open Questions
 

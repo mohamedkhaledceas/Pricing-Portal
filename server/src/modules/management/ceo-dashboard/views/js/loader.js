@@ -18,7 +18,14 @@ export async function loadEntity(key) {
     ({ controlRoom: data } = await apiFetch('/api/ceo-dashboard/control-room?entity=' + encodeURIComponent(key)));
     cache.set(key, data);
   }
-  // Targets and added KPIs come with each view's payload (saved per view).
+  // Targets and added KPIs come with each view's payload (saved per view);
+  // escalation preferences are company-wide and saved on the server.
   setData(data);
+  // Only on first load: after that the page's state is current (edits update
+  // it), and another view's cached payload may carry older preferences.
+  if (data.prefs && !S.prefsLoaded) {
+    S.prefs = structuredClone(data.prefs);
+    S.prefsLoaded = true;
+  }
   S.ent = key;
 }

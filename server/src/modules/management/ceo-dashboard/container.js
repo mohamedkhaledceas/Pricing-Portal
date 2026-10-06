@@ -14,6 +14,8 @@ const createClientTasksService = require('./services/clientTasksService');
 const createBudgetService = require('./services/budgetService');
 const budgetRepository = require('./repositories/budgetRepository');
 const createTargetService = require('./services/targetService');
+const createEscalationService = require('./services/escalationService');
+const escalationRepository = require('./repositories/escalationRepository');
 const targetRepository = require('./repositories/targetRepository');
 const { transaction } = require('./repositories/unitOfWork');
 const controlRoomSample = require('./repositories/data/controlRoomSample.json');
@@ -31,6 +33,7 @@ const { CLIENT_NAME_FIELD_ID } = require('../clients/container');
 const { getWorkforceSummary } = require('../../employees');
 
 const budgetService = createBudgetService({ budgetRepository, audit });
+const escalationService = createEscalationService({ escalationRepository, audit });
 const targetService = createTargetService({
   targetRepository,
   transaction,
@@ -42,6 +45,7 @@ const controlRoomService = createControlRoomService({
   sampleRepository: createControlRoomSampleRepository(),
   budgetService,
   targetService,
+  escalationService,
   financeMetricsService,
   getPipelineSummary,
   getWorkforceSummary,
@@ -55,7 +59,9 @@ const clientBookService = createClientBookService({
   clientTasksService: createClientTasksService({ clickupGet, clientNameFieldId: CLIENT_NAME_FIELD_ID }),
   logger,
 });
-const ceoDashboardController = createCeoDashboardController({ controlRoomService, clientBookService, budgetService, targetService });
+const ceoDashboardController = createCeoDashboardController({
+  controlRoomService, clientBookService, budgetService, targetService, escalationService,
+});
 const router = createCeoDashboardRouter({ ceoDashboardController, authenticate });
 
 module.exports = { router };
