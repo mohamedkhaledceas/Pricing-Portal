@@ -65,7 +65,7 @@ P.money=()=>{
       <p class="note">October is five days. Operating margin has fallen in four of the last five months while revenue held.</p></div>`)}
   <div class="cols c2">
     ${panel('Balance sheet',`${esc(e.name)} · ${e.balances?'balanced':'DOES NOT BALANCE'}`,`<div class="pb tight">${balanceSheet()}</div>`)}
-    ${panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
+    ${D.sales&&D.sales.live&&D.revenue.live?bookedVsInvoicedPanel():panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
   </div>
   <div class="cols c2">
     ${wc.live?receivablesPanel():panel('Working capital',`Net 30-day position ${egp(wc.net30)}`,`<div class="pb">
@@ -293,6 +293,47 @@ export function largestInvoicesBody(){
       <span class="note">Page ${page+1} of ${pages}</span>
       <button class="btn" data-inv-page="${page+1}"${page>=pages-1?' disabled':''}>Next</button></div>`:''}`;
 }
+/* Sales orders (Odoo Sales Analysis, Dashboards → Sales), this year by
+   order date. "Booked" = confirmed orders, untaxed — Odoo's Sales
+   dashboard calls it Revenue; revenue here is the invoiced figure. */
+const salesMeta=()=>D.sales.consolidated?'all companies · EGP, converted by Odoo':CUR()+' untaxed';
+const QUOTE_STATE={draft:['Draft',''],sent:['Sent','g-amber']};
+function quotationsPanel(){
+  const q=D.sales.quotations,rows=q.top.slice(0,5);
+  return panel('Quotations this year'+srcBadge('sales'),`${num(q.count)} open (${num(q.drafts)} draft, ${num(q.sent)} sent) · worth ${D.sales.consolidated?'EGP':CUR()} ${egp(q.value,false)} untaxed${D.sales.consolidated?', converted by Odoo':''}`,
+    rows.length?`<div class="tw"><table><thead><tr><th>Quotation</th><th>Client</th><th class="n">Date</th><th class="n">Value</th><th class="n">Status</th></tr></thead>
+      <tbody>${rows.map(o=>{const st=QUOTE_STATE[o.state]||[o.state,''];
+        return `<tr class="cb-row" data-client="${esc(o.customerKey)}" tabindex="0"><td><span class="num">${esc(o.name)}</span></td>
+          <td>${esc(o.customer)}<div class="note">${[o.company&&D.sales.consolidated?COMPANY_LABEL[o.company]:'',o.salesperson||''].filter(Boolean).map(esc).join(' · ')}</div></td>
+          <td class="n"><span class="num">${esc(o.orderDate||'—')}</span></td>
+          <td class="n"><span class="num">${egp(o.value,false)}</span></td>
+          <td class="n">${st[1]?`<span class="tag ${st[1]}">${esc(st[0])}</span>`:`<span class="lite">${esc(st[0])}</span>`}</td></tr>`;}).join('')}</tbody></table></div>
+      <p class="note push" style="padding:8px 16px 12px">Largest 5 by value. Odoo → Sales → Orders → Quotations; Odoo's Sales dashboard counts the same.</p>`
+    :'<div class="empty"><b>No open quotations this year</b>Nothing in draft or sent in Odoo.</div>');
+}
+function whatsSellingPanel(){
+  const p=D.sales.products;
+  return panel("What's selling"+srcBadge('sales'),`confirmed orders this year · ${salesMeta()} · by product`,
+    p.length?`<div class="pb"><figure><div class="plot" id="ws1"></div></figure>
+      <p class="note push">Odoo → Dashboards → Sales → Product ("Best Sellers by Revenue"), Period: this year.</p></div>`
+    :'<div class="empty"><b>No confirmed orders this year</b></div>');
+}
+/* Money: booked (confirmed orders) beside invoiced revenue, month by
+   month. Targets aren't set until phase 3, so there is no target column. */
+function bookedVsInvoicedPanel(){
+  const b=D.sales.booked.byMonth,inv=D.revenue.actual,ms=D.months;
+  const tb=b.reduce((a,v)=>a+v,0),ti=inv.reduce((a,v)=>a+v,0);
+  return panel('Booked and invoiced'+srcBadge('sales'),`${D.sales.consolidated?'all companies · EGP, converted by Odoo':CUR()+' untaxed'} · month by month · no targets set yet`,
+    `<div class="pb"><div class="tw"><table><thead><tr><th>Month</th><th class="n">Booked</th><th class="n">Invoiced</th><th class="n">Difference</th></tr></thead><tbody>
+    ${ms.map((m,i)=>{const d=(b[i]||0)-(inv[i]||0);return `<tr><td>${esc(m)}</td>
+      <td class="n"><span class="num">${egp(b[i]||0,false)}</span></td>
+      <td class="n"><span class="num" style="${(inv[i]||0)<0?'color:var(--badtx)':''}">${egp(inv[i]||0,false)}</span></td>
+      <td class="n"><span class="num ${d<0?'d-dn':'d-up'}">${d>0?'+':d<0?'−':''}${egp(Math.abs(d),false)}</span></td></tr>`;}).join('')}
+    <tr class="tot"><td><b>Year to date</b></td><td class="n"><span class="num">${egp(tb,false)}</span></td><td class="n"><span class="num">${egp(ti,false)}</span></td>
+      <td class="n"><span class="num ${tb-ti<0?'d-dn':'d-up'}">${tb-ti>0?'+':tb-ti<0?'−':''}${egp(Math.abs(tb-ti),false)}</span></td></tr>
+    </tbody></table></div>
+    <p class="note">Booked: sales orders confirmed in the month (Odoo Sales dashboard, its "Revenue" card). Invoiced: the revenue figure. A positive difference is work sold ahead of billing.</p></div>`);
+}
 /* Odoo's "Top Salespeople" (Invoicing dashboard): revenue by the invoice's
    salesperson, this year, net of credit notes. */
 function revenueByAmPanel(){
@@ -370,6 +411,7 @@ P.growth=()=>`
   <div class="strip">
     ${kpi('pipeline_coverage')}${kpi('backlog')}${kpi('win_rate')}${kpi('avg_deal_size')}${kpi('initiatives_on_track')}
   </div>
+  ${D.sales&&D.sales.live&&D.sales.backlog.invoicesWithoutOrder>0?`<div class="alert w" style="margin-bottom:16px"><div><b>Contracted backlog is overstated.</b> ${esc(D.sales.backlogNote)}</div></div>`:''}
   <div class="cols c2">
     ${D.pipeline.live?pipelinePanel():panel('Pipeline by stage',`${D.pipeline.stages.reduce((a,s)=>a+s.count,0)} open · ${egp(D.pipeline.weighted)} weighted`,
       `<div class="pb"><figure><div class="plot" id="pp1"></div></figure></div>`)}
@@ -381,6 +423,7 @@ P.growth=()=>`
         <div class="note" style="margin:-4px 0 7px">${esc(i.owner)} · ${esc(i.next)} · <span style="color:${i.idle>21?'var(--badtx)':'var(--muted)'}">${i.idle}d idle</span></div>`).join('')}
         <div class="kv t"><span>Paused</span><i>${D.strategic.paused.map(p=>esc(p.name)+' ('+p.days+'d)').join(' · ')}</i></div></div>`)}
   </div>
+  ${D.sales&&D.sales.live?`<div class="cols c2 eq">${quotationsPanel()}${whatsSellingPanel()}</div>`:''}
   ${revenueByAmPanel()}`;
 /* Live pipeline (ClickUp 2026 Projects list): open deals by funnel stage,
    plus the Commercial Lead page's own quarterly cohort figures (ADR-0010).

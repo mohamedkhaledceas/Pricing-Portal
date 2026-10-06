@@ -15,6 +15,7 @@ const partnerRepository = require('./repositories/odooPartnerRepository');
 const syncStateRepository = require('./repositories/odooSyncStateRepository');
 const invoiceReportRepository = require('./repositories/odooInvoiceReportRepository');
 const pnlRepository = require('./repositories/odooPnlRepository');
+const saleReportRepository = require('./repositories/odooSaleReportRepository');
 const clientRepository = require('./repositories/clientRepository');
 const linkRepository = require('./repositories/clientOdooLinkRepository');
 const { transaction } = require('./repositories/unitOfWork');
@@ -42,6 +43,7 @@ const odooSyncService = createOdooSyncService({
   partnerRepository,
   invoiceReportRepository,
   pnlRepository,
+  saleReportRepository,
   syncStateRepository,
   transaction,
   logger,
@@ -54,7 +56,8 @@ const odooSyncService = createOdooSyncService({
 });
 
 const financeMetricsService = createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, pnlRepository, paymentRepository, syncStateRepository, linkRepository,
+  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, paymentRepository,
+  syncStateRepository, linkRepository,
 });
 
 // Read by the CEO Control Room's client book (same public-interface rule).

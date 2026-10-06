@@ -7,7 +7,7 @@ const { toOpenInvoice, toInvoice } = require('../models/odooRecord.model');
 const COLUMNS = [
   'odoo_id', 'company_id', 'move_type', 'name', 'partner_id', 'partner_name', 'invoice_date', 'invoice_date_due',
   'state', 'payment_state', 'currency', 'amount_untaxed', 'amount_total', 'amount_residual',
-  'amount_untaxed_signed', 'amount_total_signed', 'amount_residual_signed', 'salesperson_name',
+  'amount_untaxed_signed', 'amount_total_signed', 'amount_residual_signed', 'salesperson_name', 'invoice_origin',
   'odoo_write_date', 'synced_at',
 ];
 
@@ -142,6 +142,18 @@ function sumUntaxedBySalesperson(companyId, fromDate, toDate) {
   `).all(companyId, fromDate, toDate);
 }
 
+/* Posted invoices (not credit notes) in a date range, and how many have
+   no sales order as their source. companyId null = all companies. */
+function countSalesOrderLinks(companyId, fromDate, toDate) {
+  const params = companyId == null ? [fromDate, toDate] : [companyId, fromDate, toDate];
+  return db.prepare(`
+    SELECT COUNT(*) AS invoices, SUM(CASE WHEN invoice_origin IS NULL OR invoice_origin = '' THEN 1 ELSE 0 END) AS withoutOrder
+    FROM odoo_invoices
+    WHERE ${companyId == null ? '1 = 1' : 'company_id = ?'} AND state = 'posted' AND move_type = 'out_invoice'
+      AND invoice_date BETWEEN ? AND ?
+  `).get(...params);
+}
+
 function listPostedByPartners(partnerIds) {
   if (!partnerIds.length) return [];
   return db.prepare(`
@@ -152,7 +164,7 @@ function listPostedByPartners(partnerIds) {
 }
 
 module.exports = {
-  summarizeByPartnerAndCompany, listPostedByPartners, countPosted, listLargestInvoices, sumUntaxedBySalesperson,
+  summarizeByPartnerAndCompany, listPostedByPartners, countPosted, countSalesOrderLinks, listLargestInvoices, sumUntaxedBySalesperson,
   listPartnerIds, summarizeByPartner,
   upsertMany, listIdsByCompanies, removeByIds, sumUntaxedByMonth, sumTotalSigned, sumUntaxedByPartner, listOpen,
 };

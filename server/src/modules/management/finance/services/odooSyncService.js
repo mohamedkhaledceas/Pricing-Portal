@@ -28,16 +28,21 @@
    company's posted journal items on P&L account types for this year and
    last, read company by company (balances stay in that company's
    currency), plus Odoo's dated rates for the other companies' currencies
-   as Ceas Comm records them. Both replaced whole; ~1,300 lines. */
+   as Ceas Comm records them. Both replaced whole; ~1,300 lines.
+
+   Sales Analysis (sale.report, migration 037) runs last, every run: read
+   once per company (own currency) and once with all companies (Odoo's EGP
+   conversion), joined by line id, replaced whole. ~600 lines. */
 const {
-  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS,
-  toInvoiceRow, toPaymentRow, toPartnerRow, toInvoiceReportRow,
+  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS, ODOO_SALE_REPORT_FIELDS,
+  toInvoiceRow, toPaymentRow, toPartnerRow, toInvoiceReportRow, toSaleReportRow,
 } = require('../models/odooRecord.model');
 
 const PAGE_SIZE = 500;
 
 function createOdooSyncService({
   odooClient, invoiceRepository, paymentRepository, partnerRepository, invoiceReportRepository, pnlRepository,
+  saleReportRepository,
   syncStateRepository, transaction, logger, companyIds, consolidationCompanyIds, consolidationCurrency,
   pnlAccountTypes, foreignCurrencies, today,
 }) {
@@ -246,6 +251,38 @@ function createOdooSyncService({
     }
   }
 
+  async function syncSaleReport() {
+    const model = 'sale.report';
+    const runAt = new Date().toISOString();
+    try {
+      const own = [];
+      for (const companyId of companyIds) {
+        // eslint-disable-next-line no-await-in-loop
+        own.push(...await readAll(model, {
+          domain: [['company_id', '=', companyId]], fields: ODOO_SALE_REPORT_FIELDS, companyIds: [companyId],
+        }));
+      }
+      const consolidated = new Map((await readAll(model, {
+        domain: [], fields: ['id', 'price_subtotal', 'untaxed_amount_to_invoice'], companyIds: consolidationCompanyIds,
+      })).map((r) => [r.id, r]));
+      const rows = own.map((r) => toSaleReportRow(r, consolidated.get(r.id), runAt));
+      transaction(() => {
+        // Same guard as the other syncs: never wipe on an empty answer.
+        if (rows.length === 0 && saleReportRepository.countAll() > 0) {
+          logger.warn('Odoo sales report returned no lines while the cache has some — keeping the cache.');
+        } else {
+          saleReportRepository.replaceAll(rows);
+        }
+        syncStateRepository.recordSuccess(model, { lastWriteDate: null, recordsSynced: rows.length, runAt });
+      });
+      return { model, mode: 'replace', status: 'ok', upserted: rows.length, removed: 0 };
+    } catch (error) {
+      syncStateRepository.recordFailure(model, { error: error.message, runAt });
+      logger.error('Odoo sync failed for model.', { model, message: error.message });
+      return { model, mode: 'replace', status: 'error', error: error.message };
+    }
+  }
+
   async function run(mode) {
     const results = [];
     for (const spec of SPECS) {
@@ -255,6 +292,7 @@ function createOdooSyncService({
     results.push(await syncPartners());
     results.push(await syncInvoiceReport());
     results.push(await syncPnl());
+    results.push(await syncSaleReport());
     return results;
   }
 

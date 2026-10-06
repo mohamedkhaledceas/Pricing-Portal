@@ -69,8 +69,8 @@ function periodAverageRate(rates, fromDate, toDate) {
 }
 
 function createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, pnlRepository, paymentRepository, syncStateRepository, linkRepository,
-  today = cairoToday,
+  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, paymentRepository,
+  syncStateRepository, linkRepository, today = cairoToday,
 }) {
   /* partnerId -> { key, clientId, name } for this call. */
   function buildCustomerResolver() {
@@ -320,6 +320,82 @@ function createFinanceMetricsService({
     return { year, revenue: round(total), rates };
   }
 
+  /* Sales orders, year to date by order date — the same definitions as
+     Odoo's Dashboards → Sales → Sales and → Product with Period = this
+     year. entityKey 'all' reads Odoo's own EGP conversion. "Booked" is
+     Odoo's "Revenue" card on that dashboard (confirmed orders, untaxed);
+     named booked here so it is never mistaken for revenue, which is the
+     invoiced figure. Backlog is not year-limited: every confirmed order's
+     untaxed amount still to invoice. */
+  function getSalesSummary(entityKey) {
+    const consolidated = entityKey === 'all';
+    const { companyId, currency } = consolidated
+      ? { companyId: null, currency: CONSOLIDATION_CURRENCY }
+      : entityOrThrow(entityKey);
+    const asOf = today();
+    const year = asOf.slice(0, 4);
+    const yearStart = `${year}-01-01`;
+    const monthIndex = Number(asOf.slice(5, 7)) - 1;
+    const resolve = buildCustomerResolver();
+    const companyKey = new Map(Object.entries(ENTITIES).map(([key, e]) => [e.companyId, key]));
+    const toOrder = (o) => {
+      const who = resolve(o.partnerId, o.partnerName);
+      return {
+        name: o.name,
+        company: companyKey.get(o.companyId) || null,
+        customer: who.name,
+        customerKey: who.key,
+        orderDate: o.orderDate,
+        state: o.state,
+        salesperson: o.salespersonName,
+        value: round(o.value),
+        toInvoice: round(o.toInvoice),
+      };
+    };
+
+    const byState = new Map(saleReportRepository.summarizeByState(companyId, yearStart, asOf).map((r) => [r.state, r]));
+    const get = (state) => byState.get(state) || { orders: 0, value: 0 };
+    const quotationCount = get('draft').orders + get('sent').orders;
+    const booked = get('sale');
+    const byMonth = new Map(saleReportRepository.sumBookedByMonth(companyId, yearStart, asOf).map((m) => [m.month, m.total]));
+    const months = MONTH_LABELS.slice(0, monthIndex + 1);
+    const backlog = saleReportRepository.sumBacklog(companyId);
+    const links = invoiceRepository.countSalesOrderLinks(companyId, yearStart, asOf);
+
+    return {
+      asOf,
+      currency,
+      consolidated,
+      months,
+      quotations: {
+        count: quotationCount,
+        drafts: get('draft').orders,
+        sent: get('sent').orders,
+        value: round(get('draft').value + get('sent').value),
+        top: saleReportRepository.listOrders(companyId, 'quotation', yearStart, asOf, 'value', 10).map(toOrder),
+      },
+      booked: {
+        orders: booked.orders,
+        value: round(booked.value),
+        averageOrder: booked.orders ? round(booked.value / booked.orders) : null,
+        byMonth: months.map((_, i) => round(byMonth.get(`${year}-${String(i + 1).padStart(2, '0')}`) || 0)),
+        top: saleReportRepository.listOrders(companyId, 'sale', yearStart, asOf, 'value', 20).map(toOrder),
+      },
+      backlog: {
+        value: round(backlog.total),
+        orders: backlog.orders,
+        // Odoo only reduces "to invoice" through invoices made from the
+        // order — invoices without one leave their orders counted here.
+        invoicesThisYear: links.invoices,
+        invoicesWithoutOrder: links.withoutOrder || 0,
+        top: saleReportRepository.listOrders(companyId, 'sale', '0000-01-01', '9999-12-31', 'toInvoice', 20).map(toOrder),
+      },
+      products: saleReportRepository.sumByProduct(companyId, yearStart, asOf, 10).map((p) => ({
+        name: p.productName, value: round(p.value), quantity: p.quantity, orders: p.orders,
+      })),
+    };
+  }
+
   /* One status for Odoo as a whole: ok only when every synced model's last
      run succeeded; "as of" is the older of the models' last successes. The
      error text stays in the server log, not the response. */
@@ -335,7 +411,7 @@ function createFinanceMetricsService({
   }
 
   return {
-    getEntityFinance, getConsolidatedRevenue, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
   };
 }
 

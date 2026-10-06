@@ -4,7 +4,8 @@
 const ODOO_INVOICE_FIELDS = [
   'id', 'company_id', 'move_type', 'name', 'commercial_partner_id', 'invoice_date', 'invoice_date_due',
   'state', 'payment_state', 'currency_id', 'amount_untaxed', 'amount_total', 'amount_residual',
-  'amount_untaxed_signed', 'amount_total_signed', 'amount_residual_signed', 'invoice_user_id', 'write_date',
+  'amount_untaxed_signed', 'amount_total_signed', 'amount_residual_signed', 'invoice_user_id', 'invoice_origin',
+  'write_date',
 ];
 
 const ODOO_PAYMENT_FIELDS = [
@@ -23,6 +24,44 @@ const ODOO_INVOICE_REPORT_FIELDS = [
 const orNull = (value) => (value === false || value === undefined ? null : value);
 const m2oId = (value) => (Array.isArray(value) ? value[0] : null);
 const m2oName = (value) => (Array.isArray(value) ? value[1] : null);
+
+// sale.report (Sales Analysis) — one record per sales-order line.
+const ODOO_SALE_REPORT_FIELDS = [
+  'id', 'name', 'order_reference', 'date', 'state', 'company_id', 'commercial_partner_id', 'user_id', 'product_id',
+  'categ_id', 'product_uom_qty', 'price_subtotal', 'untaxed_amount_to_invoice',
+];
+
+const CAIRO_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' });
+// Odoo datetimes are UTC "YYYY-MM-DD HH:MM:SS"; Odoo groups by the user's
+// timezone, so an order placed after 22:00 UTC belongs to the next Cairo day.
+const cairoDate = (odooDatetime) => (odooDatetime ? CAIRO_DATE.format(new Date(`${odooDatetime.replace(' ', 'T')}Z`)) : null);
+
+/* `own` is the line read with its company alone allowed (own currency),
+   `consolidated` the same line read with all companies (Odoo's EGP). */
+function toSaleReportRow(own, consolidated, syncedAt) {
+  const orderRef = typeof own.order_reference === 'string' ? own.order_reference.split(',') : [];
+  return {
+    odoo_id: own.id,
+    order_id: orderRef[0] === 'sale.order' ? Number(orderRef[1]) : null,
+    order_name: orNull(own.name),
+    company_id: m2oId(own.company_id),
+    order_date: cairoDate(orNull(own.date)),
+    state: own.state,
+    // The customer company, not the contact person on the order — the same
+    // customer the invoices and the client book use.
+    partner_id: m2oId(own.commercial_partner_id),
+    partner_name: m2oName(own.commercial_partner_id),
+    salesperson_name: m2oName(own.user_id),
+    product_name: m2oName(own.product_id),
+    category_name: m2oName(own.categ_id),
+    quantity: own.product_uom_qty || 0,
+    subtotal_company: own.price_subtotal || 0,
+    to_invoice_company: own.untaxed_amount_to_invoice || 0,
+    subtotal_consolidated: consolidated ? consolidated.price_subtotal || 0 : 0,
+    to_invoice_consolidated: consolidated ? consolidated.untaxed_amount_to_invoice || 0 : 0,
+    synced_at: syncedAt,
+  };
+}
 
 /* price_subtotal arrives already converted by Odoo into the first allowed
    company's currency (migration 035) — stored as is, labelled with that
@@ -66,6 +105,7 @@ function toInvoiceRow(record, syncedAt) {
     amount_total_signed: record.amount_total_signed || 0,
     amount_residual_signed: record.amount_residual_signed || 0,
     salesperson_name: m2oName(record.invoice_user_id),
+    invoice_origin: orNull(record.invoice_origin),
     odoo_write_date: record.write_date,
     synced_at: syncedAt,
   };
@@ -174,6 +214,6 @@ function toPayment(row) {
 }
 
 module.exports = {
-  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS,
-  toInvoiceReportRow, toInvoiceRow, toPaymentRow, toPartnerRow, toPartner, toSyncState, toOpenInvoice, toInvoice, toPayment,
+  ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS, ODOO_SALE_REPORT_FIELDS,
+  toInvoiceReportRow, toSaleReportRow, toInvoiceRow, toPaymentRow, toPartnerRow, toPartner, toSyncState, toOpenInvoice, toInvoice, toPayment,
 };

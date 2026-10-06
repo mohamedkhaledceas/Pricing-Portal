@@ -26,6 +26,8 @@ export function draw(){
   if(g('ml1'))chBars(g('ml1'),{items:D.projects.byLine.map(l=>({name:l.name,value:l.margin,
     color:l.margin<35?V('--crit'):l.margin<42?V('--warn'):V('--good'),label:l.margin+'%',
     extra:egp(l.value,false)+' contracted · '+egp(l.profit,false)+' profit'})),fmtv:v=>r1(v)+'%',ref:42,refLab:'target 42%'});
+  if(g('ws1')&&D.sales&&D.sales.live)chBars(g('ws1'),{items:D.sales.products.map(p=>({name:p.name,value:p.value,
+    label:egp(p.value),extra:num(p.orders)+(p.orders===1?' order':' orders')})),fmtv:v=>(D.sales.consolidated?'EGP':CUR())+' '+egp(v)});
   if(g('pp1')&&D.pipeline.live)chBars(g('pp1'),{items:D.pipeline.stages.map((s,i)=>({name:s.name,value:s.count,color:ramp[Math.min(i,3)]})),
     fmtv:v=>num(v)+(v===1?' deal':' deals')});
   else if(g('pp1'))chBars(g('pp1'),{items:D.pipeline.stages.map((s,i)=>({name:s.name,value:s.value,color:ramp[Math.min(i,3)],
