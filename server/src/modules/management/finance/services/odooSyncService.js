@@ -415,19 +415,75 @@ function createOdooSyncService({
     }
   }
 
+  /* Change gates. The report copies (sales and invoice analysis, P&L and
+     balance-sheet lines, bills and expenses) are replaced whole, which is
+     simple and always right — but most 15-minute runs would rewrite the
+     same rows. So an incremental run first asks Odoo for the newest edit
+     on each source model (one small call each) and replaces a copy only
+     when one of its sources moved past the watermark saved after the last
+     good run. Full runs (startup, nightly 03:00) always replace everything,
+     so anything a gate could miss is corrected within a day. */
+  const GATES = {
+    move: { key: 'gate:account.move', model: 'account.move' },
+    order: { key: 'gate:sale.order', model: 'sale.order' },
+    expense: { key: 'gate:hr.expense', model: 'hr.expense' },
+    rate: { key: 'gate:res.currency.rate', model: 'res.currency.rate' },
+  };
+
+  async function newestEdit(model) {
+    const rows = await odooClient.searchRead(model, {
+      domain: [], fields: ['write_date'], order: 'write_date desc', limit: 1, companyIds: consolidationCompanyIds,
+    });
+    return rows.length ? rows[0].write_date : null;
+  }
+
+  const skipped = (model) => ({ model, mode: 'unchanged', status: 'skipped' });
+
   async function run(mode) {
     const results = [];
     for (const spec of SPECS) {
       // eslint-disable-next-line no-await-in-loop
       results.push(await syncModel(spec, mode));
     }
+
+    const newest = {};
+    const changed = {};
+    for (const [name, gate] of Object.entries(GATES)) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        newest[name] = await newestEdit(gate.model);
+        const seen = (syncStateRepository.findByModel(gate.key) || {}).lastWriteDate;
+        changed[name] = mode === 'full' || !seen || !newest[name] || newest[name] > seen;
+      } catch (error) {
+        // Can't tell → copy as if changed; the step itself records any failure.
+        logger.warn('Odoo change check failed — copying anyway.', { model: gate.model, message: error.message });
+        changed[name] = true;
+      }
+    }
+    // A copy whose last run failed is retried even when nothing changed.
+    const lastFailed = (label) => ((syncStateRepository.findByModel(label) || {}).lastStatus === 'error');
+    const when = (cond, label, step) => {
+      if (cond || lastFailed(label)) return step();
+      syncStateRepository.recordChecked(label, new Date().toISOString());
+      return Promise.resolve(skipped(label));
+    };
+
     // Sales lines before partners: the partner sync reads their customers.
-    results.push(await syncSaleReport());
-    results.push(await syncPartners());
-    results.push(await syncInvoiceReport());
-    results.push(await syncPnl());
-    results.push(await syncBalances());
-    results.push(await syncPayables());
+    results.push(await when(changed.order || changed.rate, 'sale.report', syncSaleReport));
+    results.push(await when(changed.move || changed.order, 'res.partner', syncPartners));
+    results.push(await when(changed.move || changed.rate, 'account.invoice.report', syncInvoiceReport));
+    results.push(await when(changed.move || changed.rate, 'account.move.line (P&L)', syncPnl));
+    results.push(await when(changed.move, 'account.move.line (balance sheet)', syncBalances));
+    results.push(await when(changed.move || changed.expense, 'account.move (vendor bills) + hr.expense', syncPayables));
+
+    // Watermarks only advance when every step that ran succeeded, so a
+    // failed run is simply retried by the next one.
+    if (!results.some((r) => r.status === 'error')) {
+      const runAt = new Date().toISOString();
+      for (const [name, gate] of Object.entries(GATES)) {
+        if (newest[name]) syncStateRepository.recordSuccess(gate.key, { lastWriteDate: newest[name], recordsSynced: 0, runAt });
+      }
+    }
     return results;
   }
 

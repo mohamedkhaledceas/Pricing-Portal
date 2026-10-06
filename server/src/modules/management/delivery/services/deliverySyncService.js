@@ -1,9 +1,13 @@
 /* Copies the ClickUp delivery space into the portal (migration 044) —
-   read-only against ClickUp (GET only). Every run: all open tasks, plus
-   tasks closed in the last CLOSED_WINDOW_DAYS, subtasks included; the copy
-   is replaced whole in one transaction, so a task deleted or moved out of
-   the space disappears too. An empty answer while the copy holds tasks is
-   treated as a ClickUp problem and keeps the copy. One run at a time. */
+   read-only against ClickUp (GET only), one run at a time.
+   - full (startup, nightly): all open tasks plus tasks closed in the last
+     CLOSED_WINDOW_DAYS, subtasks included, replacing the copy whole in one
+     transaction — so tasks deleted, moved out of the space or closed too
+     long ago drop out. An empty answer while the copy holds tasks is
+     treated as a ClickUp problem and keeps the copy.
+   - incremental (every 15 minutes): only tasks updated since the last good
+     run (minus a minute of overlap), upserted — a few calls instead of ~15.
+     Deletions and moves wait for the nightly full run. */
 const { DELIVERY_SPACE_ID, CLOSED_WINDOW_DAYS, MAX_PAGES } = require('../constants');
 
 const CAIRO_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' });
@@ -51,6 +55,23 @@ function createDeliverySyncService({ clickupGet, deliveryRepository, transaction
     };
   }
 
+  async function runIncremental(since) {
+    const at = new Date(now()).toISOString();
+    try {
+      const updated = await readPages(`include_closed=true&date_updated_gt=${since - 60 * 1000}`);
+      const rows = updated.map((t) => toRows(t, at));
+      transaction(() => {
+        deliveryRepository.upsertTasks(rows.map((r) => r.task), rows.flatMap((r) => r.assignees));
+        deliveryRepository.recordSync({ status: 'ok', at, tasks: deliveryRepository.countTasks() });
+      });
+      return { status: 'ok', mode: 'incremental', updated: rows.length };
+    } catch (error) {
+      logger.error('ClickUp delivery sync (incremental) failed — keeping the last copy.', { message: error.message });
+      deliveryRepository.recordSync({ status: 'error', at, error: error.message });
+      return { status: 'error' };
+    }
+  }
+
   async function run() {
     const at = new Date(now()).toISOString();
     try {
@@ -75,8 +96,14 @@ function createDeliverySyncService({ clickupGet, deliveryRepository, transaction
     }
   }
 
-  function sync() {
-    if (!inFlight) inFlight = run().finally(() => { inFlight = null; });
+  /* mode 'incremental' falls back to a full run when there has been no
+     good run yet, or the last one failed (so a failure never leaves gaps). */
+  function sync({ mode = 'full' } = {}) {
+    if (inFlight) return inFlight;
+    const state = deliveryRepository.getSyncState();
+    const since = state.lastSuccessAt && state.lastStatus === 'ok' ? Date.parse(state.lastSuccessAt) : null;
+    const job = mode === 'incremental' && since ? runIncremental(since) : run();
+    inFlight = job.finally(() => { inFlight = null; });
     return inFlight;
   }
 

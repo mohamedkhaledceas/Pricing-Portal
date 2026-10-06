@@ -19,6 +19,15 @@ function replaceAll(tasks, assignees) {
   for (const a of assignees) insertAssignee.run(a.task_id, a.user_id, a.username);
 }
 
+// Incremental: replace just these tasks (and their assignees).
+function upsertTasks(tasks, assignees) {
+  const delA = db.prepare('DELETE FROM clickup_delivery_task_assignees WHERE task_id = ?');
+  const delT = db.prepare('DELETE FROM clickup_delivery_tasks WHERE task_id = ?');
+  for (const t of tasks) { delA.run(t.task_id); delT.run(t.task_id); }
+  for (const t of tasks) insertTask.run(t);
+  for (const a of assignees) insertAssignee.run(a.task_id, a.user_id, a.username);
+}
+
 function countTasks() {
   return db.prepare('SELECT COUNT(*) AS n FROM clickup_delivery_tasks').get().n;
 }
@@ -96,6 +105,6 @@ function recordSync({ status, at, error = null, tasks = null }) {
 }
 
 module.exports = {
-  replaceAll, countTasks, countOpen, openByStage, openByClient, openByPerson, countUnassignedOpen, listOverdue,
+  replaceAll, upsertTasks, countTasks, countOpen, openByStage, openByClient, openByPerson, countUnassignedOpen, listOverdue,
   getSyncState, recordSync,
 };
