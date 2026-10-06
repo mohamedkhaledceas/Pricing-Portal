@@ -1,6 +1,7 @@
 require('dotenv').config();
 const path = require('path');
 const http = require('http');
+const compression = require('compression');
 const express = require('express');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
@@ -116,6 +117,10 @@ app.use(helmet({
    skip straight to the error handler, bypassing any middleware mounted after
    it, which would otherwise leave that error's log entry without one. */
 app.use(correlationId);
+/* gzip/deflate for every response the browser accepts it for — the CEO
+   Control Room's JSON drops from ~110 KB to ~27 KB. No response here
+   streams (no SSE); socket.io runs on the HTTP server, not through Express. */
+app.use(compression());
 
 /* Mounted before the global express.json() below on purpose — it carries
    its own express.raw() parser so the exact bytes ClickUp sent are still
