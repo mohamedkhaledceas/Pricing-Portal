@@ -43,9 +43,9 @@ P.money=()=>{
 
   ${costBase()}
 
-  ${panel('Executive summary','agency-wide sample · year to date',`<div class="pb">${execSummary()}</div>`)}
+  ${D.pnlLive?liveExecSummaryPanel():panel('Executive summary','agency-wide sample · year to date',`<div class="pb">${execSummary()}</div>`)}
 
-  ${panel('Cash bridge',`How ${egp(D.cash.opening)} became ${egp(D.cash.balance)}`,
+  ${D.cash.live?liveCashPanel():perCompanyPanel('Cash bridge')||panel('Cash bridge',`How ${egp(D.cash.opening)} became ${egp(D.cash.balance)}`,
     `<div class="pb"><figure><div class="plot" id="w1"></div></figure>
      <div class="alert" style="margin-top:12px"><div><b>Two bars explain the year.</b> Drawings exceeded profit by ${egp(D.cash.drawings-D.pnl.netProfit)},
        and ${egp(D.cash.arSwing)} more is sitting unpaid with clients than in January. The owner account is shown separately and never nets into business cash.</div></div></div>`)}
@@ -64,7 +64,7 @@ P.money=()=>{
           <td class="n"><span class="num" style="color:${m.margin<10?'var(--badtx)':m.margin<14?'var(--ink2)':'var(--goodtx)'}">${m.margin}%</span></td></tr>`).join('')}</tbody></table></div>
       <p class="note">October is five days. Operating margin has fallen in four of the last five months while revenue held.</p></div>`)}
   <div class="cols c2">
-    ${panel('Balance sheet',`${esc(e.name)} · ${e.balances?'balanced':'DOES NOT BALANCE'}`,`<div class="pb tight">${balanceSheet()}</div>`)}
+    ${D.bsLive?liveBalanceSheetPanel():perCompanyPanel('Balance sheet')||panel('Balance sheet',`${esc(e.name)} · ${e.balances?'balanced':'DOES NOT BALANCE'}`,`<div class="pb tight">${balanceSheet()}</div>`)}
     ${D.sales&&D.sales.live&&D.revenue.live?bookedVsInvoicedPanel():panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
   </div>
   <div class="cols c2">
@@ -292,6 +292,55 @@ export function largestInvoicesBody(){
       <button class="btn" data-inv-page="${page-1}"${page<=0?' disabled':''}>Previous</button>
       <span class="note">Page ${page+1} of ${pages}</span>
       <button class="btn" data-inv-page="${page+1}"${page>=pages-1?' disabled':''}>Next</button></div>`:''}`;
+}
+/* Cash and balance sheet (Odoo, one company). Under All they say so
+   instead of showing sample figures: Odoo's multi-company balance-sheet
+   conversion isn't verified, and the portal never picks a rate. */
+function perCompanyPanel(title){
+  if(!(D.entity&&D.entity.key==='all'&&D.pnlLive))return '';
+  return panel(title,'per company',`<div class="empty"><b>Shown per company</b>Pick Ceas Comm, FZE or LWM. Odoo's way of converting a combined ${esc(title.toLowerCase())} hasn't been verified yet, so the portal doesn't add the companies together.</div>`);
+}
+const sgn=n=>`${n<0?'−':''}${egp(Math.abs(n),false)}`;
+function liveCashPanel(){
+  const c=D.bsLive.cash,cur=D.bsLive.currency;
+  return panel('Cash bridge'+srcBadge('balance'),`${esc(cur)} · how ${sgn(c.opening)} on 1 January became ${sgn(c.closing)} today`,
+    `<div class="pb"><figure><div class="plot" id="w1"></div></figure>
+      <h3 class="sec" style="margin-top:14px">Bank and cash accounts today</h3>
+      ${c.accounts.map(a=>`<div class="kv"><span>${esc(a.name)}${a.code?` <span class="lite">${esc(a.code)}</span>`:''}</span><i class="num nw${a.balance<0?' d-dn':''}">${sgn(a.balance)}</i></div>`).join('')}
+      <div class="kv t"><span>Closing bank balance</span><i class="num nw">${esc(cur)} ${sgn(c.closing)}</i></div>
+      <p class="note">Odoo → Dashboards → Finance → Accounting → Cash. Received and spent include transfers between the company's own accounts, as Odoo counts them. Every account is included, Alex Bank (Personal) too.</p></div>`);
+}
+function liveExecSummaryPanel(){
+  const p=D.pnlLive.current,x=D.bsLive,cur=D.pnlLive.currency;
+  const row=(l,v,{t,neg}={})=>`<div class="kv${t?' t':''}"><span>${esc(l)}</span><i class="num nw${neg&&v<0?' d-dn':''}">${sgn(v)}</i></div>`;
+  const cash=x?`${row('Cash received',x.cash.received)}${row('Cash spent',-x.cash.spent)}${row('Cash surplus',x.cash.surplus,{t:1,neg:1})}${row('Closing bank balance',x.cash.closing)}`
+    :'<p class="note">Shown per company.</p>';
+  const bs=x?`${row('Receivables',x.balanceSheet.receivables)}${row('Payables',-x.balanceSheet.payables)}${row('Short-term position',x.balanceSheet.receivables-x.balanceSheet.payables,{t:1,neg:1})}${row('Net assets',x.balanceSheet.assets-x.balanceSheet.liabilities,{neg:1})}`
+    :'<p class="note">Shown per company.</p>';
+  return panel('Executive summary'+srcBadge('pnl'),`${D.pnlLive.consolidated?'all companies':esc(D.entity?D.entity.name:'')} · ${esc(cur)} · ${D.pnlLive.year}, as in Odoo's Accounting dashboard`,
+    `<div class="pb"><div class="cols c3">
+      <div><h3 class="sec">Cash</h3>${cash}</div>
+      <div><h3 class="sec">Profitability</h3>${row('Revenue',p.revenue)}${row('Cost of revenue',-p.costOfRevenue)}${row('Gross profit',p.grossProfit,{t:1})}${row('Expenses',-(p.operatingExpenses+p.otherExpenses))}${row('Net profit',p.netProfit,{t:1,neg:1})}</div>
+      <div><h3 class="sec">Position today</h3>${bs}</div></div></div>`);
+}
+function liveBalanceSheetPanel(){
+  const b=D.bsLive.balanceSheet,cur=D.bsLive.currency;
+  const r=(l,v,{sub,t,grand}={})=>`<tr class="${grand?'grand':t?'tot':sub?'sub':''}">
+    <td>${sub?`<span style="padding-left:14px;color:var(--muted)">${esc(l)}</span>`:`<b style="font-weight:600">${esc(l)}</b>`}</td>
+    <td class="n"><span class="num${v<0?' d-dn':''}">${sgn(v)}</span></td></tr>`;
+  return panel('Balance sheet'+srcBadge('balance'),`${esc(D.entity?D.entity.name:'')} · ${esc(cur)} · ${b.balances?'balances':'DOES NOT BALANCE'}`,
+    `<div class="pb tight"><div class="tw"><table class="pnl bs"><thead><tr><th>Line</th><th class="n">As at today</th></tr></thead><tbody>
+      ${r('ASSETS',b.assets,{t:1})}
+      ${r('Bank and Cash Accounts',b.bank,{sub:1})}${r('Receivables',b.receivables,{sub:1})}${r('Current Assets',b.otherCurrentAssets,{sub:1})}${r('Prepayments',b.prepayments,{sub:1})}
+      ${r('Plus Fixed Assets',b.fixedAssets,{sub:1})}${r('Plus Non-current Assets',b.nonCurrentAssets,{sub:1})}
+      ${r('LIABILITIES',b.liabilities,{t:1})}
+      ${r('Current Liabilities',b.currentLiabilities,{sub:1})}${r('Payables',b.payables,{sub:1})}${r('Plus Non-current Liabilities',b.nonCurrentLiabilities,{sub:1})}
+      ${r('EQUITY',b.equity,{t:1})}
+      ${r('Current Year Unallocated Earnings',b.currentYearEarnings,{sub:1})}${r('Previous Years Unallocated Earnings',b.previousYearsEarnings,{sub:1})}
+      ${r('Current Year Retained Earnings',b.currentRetained,{sub:1})}${r('Previous Years Retained Earnings',b.previousRetained,{sub:1})}
+      ${r('LIABILITIES + EQUITY',b.liabilitiesAndEquity,{grand:1})}
+    </tbody></table></div>
+    <p class="note" style="padding:10px 16px 0">Odoo → Accounting → Reporting → Balance Sheet, line for line, from every posted entry since the books began. ${b.balances?'Liabilities plus equity equals assets.':'<b>Liabilities plus equity do not equal assets — check the Odoo sync.</b>'}</p></div>`);
 }
 /* Odoo's Profit and Loss, line for line (Accounting → Reporting → Profit
    and Loss): this year beside the same period last year for one company;

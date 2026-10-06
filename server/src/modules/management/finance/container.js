@@ -16,6 +16,7 @@ const syncStateRepository = require('./repositories/odooSyncStateRepository');
 const invoiceReportRepository = require('./repositories/odooInvoiceReportRepository');
 const pnlRepository = require('./repositories/odooPnlRepository');
 const saleReportRepository = require('./repositories/odooSaleReportRepository');
+const balanceRepository = require('./repositories/odooBalanceRepository');
 const clientRepository = require('./repositories/clientRepository');
 const linkRepository = require('./repositories/clientOdooLinkRepository');
 const { transaction } = require('./repositories/unitOfWork');
@@ -29,8 +30,8 @@ const createFinanceRouter = require('./routes/index');
 const { startOdooSyncSchedule } = require('./jobs/odooSyncSchedule');
 const {
   ENTITIES, SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY, PNL_ACCOUNT_TYPES,
+  BALANCE_ACCOUNT_TYPES, CASH_ACCOUNT_TYPES,
 } = require('./constants');
-const { cairoToday } = require('./services/financeMetricsService');
 
 // Currencies the all-companies figures convert from (AED today).
 const FOREIGN_CURRENCIES = [...new Set(Object.values(ENTITIES).map((e) => e.currency))]
@@ -44,6 +45,8 @@ const odooSyncService = createOdooSyncService({
   invoiceReportRepository,
   pnlRepository,
   saleReportRepository,
+  balanceRepository,
+  balanceAccountTypes: [...BALANCE_ACCOUNT_TYPES],
   syncStateRepository,
   transaction,
   logger,
@@ -52,12 +55,11 @@ const odooSyncService = createOdooSyncService({
   consolidationCurrency: CONSOLIDATION_CURRENCY,
   pnlAccountTypes: [...PNL_ACCOUNT_TYPES],
   foreignCurrencies: FOREIGN_CURRENCIES,
-  today: cairoToday,
 });
 
 const financeMetricsService = createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, paymentRepository,
-  syncStateRepository, linkRepository,
+  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, paymentRepository,
+  syncStateRepository, linkRepository, cashAccountTypes: [...CASH_ACCOUNT_TYPES],
 });
 
 // Read by the CEO Control Room's client book (same public-interface rule).

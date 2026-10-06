@@ -31,6 +31,15 @@ const CONSOLIDATION_CURRENCY = ENTITIES.ceas.currency;
    Expenses = expense; Other Income = −income_other; Other Expenses =
    expense_depreciation + expense_other; Allocations and Withdrawals =
    equity_unaffected. */
+/* Account types on Odoo's Balance Sheet (account.report 4) other than
+   equity_unaffected, which comes with the P&L lines. Cash accounts for the
+   Accounting dashboard's Cash block are asset_cash + liability_credit_card. */
+const BALANCE_ACCOUNT_TYPES = Object.freeze([
+  'asset_receivable', 'asset_cash', 'asset_current', 'asset_non_current', 'asset_prepayments', 'asset_fixed',
+  'liability_payable', 'liability_credit_card', 'liability_current', 'liability_non_current', 'equity',
+]);
+const CASH_ACCOUNT_TYPES = Object.freeze(['asset_cash', 'liability_credit_card']);
+
 const PNL_ACCOUNT_TYPES = Object.freeze([
   'income', 'income_other', 'expense_direct_cost', 'expense', 'expense_depreciation', 'expense_other',
   'equity_unaffected',
@@ -53,5 +62,6 @@ const FINANCE_THRESHOLDS = Object.freeze({
 
 module.exports = {
   ENTITIES, ENTITY_COMPANY_IDS, SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY, PNL_ACCOUNT_TYPES,
+  BALANCE_ACCOUNT_TYPES, CASH_ACCOUNT_TYPES,
   COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS,
 };

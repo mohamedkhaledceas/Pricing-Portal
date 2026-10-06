@@ -97,8 +97,8 @@ function toPnlLines(b) {
 }
 
 function createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, paymentRepository,
-  syncStateRepository, linkRepository, today = cairoToday,
+  invoiceRepository, invoiceReportRepository, pnlRepository, saleReportRepository, balanceRepository, paymentRepository,
+  syncStateRepository, linkRepository, cashAccountTypes, today = cairoToday,
 }) {
   /* partnerId -> { key, clientId, name } for this call. */
   function buildCustomerResolver() {
@@ -489,6 +489,102 @@ function createFinanceMetricsService({
     };
   }
 
+  /* One company's balance sheet as at today, line for line as Odoo's
+     Accounting → Reporting → Balance Sheet (account.report 4) builds it,
+     plus the Accounting dashboard's Cash block for this year. Per company
+     only: how Odoo converts a multi-company balance sheet hasn't been
+     verified, and the portal never picks a rate.
+
+     Signs follow the report: assets are debit balances, liabilities and
+     equity credit balances shown positive. Equity's unallocated earnings
+     are every P&L line since the books began (current year shown apart),
+     so the sheet balances by construction of double entry — `balances`
+     reports whether it does, as a check on the data. */
+  function getBalanceSheet(entityKey) {
+    const { companyId, currency } = entityOrThrow(entityKey);
+    const asOf = today();
+    const year = asOf.slice(0, 4);
+    const fyStart = `${year}-01-01`;
+    const BEGIN = '0000-01-01';
+
+    const bs = {};
+    for (const r of balanceRepository.sumByType(companyId, BEGIN, asOf)) {
+      const key = r.nonTrade ? `${r.accountType}:non_trade` : r.accountType;
+      bs[key] = (bs[key] || 0) + r.balance;
+    }
+    const b = (key) => bs[key] || 0;
+    const pnlAll = Object.fromEntries(pnlRepository.sumByTypeForCompany(companyId, BEGIN, asOf).map((r) => [r.accountType, r.balance]));
+    const pnlYear = Object.fromEntries(pnlRepository.sumByTypeForCompany(companyId, fyStart, asOf).map((r) => [r.accountType, r.balance]));
+    const equityYear = balanceRepository.sumByType(companyId, fyStart, asOf)
+      .filter((r) => r.accountType === 'equity').reduce((s, r) => s + r.balance, 0);
+    const pnlTypes = ['income', 'income_other', 'expense_direct_cost', 'expense', 'expense_depreciation', 'expense_other'];
+    const sumTypes = (o, types) => types.reduce((s, t) => s + (o[t] || 0), 0);
+
+    const bank = b('asset_cash');
+    const receivables = b('asset_receivable');
+    const otherCurrentAssets = b('asset_current') + b('asset_receivable:non_trade');
+    const prepayments = b('asset_prepayments');
+    const currentAssets = bank + receivables + otherCurrentAssets + prepayments;
+    const fixedAssets = b('asset_fixed');
+    const nonCurrentAssets = b('asset_non_current');
+    const assets = currentAssets + fixedAssets + nonCurrentAssets;
+
+    const currentLiabilities = -(b('liability_current') + b('liability_credit_card') + b('liability_payable:non_trade'));
+    const payables = -b('liability_payable');
+    const nonCurrentLiabilities = -b('liability_non_current');
+    const liabilities = currentLiabilities + payables + nonCurrentLiabilities;
+
+    // CURR_YEAR_EARNINGS = net profit this year − allocations this year.
+    const currentYearEarnings = -sumTypes(pnlYear, pnlTypes) - (pnlYear.equity_unaffected || 0);
+    const allEarnings = -sumTypes(pnlAll, pnlTypes) - (pnlAll.equity_unaffected || 0);
+    const previousYearsEarnings = allEarnings - currentYearEarnings;
+    const currentRetained = -equityYear;
+    const retained = -(b('equity') + b('equity:non_trade'));
+    const previousRetained = retained - currentRetained;
+    const equity = allEarnings + retained;
+
+    const r = (n) => Math.round(n);
+    const cashFlows = balanceRepository.sumCashFlows(companyId, cashAccountTypes, fyStart, asOf);
+    const accounts = balanceRepository.listCashAccounts(companyId, cashAccountTypes, asOf)
+      .filter((a) => Math.round(a.balance * 100) !== 0)
+      .map((a) => ({ code: a.code, name: a.name, type: a.accountType, balance: r(a.balance) }));
+    const closing = accounts.reduce((s, a) => s + a.balance, 0);
+
+    // Cash runway: closing balance ÷ average monthly cash spent over the
+    // last three full months. The portal's own definition — Odoo has none.
+    const [y, m] = asOf.split('-').map(Number);
+    const threeMonthsBack = new Date(Date.UTC(y, m - 4, 1)).toISOString().slice(0, 10);
+    const lastMonthEnd = addDays(`${asOf.slice(0, 7)}-01`, -1);
+    const spent3 = balanceRepository.sumCashFlowsByMonth(companyId, cashAccountTypes, threeMonthsBack, lastMonthEnd)
+      .reduce((s, mo) => s + mo.spent, 0);
+    const avgSpent = spent3 / 3;
+
+    return {
+      asOf,
+      currency,
+      balanceSheet: {
+        bank: r(bank), receivables: r(receivables), otherCurrentAssets: r(otherCurrentAssets), prepayments: r(prepayments),
+        currentAssets: r(currentAssets), fixedAssets: r(fixedAssets), nonCurrentAssets: r(nonCurrentAssets), assets: r(assets),
+        currentLiabilities: r(currentLiabilities), payables: r(payables), nonCurrentLiabilities: r(nonCurrentLiabilities),
+        liabilities: r(liabilities),
+        currentYearEarnings: r(currentYearEarnings), previousYearsEarnings: r(previousYearsEarnings),
+        currentRetained: r(currentRetained), previousRetained: r(previousRetained), equity: r(equity),
+        liabilitiesAndEquity: r(liabilities + equity),
+        balances: Math.abs(assets - (liabilities + equity)) < 1,
+      },
+      cash: {
+        received: r(cashFlows.received),
+        spent: r(cashFlows.spent),
+        surplus: r(cashFlows.received - cashFlows.spent),
+        opening: r(closing - (cashFlows.received - cashFlows.spent)),
+        closing,
+        accounts,
+        averageMonthlySpent: r(avgSpent),
+        runwayMonths: avgSpent > 0 ? Math.round((closing / avgSpent) * 10) / 10 : null,
+      },
+    };
+  }
+
   /* One status for Odoo as a whole: ok only when every synced model's last
      run succeeded; "as of" is the older of the models' last successes. The
      error text stays in the server log, not the response. */
@@ -504,10 +600,8 @@ function createFinanceMetricsService({
   }
 
   return {
-    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getBalanceSheet, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
   };
 }
 
 module.exports = createFinanceMetricsService;
-// The sync stamps "this year" with the same Cairo calendar date.
-module.exports.cairoToday = cairoToday;

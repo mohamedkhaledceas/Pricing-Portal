@@ -116,6 +116,49 @@ function applyPnl(D, p) {
   };
 }
 
+/* One company's balance sheet and cash (finance getBalanceSheet). The
+   cash bridge becomes Odoo's own movements: opening, received, spent,
+   closing. Not under All — see getBalanceSheet. */
+function applyBalance(D, x) {
+  D.bsLive = x;
+  const c = x.cash;
+  const setKpi = (id, fields) => Object.assign(D.kpis.find((k) => k.id === id), {
+    live: true, currency: x.currency, source: 'Odoo', tolerance: null, target: null, drill: 'cash_accounts',
+  }, fields);
+  setKpi('cash_balance', {
+    actual: c.closing,
+    query: 'Odoo Dashboards → Finance → Accounting → "Closing bank balance": every bank, cash and credit-card account',
+    formula: 'What is in the bank today, as posted in Odoo. Every bank account counts, including Alex Bank (Personal), until told otherwise.',
+  });
+  setKpi('cash_runway', {
+    actual: c.runwayMonths,
+    query: 'Closing bank balance ÷ average monthly cash spent over the last three full months',
+    formula: 'The portal\'s own measure (Odoo has none). Cash spent includes transfers between the company\'s own bank accounts, as Odoo\'s "Cash spent" does, so it errs on the short side.',
+  });
+  for (const id of ['cash_balance', 'cash_runway']) {
+    delete D.series[id];
+    delete D.yearMap[id];
+  }
+  D.records.cash_accounts = {
+    columns: ['Account', `Balance (${x.currency})`],
+    rows: c.accounts.map((a) => [`${a.code || ''} ${a.name}`.trim(), a.balance]),
+    source: 'Odoo · posted journal items on bank, cash and credit-card accounts',
+    note: `Received ${c.received.toLocaleString('en-US')} and spent ${c.spent.toLocaleString('en-US')} this year; average monthly spend over the last three months ${c.averageMonthlySpent.toLocaleString('en-US')}.`,
+  };
+  D.cash = {
+    ...D.cash,
+    live: true,
+    balance: c.closing,
+    opening: c.opening,
+    bridge: [
+      { label: 'Opening cash · 1 Jan', value: c.opening, kind: 'total' },
+      { label: 'Cash received', value: c.received, kind: 'up' },
+      { label: 'Cash spent', value: -c.spent, kind: 'down' },
+      { label: 'Cash today', value: c.closing, kind: 'total' },
+    ],
+  };
+}
+
 /* Sales orders (Odoo Sales Analysis via finance getSalesSummary), for one
    company or — under All — in Odoo's own EGP conversion. */
 function applySales(D, s) {
@@ -312,7 +355,7 @@ function createControlRoomService({
     const today = now();
     const todayIso = CAIRO_DATE.format(today);
     const D = structuredClone(sampleRepository.getSample());
-    const sources = { finance: 'sample', pnl: 'sample', sales: 'sample', pipeline: 'sample', people: 'sample', costs: 'sample' };
+    const sources = { finance: 'sample', pnl: 'sample', balance: 'sample', sales: 'sample', pipeline: 'sample', people: 'sample', costs: 'sample' };
 
     D.asOf = todayIso;
     D.asOfLabel = CAIRO_LONG_DATE.format(today);
@@ -336,6 +379,12 @@ function createControlRoomService({
         applyPnl(D, financeMetricsService.getProfitAndLoss(entity.key));
         sources.pnl = 'odoo';
       }, sources);
+      if (entity.key !== 'all') {
+        overlay('balance', () => {
+          applyBalance(D, financeMetricsService.getBalanceSheet(entity.key));
+          sources.balance = 'odoo';
+        }, sources);
+      }
       overlay('sales', () => {
         applySales(D, financeMetricsService.getSalesSummary(entity.key));
         sources.sales = 'odoo';

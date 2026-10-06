@@ -25,14 +25,20 @@
    unchanged line can still change value. A few hundred lines.
 
    Profit and Loss inputs (migration 036) run after it, every run: each
-   company's posted journal items on P&L account types for this year and
-   last, read company by company (balances stay in that company's
+   company's posted journal items on P&L account types since its books
+   began (the balance sheet's earnings lines need them all), read company
+   by company (balances stay in that company's
    currency), plus Odoo's dated rates for the other companies' currencies
    as Ceas Comm records them. Both replaced whole; ~1,300 lines.
 
    Sales Analysis (sale.report, migration 037) runs last, every run: read
    once per company (own currency) and once with all companies (Odoo's EGP
-   conversion), joined by line id, replaced whole. ~600 lines. */
+   conversion), joined by line id, replaced whole. ~600 lines.
+
+   Balance-sheet journal items (migration 039) run last, every run: every
+   posted item on balance-sheet accounts since each company's books began,
+   with its account's code, name and non-trade flag. Replaced whole;
+   ~3,600 lines. */
 const {
   ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS, ODOO_SALE_REPORT_FIELDS,
   toInvoiceRow, toPaymentRow, toPartnerRow, toInvoiceReportRow, toSaleReportRow,
@@ -42,9 +48,9 @@ const PAGE_SIZE = 500;
 
 function createOdooSyncService({
   odooClient, invoiceRepository, paymentRepository, partnerRepository, invoiceReportRepository, pnlRepository,
-  saleReportRepository,
+  saleReportRepository, balanceRepository, balanceAccountTypes,
   syncStateRepository, transaction, logger, companyIds, consolidationCompanyIds, consolidationCurrency,
-  pnlAccountTypes, foreignCurrencies, today,
+  pnlAccountTypes, foreignCurrencies,
 }) {
   const SPECS = [
     {
@@ -211,13 +217,11 @@ function createOdooSyncService({
     const model = 'account.move.line (P&L)';
     const runAt = new Date().toISOString();
     try {
-      const from = `${Number(today().slice(0, 4)) - 1}-01-01`;
       const lines = [];
       for (const companyId of companyIds) {
         // eslint-disable-next-line no-await-in-loop
         const records = await readAll('account.move.line', {
-          domain: [['company_id', '=', companyId], ['parent_state', '=', 'posted'], ['date', '>=', from],
-            ['account_type', 'in', pnlAccountTypes]],
+          domain: [['company_id', '=', companyId], ['parent_state', '=', 'posted'], ['account_type', 'in', pnlAccountTypes]],
           fields: ['id', 'company_id', 'date', 'account_type', 'balance'],
           companyIds: [companyId],
         });
@@ -285,6 +289,57 @@ function createOdooSyncService({
     }
   }
 
+  async function syncBalances() {
+    const model = 'account.move.line (balance sheet)';
+    const runAt = new Date().toISOString();
+    try {
+      const rows = [];
+      for (const companyId of companyIds) {
+        // eslint-disable-next-line no-await-in-loop
+        const records = await readAll('account.move.line', {
+          domain: [['company_id', '=', companyId], ['parent_state', '=', 'posted'], ['account_type', 'in', balanceAccountTypes]],
+          fields: ['id', 'date', 'account_type', 'account_id', 'debit', 'credit', 'balance'],
+          companyIds: [companyId],
+        });
+        const accountIds = [...new Set(records.map((r) => r.account_id && r.account_id[0]).filter(Boolean))];
+        // eslint-disable-next-line no-await-in-loop
+        const accounts = new Map((accountIds.length ? await readAll('account.account', {
+          domain: [['id', 'in', accountIds]], fields: ['id', 'code', 'name', 'non_trade'], companyIds: [companyId],
+        }) : []).map((a) => [a.id, a]));
+        for (const r of records) {
+          const account = accounts.get(r.account_id && r.account_id[0]) || {};
+          rows.push({
+            odoo_id: r.id,
+            company_id: companyId,
+            date: r.date,
+            account_type: r.account_type,
+            account_id: r.account_id ? r.account_id[0] : 0,
+            account_code: account.code || null,
+            account_name: account.name || (r.account_id ? r.account_id[1] : null),
+            non_trade: account.non_trade ? 1 : 0,
+            debit: r.debit || 0,
+            credit: r.credit || 0,
+            balance: r.balance || 0,
+            synced_at: runAt,
+          });
+        }
+      }
+      transaction(() => {
+        if (rows.length === 0 && balanceRepository.countAll() > 0) {
+          logger.warn('Odoo balance-sheet lines came back empty while the cache has some — keeping the cache.');
+        } else {
+          balanceRepository.replaceAll(rows);
+        }
+        syncStateRepository.recordSuccess(model, { lastWriteDate: null, recordsSynced: rows.length, runAt });
+      });
+      return { model, mode: 'replace', status: 'ok', upserted: rows.length, removed: 0 };
+    } catch (error) {
+      syncStateRepository.recordFailure(model, { error: error.message, runAt });
+      logger.error('Odoo sync failed for model.', { model, message: error.message });
+      return { model, mode: 'replace', status: 'error', error: error.message };
+    }
+  }
+
   async function run(mode) {
     const results = [];
     for (const spec of SPECS) {
@@ -296,6 +351,7 @@ function createOdooSyncService({
     results.push(await syncPartners());
     results.push(await syncInvoiceReport());
     results.push(await syncPnl());
+    results.push(await syncBalances());
     return results;
   }
 

@@ -46,11 +46,21 @@ function sumByCompanyTypeAndMonth(fromDate, toDate) {
   `).all(fromDate, toDate);
 }
 
+// Balance per account type for one company over a range (all time when fromDate is '0000-01-01').
+function sumByTypeForCompany(companyId, fromDate, toDate) {
+  return db.prepare(`
+    SELECT account_type AS accountType, SUM(balance) AS balance
+    FROM odoo_pnl_lines
+    WHERE company_id = ? AND date BETWEEN ? AND ?
+    GROUP BY account_type
+  `).all(companyId, fromDate, toDate);
+}
+
 function listRates(currency) {
   return db.prepare('SELECT date, inverse_rate AS inverseRate FROM odoo_currency_rates WHERE currency = ? ORDER BY date')
     .all(currency);
 }
 
 module.exports = {
-  replaceLines, replaceRates, countLines, sumByCompanyAndType, sumByCompanyTypeAndMonth, listRates,
+  replaceLines, replaceRates, countLines, sumByCompanyAndType, sumByCompanyTypeAndMonth, sumByTypeForCompany, listRates,
 };

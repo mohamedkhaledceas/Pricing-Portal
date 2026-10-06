@@ -10,7 +10,7 @@ import { $, egp, esc, fmt, fmtc, fmtD, money, num, pctx, r1, sevtag, TT, tval, V
 export function draw(){
   const g=id=>document.getElementById(id);
   const ramp=[V('--o1'),V('--o2'),V('--o3'),V('--o4')];
-  if(g('w1'))chWater(g('w1'),{items:D.cash.bridge,fmtv:v=>'EGP '+egp(v)});
+  if(g('w1'))chWater(g('w1'),{items:D.cash.bridge,fmtv:v=>(D.cash.live?CUR():'EGP')+' '+egp(v)});
   if(g('b1'))chWater(g('b1'),{items:D.budget.bridge,fmtv:v=>'EGP '+egp(v)});
   /* Live aging has five buckets (not yet due + four overdue); the ramp has
      four steps, so "not yet due" takes the neutral colour. */
