@@ -30,7 +30,8 @@ function cairoToday() {
 const round = (value) => Math.round(value || 0);
 
 function createCustomerLedgerService({
-  invoiceRepository, paymentRepository, partnerRepository, clientRepository, linkRepository, today = cairoToday,
+  invoiceRepository, paymentRepository, partnerRepository, clientRepository, linkRepository, saleReportRepository,
+  today = cairoToday,
 }) {
   function parseKey(key) {
     const match = KEY_PATTERN.exec(String(key || ''));
@@ -110,13 +111,18 @@ function createCustomerLedgerService({
     };
     const invoices = invoiceRepository.listPostedByPartners(partnerIds).map(withCompany).filter(Boolean);
     const partners = partnerRepository.findByIds(partnerIds);
-    if (kind === 'partner' && !partners.length && !invoices.length) throw new FinanceError('Odoo customer not found.', 404);
+    // Quotations and orders too: a customer can be quoted before it is ever invoiced.
+    const orders = saleReportRepository.listOrdersByPartners(partnerIds).map((o) => withCompany(o)).filter(Boolean);
+    if (kind === 'partner' && !partners.length && !invoices.length && !orders.length) {
+      throw new FinanceError('Odoo customer not found.', 404);
+    }
 
     return {
       asOf: today(),
       client,
       partners,
       invoices,
+      orders,
       payments: paymentRepository.listCustomerByPartners(partnerIds).map(withCompany).filter(Boolean),
     };
   }

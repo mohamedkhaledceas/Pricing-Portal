@@ -62,7 +62,7 @@ const financeMetricsService = createFinanceMetricsService({
 
 // Read by the CEO Control Room's client book (same public-interface rule).
 const customerLedgerService = createCustomerLedgerService({
-  invoiceRepository, paymentRepository, partnerRepository, clientRepository, linkRepository,
+  invoiceRepository, paymentRepository, partnerRepository, clientRepository, linkRepository, saleReportRepository,
 });
 
 const clientMappingService = createClientMappingService({

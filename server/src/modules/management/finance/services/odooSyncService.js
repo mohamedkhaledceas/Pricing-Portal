@@ -12,9 +12,9 @@
    One model failing is recorded on its own sync-state row and doesn't stop
    the other.
 
-   Partners (res.partner) run after invoices, every run, both modes: the
-   customers the invoice cache references are re-read by id and the rest
-   are dropped. Not filtered by company — most Odoo partners are shared
+   Partners (res.partner) run after invoices and sales lines, every run,
+   both modes: the customers the invoice and sales caches reference are
+   re-read by id and the rest are dropped. Not filtered by company — most Odoo partners are shared
    across companies (company_id empty) — the id list already comes from
    company-scoped invoices. A few dozen records, so no incremental mode.
 
@@ -125,7 +125,9 @@ function createOdooSyncService({
     const model = 'res.partner';
     const runAt = new Date().toISOString();
     try {
-      const ids = invoiceRepository.listPartnerIds();
+      // Customers on invoices, and on quotations/orders that were never
+      // invoiced — the Control Room opens both in its client drawer.
+      const ids = [...new Set([...invoiceRepository.listPartnerIds(), ...saleReportRepository.listPartnerIds()])];
       const records = [];
       for (let i = 0; i < ids.length; i += PAGE_SIZE) {
         // eslint-disable-next-line no-await-in-loop
@@ -289,10 +291,11 @@ function createOdooSyncService({
       // eslint-disable-next-line no-await-in-loop
       results.push(await syncModel(spec, mode));
     }
+    // Sales lines before partners: the partner sync reads their customers.
+    results.push(await syncSaleReport());
     results.push(await syncPartners());
     results.push(await syncInvoiceReport());
     results.push(await syncPnl());
-    results.push(await syncSaleReport());
     return results;
   }
 

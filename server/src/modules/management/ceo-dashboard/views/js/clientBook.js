@@ -205,13 +205,15 @@ function paintDrawer() {
 
   $('#dr .dbody').innerHTML = `
     <div><div class="dkick">Client${r ? ' · ' + esc(SOURCE_LABELS[r.source]) : ''}</div>
-      <div class="dtitle">${esc(r ? r.name : p ? p.name : 'Client')}</div>
+      <div class="dtitle">${esc(r ? r.name : p ? p.name : d.partners.length ? d.partners[0].name : 'Client')}</div>
       <div class="dsub">${r ? typeTag(r.type) : ''} ${r ? companyChips(r.companies) : ''}${p && p.status === 'inactive' ? ' <span class="lite">inactive</span>' : ''}</div></div>
     ${r && r.source !== 'linked' ? `<div class="alert w"><div>${r.source === 'odoo_only'
       ? '<b>Odoo customer with no portal client.</b> Link it to its ClickUp client so invoices, deals and tasks show together.'
       : '<b>Not linked to an Odoo customer.</b> Its invoices may be listed under the Odoo customer\'s own row.'}
       <button class="btn" data-href="/client-mapping?from=ceo" style="margin-left:6px">Open client mapping</button></div></div>` : ''}
     ${profile.length ? `<div>${profile.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><i>${esc(v)}</i></div>`).join('')}</div>` : ''}
+    ${!r && !p ? '<p class="note"><b>Quoted, not invoiced yet.</b> This Odoo customer has quotations or orders but no invoices, so it isn\'t in the client book.</p>' : ''}
+    ${ordersSection(d)}
     ${odooSection(d)}
     ${dealsSection(d)}
     ${tasksSection(d)}`;
@@ -250,6 +252,24 @@ function odooSection(d) {
     <h3 class="sec">Payments received</h3>
     ${payments ? `<div class="tw cb-scroll"><table><thead><tr><th>Date</th><th>Company</th><th class="n">Amount</th><th>Journal</th><th>State</th></tr></thead><tbody>${payments}</tbody></table></div>`
       : '<p class="note">No customer payments in Odoo.</p>'}`;
+}
+
+/* Quotations and confirmed orders from Odoo's Sales Analysis, newest
+   first, each in its company's currency. */
+const ORDER_STATE = { draft: 'Draft quotation', sent: 'Quotation sent', sale: 'Confirmed order' };
+function ordersSection(d) {
+  const orders = d.orders || [];
+  if (!orders.length) return '';
+  const rows = orders.map((o) => `<tr>
+      <td><span class="num">${esc(o.name || '—')}</span></td>
+      <td>${esc(COMPANY_NAMES[o.company])}</td>
+      <td class="n"><span class="num">${dateText(o.orderDate)}</span></td>
+      <td>${o.state === 'sale' ? '<span class="tag g-green">Confirmed order</span>' : `<span class="lite">${esc(ORDER_STATE[o.state] || o.state)}</span>`}</td>
+      <td class="n"><span class="num">${money(o.currency, o.value)}</span></td>
+      <td class="n"><span class="num">${o.state === 'sale' && o.toInvoice ? money(o.currency, o.toInvoice) : '—'}</span></td></tr>`).join('');
+  return `<h3 class="sec">Quotations and orders · Odoo</h3>
+    <div class="tw cb-scroll"><table><thead><tr><th>Order</th><th>Company</th><th class="n">Date</th><th>Status</th><th class="n">Untaxed</th><th class="n">To invoice</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
 }
 
 const clickupUrl = (id) => `https://app.clickup.com/t/${encodeURIComponent(id)}`;

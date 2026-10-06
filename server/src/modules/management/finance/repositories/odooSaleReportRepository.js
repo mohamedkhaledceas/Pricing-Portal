@@ -99,6 +99,26 @@ function sumByProduct(companyId, fromDate, toDate, limit) {
   `).all(...s.params, fromDate, toDate, limit);
 }
 
+function listPartnerIds() {
+  return db.prepare('SELECT DISTINCT partner_id FROM odoo_sale_report_lines WHERE partner_id IS NOT NULL').all()
+    .map((r) => r.partner_id);
+}
+
+/* One customer's quotations and orders (not cancelled), newest first, in
+   each company's own currency — for the client drawer. */
+function listOrdersByPartners(partnerIds) {
+  if (!partnerIds.length) return [];
+  return db.prepare(`
+    SELECT order_id AS orderId, order_name AS name, company_id AS companyId, MIN(order_date) AS orderDate, state,
+           salesperson_name AS salespersonName, SUM(subtotal_company) AS value, SUM(to_invoice_company) AS toInvoice
+    FROM odoo_sale_report_lines
+    WHERE state != 'cancel' AND partner_id IN (${partnerIds.map(() => '?').join(', ')})
+    GROUP BY order_id
+    ORDER BY orderDate DESC, order_id DESC
+  `).all(...partnerIds);
+}
+
 module.exports = {
   replaceAll, countAll, summarizeByState, sumBookedByMonth, listOrders, sumBacklog, sumByProduct,
+  listPartnerIds, listOrdersByPartners,
 };

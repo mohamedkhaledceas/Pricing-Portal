@@ -184,6 +184,7 @@ function createClientBookService({ customerLedgerService, getClientDeals, getDea
       companies: entry ? entry.companies : {},
       partners: odoo.partners,
       invoices: odoo.invoices,
+      orders: odoo.orders,
       payments: odoo.payments,
       deals,
       clickup,
