@@ -8,7 +8,7 @@ export const KPI=id=>D.kpis.find(k=>k.id===id);
    health composite are all computed at render time, never read off the data. */
 export function LK(id){
   const k=KPI(id); if(!k) return null;
-  const t=(S.targets[id]!==undefined)?S.targets[id]:k.target, a=k.actual;
+  const t=k.target, a=k.actual;
   let ach=null;
   /* A live figure can be missing (no billing yet this month); no actual
      means no achievement, not a perfect score. */
@@ -19,15 +19,18 @@ export function LK(id){
   }
   const rag=ach==null?'none':ach>=100?'green':ach>=90?'amber':'red';
   const score=ach==null?null:Math.max(0,Math.min(100,Math.round(100-(100-Math.min(ach,110))*D.penalty)));
-  return {k,id,target:t,actual:a,ach,rag,score,variance:(a==null||t==null)?null:r1(a-t),edited:S.targets[id]!==undefined,orig:k.target};
+  return {k,id,target:t,actual:a,ach,rag,score,variance:(a==null||t==null)?null:r1(a-t)};
 }
+/* An area with no scored KPI that has a target is "not scored" (null), not
+   0 — targets start empty, and an empty registry must not read as failure.
+   The composite weighs only the scored areas; none scored → null. */
 export function liveHealth(){
   let tot=0,w=0;
   const comps=D.components.map(c=>{
-    const sc=c.kpis.map(id=>LK(id).score).filter(x=>x!=null);
-    const s=sc.length?Math.round(sc.reduce((a,b)=>a+b,0)/sc.length):0;
-    tot+=s*c.weight;w+=c.weight;return{...c,score:s};});
-  return{score:w?Math.round(tot/w):0,components:comps};
+    const sc=c.kpis.map(id=>{const m=LK(id);return m?m.score:null;}).filter(x=>x!=null);
+    const s=sc.length?Math.round(sc.reduce((a,b)=>a+b,0)/sc.length):null;
+    if(s!=null){tot+=s*c.weight;w+=c.weight;}return{...c,score:s};});
+  return{score:w?Math.round(tot/w):null,components:comps,scoredAreas:comps.filter(c=>c.score!=null).length};
 }
 /* ═════ years ═════
    Closed years are settled figures. Nothing here recomputes them, and a target
@@ -192,32 +195,43 @@ export const ceoQueue=()=>D.decisions.map(d=>({...d,esc:tierOf(d)})).filter(d=>d
 /* A KPI added here is a real registry entry: it carries a direction, a target
    type and a source, because a metric without those cannot be scored or argued
    with. It enters unscored — the health composite is governed annually. */
-export function addKpi(){
+export async function addKpi(){
   const name=$('#nkname').value.trim();
   if(!name){toast('Give the KPI a name');return;}
-  const target=parseFloat($('#nktarget').value), actual=parseFloat($('#nkactual').value);
-  if(isNaN(target)||isNaN(actual)){toast('A KPI needs both a target and a current actual');return;}
-  let id='c_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
-  if(!id||id==='c_')id='c_kpi';
-  while(KPI(id))id+='x';
-  const type=$('#nktype').value;
-  D.kpis.push({id,name,band:'money',component:$('#nkcomp').value,dept:'exec',
-    unit:$('#nkunit').value,direction:$('#nkdir').value,targetType:type,
-    tolerance:type==='exact'?Math.max(Math.abs(target)*.05,1):null,
-    agg:'end_of_period',actual,target,scored:false,drill:null,
-    source:'Entered by hand',query:'Added on the Targets page, 5 Oct 2026 — not yet mapped to Odoo or ClickUp',
-    formula:'Defined by you. Map it to a source query before the first live sync, or it will stop updating.'});
-  S.addedKpis.push(id);
-  S.log.unshift({a:'kpi',name,from:'—',to:fmt(KPI(id),target),note:'added'});
+  const num=v=>{const t=String(v).replace(/,/g,'').trim();return t===''?null:parseFloat(t);};
+  const target=num($('#nktarget').value), actual=num($('#nkactual').value);
+  if(Number.isNaN(target)||Number.isNaN(actual)){toast('Target and actual must be numbers (or left empty)');return;}
+  let res;
+  try{res=await apiFetch('/api/ceo-dashboard/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    entity:S.ent,name,unit:$('#nkunit').value,direction:$('#nkdir').value,targetType:$('#nktype').value,
+    component:$('#nkcomp').value,actual,target})});}
+  catch(err){toast('Not saved — '+(err.message||'the server refused the KPI'));return;}
+  const c=res.kpi;
+  D.kpis.push({id:c.key,name:c.name,band:'money',component:c.component,dept:'exec',unit:c.unit,direction:c.direction,
+    targetType:c.targetType,tolerance:c.targetType==='exact'&&c.target!=null?Math.max(Math.abs(c.target)*.05,1):null,
+    agg:'end_of_period',actual:c.actual,target:c.target,scored:false,drill:null,custom:true,
+    source:'Entered by hand',query:`Added on the Targets page on ${String(c.createdAt).slice(0,10)}`,
+    formula:'Defined by hand; its actual is typed in, not read from Odoo or ClickUp.'});
+  S.log.unshift({a:'kpi',name,from:'—',to:fmt(KPI(c.key),c.target),note:'added'});
   ['nkname','nktarget','nkactual'].forEach(i=>{const n=$('#'+i);if(n)n.value='';});
-  const m=LK(id);
-  toast(`${name} added · ${fmt(KPI(id),actual)} against ${fmt(KPI(id),target)} · ${pctx(m.ach)}`);
+  toast(`${name} added to this view`);
   render();}
-export function setTarget(id,v,note){
+export async function removeKpi(id){
+  const k=KPI(id);if(!k||!k.custom)return;
+  try{await apiFetch('/api/ceo-dashboard/kpis/'+encodeURIComponent(id)+'/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entity:S.ent})});}
+  catch(err){toast('Not removed — '+(err.message||'the server refused'));return;}
+  D.kpis.splice(D.kpis.indexOf(k),1);
+  toast(k.name+' removed');render();}
+/* Saved per view (S.ent) on the server first; v === null clears it. */
+export async function setTarget(id,v,note){
   const k=KPI(id),before=liveHealth().score,was=LK(id);
-  if(v===k.target)delete S.targets[id];else S.targets[id]=v;
+  try{await apiFetch('/api/ceo-dashboard/targets',{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({entity:S.ent,kpiId:id,target:v,note:note||null})});}
+  catch(err){toast('Not saved — '+(err.message||'the server refused the change'));render();return;}
+  k.target=v;
+  if(k.custom&&k.targetType==='exact')k.tolerance=v!=null?Math.max(Math.abs(v)*.05,1):null;
   const now=LK(id),after=liveHealth().score;
   S.log.unshift({a:'target',name:k.name,from:fmt(k,was.target),to:fmt(k,now.target),note});
-  toast(`${k.name} target ${fmt(k,now.target)} · ${pctx(now.ach)} achieved`+(after!==before&&k.scored?` · health ${before} → ${after}`:''));
+  toast(v==null?`${k.name} target cleared`:`${k.name} target ${fmt(k,now.target)} · ${pctx(now.ach)} achieved`+(after!==before&&k.scored?` · health ${before??'—'} → ${after??'—'}`:''));
   render();
 }

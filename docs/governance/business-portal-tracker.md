@@ -455,7 +455,7 @@ Recorded 2026-10-06 — built last session, which ended before the tracker was u
 | B2.5 | Commit + push B2 (ask first) | ✅ 2026-10-06 — user asked; committed with B2.6 + the §6p plan to feature/ceo-control-room and pushed |
 | C | Phase 3 — persist budgets, function plans, targets, custom KPIs, routing prefs | 🟡 in progress (user decisions 2026-10-06: **budgets first**; **targets start empty everywhere** — no prototype targets seeded) |
 | C.1 | Budgets + function plans saved, ownership enforced server-side | ✅ 2026-10-06 — see "Phase 3.1" below |
-| C.2 | KPI targets + custom KPIs saved (start empty; per company/All to be designed — money targets per currency) | ⬜ next |
+| C.2 | KPI targets + custom KPIs saved per view (Ceas Comm / FZE / LWM / All), starting empty | ✅ 2026-10-06 — see "Phase 3.2" below |
 | C.3 | Escalation routing + sign-off threshold saved | ⬜ |
 | 4 | Phase 4 — wider Odoo sync (bank, vendor bills, P&L lines, SOs) | ⬜ |
 | 5 | Phase 5 — ClickUp delivery / time | ⬜ |
@@ -544,6 +544,17 @@ Invoiced vs ledger revenue 2026: Ceas Comm 4,654,659.71 = 4,654,659.71; LWM equa
 - Routes: `PUT /api/ceo-dashboard/budget/lines/:name` (authenticate + ceo/admin) and `PUT /api/ceo-dashboard/budget/plan` (authenticate + budget viewers, then the ownership check → 403).
 - Both payloads (`/control-room` and the Budget-only `/budget`) read the saved amounts (`applyBudgets`; a failed read falls back to the workbook figures and logs). Page: an edit is sent first and only shown once accepted; a refusal toasts the server's reason and puts the old value back; "edited" = changed from the workbook seed; restore / "Restore all N to the workbook" saves the seed back (audited). Banner: "every change is saved and logged".
 - Verified on a scratch DB copy with throwaway users (deleted after): curl matrix — none 401, employee 403 everywhere, P&C 200 only people/hiring, operations 200 only ops, ceo 200 all; validation 400s/404s; forged functionId 400; audit rows correct. Chrome as operations: 144 editable cells, edit persists across reload, over-limit value refused with the server's message and reverted; as CEO: P&L line edit, restore-all back to workbook, 0 JS errors.
+
+### Phase 3.2 — saved KPI targets and hand-entered KPIs (2026-10-06, committed, not pushed)
+
+User decision 2026-10-06: **targets per view** (Ceas Comm, FZE, LWM, All — each in its own currency), **starting empty everywhere** (no prototype targets seeded).
+- Migration **042**: `control_room_kpi_targets` (entity CHECK ceas|fze|lwm|all, kpi_id, target NULL = cleared, updated_by FK users; UNIQUE entity+kpi) and `control_room_custom_kpis` (entity, name, unit/direction/target_type/component CHECKed, hand-entered actual, archived flag — never deleted).
+- `ceo-dashboard/services/targetService.js` (+ `targetRepository`, `unitOfWork`): **ceo/admin only, enforced server-side**; KPI id must be a registry id or an active custom KPI **of the same view**; numbers |x| < 1e12 or null; note ≤ 300; unchanged → no write. Adding a KPI with a target writes both tables in one transaction. Audited: `control_room.kpi_target.update` (from/to/note), `control_room.custom_kpi.create`, `control_room.custom_kpi.archive`.
+- Routes (authenticate + ceo/admin): `PUT /api/ceo-dashboard/targets`, `POST /api/ceo-dashboard/kpis`, `POST /api/ceo-dashboard/kpis/:kpiId/archive`.
+- `/control-room?entity=` applies the view's saved targets to **every** KPI after the live overlays (none saved → "no target set") and adds that view's custom KPIs.
+- Page: target box saves for the current view (Enter), emptied box or × clears it; "Add a KPI" saves to the current view (target and actual optional), × archives it; in-memory carry-over of added KPIs across views removed. **Health score**: an area with no targeted scored KPI is "not scored" (not 0); composite weighs only scored areas and shows coverage ("100 / 100 · 1 of 6 areas scored"); with none → "—, set targets to score". Copy no longer claims period-versioned targets — it says what happens (saved per view, logged).
+- Verified on a scratch DB copy with throwaway users (deleted after): none 401 / employee 403 / operations 403 / ceo 200|201; bad entity/unknown KPI/non-number → 400/404; custom KPI of Ceas Comm unreachable from FZE (404); audit rows correct; Chrome as CEO: empty-state health, set DSO 45 → persists across reload, × clears, FZE's 60% gross margin stays in FZE, custom NPS only in Ceas Comm; all 10 pages free of NaN/undefined; 0 JS errors.
+- Not changed: the Budget-only payload (operations/P&C) keeps its net-profit card's workbook plan as before.
 
 ## 7. Open Questions
 

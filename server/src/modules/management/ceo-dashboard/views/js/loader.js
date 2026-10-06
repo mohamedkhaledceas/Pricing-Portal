@@ -18,10 +18,7 @@ export async function loadEntity(key) {
     ({ controlRoom: data } = await apiFetch('/api/ceo-dashboard/control-room?entity=' + encodeURIComponent(key)));
     cache.set(key, data);
   }
-  // KPIs added on the Targets page live only in the loaded copy until
-  // they're persisted (phase 3) — carry them across an entity switch.
-  const added = D ? D.kpis.filter((k) => S.addedKpis.includes(k.id)) : [];
+  // Targets and added KPIs come with each view's payload (saved per view).
   setData(data);
-  added.forEach((k) => { if (!D.kpis.some((x) => x.id === k.id)) D.kpis.push(k); });
   S.ent = key;
 }

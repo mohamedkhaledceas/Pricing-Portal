@@ -20,6 +20,11 @@ const { ROLES } = require('../../../../common/constants/roles');
      service checks the function is the caller's own (ceo/admin: all;
      people_culture: people + hiring; operations: ops) — 403 otherwise.
      Body: functionId, category, month (0–11), amount, note.
+   - PUT /api/ceo-dashboard/targets — requireCeo. One KPI's target for one
+     view (body: entity ceas|fze|lwm|all, kpiId, target number|null, note).
+   - POST /api/ceo-dashboard/kpis — requireCeo. Adds a hand-entered KPI to
+     a view; POST /api/ceo-dashboard/kpis/:kpiId/archive — requireCeo,
+     removes it (archived, never deleted).
 
    /control-room is gated to ROLES.CEO and ROLES.ADMIN — narrower than the broader
    USER_MANAGER_ROLES set commercial-leads uses (which also includes
@@ -39,6 +44,9 @@ function createCeoDashboardRouter({ ceoDashboardController, authenticate }) {
   router.get('/ceo-dashboard/budget', authenticate, requireBudgetViewer, ceoDashboardController.budget);
   router.put('/ceo-dashboard/budget/lines/:name', authenticate, requireCeo, ceoDashboardController.updateBudgetLine);
   router.put('/ceo-dashboard/budget/plan', authenticate, requireBudgetViewer, ceoDashboardController.updateFunctionPlan);
+  router.put('/ceo-dashboard/targets', authenticate, requireCeo, ceoDashboardController.updateTarget);
+  router.post('/ceo-dashboard/kpis', authenticate, requireCeo, ceoDashboardController.addKpi);
+  router.post('/ceo-dashboard/kpis/:kpiId/archive', authenticate, requireCeo, ceoDashboardController.archiveKpi);
   router.get('/ceo-dashboard/clients', authenticate, requireClientBookViewer, ceoDashboardController.clients);
   router.get('/ceo-dashboard/clients/:key', authenticate, requireClientBookViewer, ceoDashboardController.clientDetail);
 

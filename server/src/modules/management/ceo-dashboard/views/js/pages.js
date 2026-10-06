@@ -187,8 +187,8 @@ P.focus=()=>{
       ${nm('cash_runway',r1(run.actual),run.actual<6?'below the six-month floor':'above the floor',run.rag,'months')}
       ${nm('cash_balance',egp(cash.actual),'down from '+egp(D.cash.opening)+' in January',cash.rag,'EGP')}
       <button class="fnum-c" data-ev="health"><span class="lb">Company health</span>
-        <span class="fnum">${h.score}</span>
-        <span class="st" style="color:var(--${h.score<60?'badtx':h.score<75?'ink2':'goodtx'})">${h.score<60?'weak':h.score<75?'holding, slipping':'strong'}</span></button>
+        <span class="fnum">${h.score==null?'—':h.score}</span>
+        <span class="st" style="color:var(--${h.score==null?'muted':h.score<60?'badtx':h.score<75?'ink2':'goodtx'})">${h.score==null?'set targets to score':(h.score<60?'weak':h.score<75?'holding, slipping':'strong')+(h.scoredAreas<h.components.length?` · ${h.scoredAreas} of ${h.components.length} areas`:'')}</span></button>
     </div>
 
     ${rest.length?`<div class="flist">
@@ -553,13 +553,14 @@ function pipelinePanel(){
       <button class="btn" data-href="/commercial-lead" style="padding:0 6px">Commercial Lead page</button>. Pipeline value, coverage and win rate stay sample: too few ClickUp deals carry a value.</p></div>`);
 }
 P.targets=()=>{
-  const hh=liveHealth(), base=D.health, edits=Object.keys(S.targets);
+  const hh=liveHealth(), added=D.kpis.filter(k=>k.custom), withTarget=D.kpis.filter(k=>k.target!=null).length;
+  const view=D.entity?D.entity.name:'this view';
   const rows=D.kpis.map(k=>{const m=LK(k.id);return{
     v:[k.name,m.target,m.actual,m.ach,m.rag,k.scored?1:0],
     c:[`<button class="btn" data-kpi="${k.id}" style="border:0;background:none;padding:0;font-weight:500;color:var(--ink)">${esc(k.name)}</button>
         <div class="note">${k.direction==='higher_better'?'higher is better':'lower is better'} · ${TT[k.targetType]} · ${esc(k.source)}</div>`,
        `<input class="tin" data-tset="${k.id}" value="${tval(m.target)}" placeholder="none set" aria-label="Target for ${esc(k.name)}">
-        ${m.edited?`<button class="btn" data-treset="${k.id}" title="Restore ${fmt(k,m.orig)}" style="padding:1px 5px;margin-left:4px">↺</button>`:''}`,
+        ${m.target!=null?`<button class="btn" data-treset="${k.id}" title="Clear this target" aria-label="Clear the target for ${esc(k.name)}" style="padding:1px 5px;margin-left:4px">×</button>`:''}`,
        `<span class="num">${fmt(k,m.actual)}</span>`,
        `<span class="num">${fmtD(k,m.variance)}</span>`,
        `<span class="num">${pctx(m.ach)}</span>`,
@@ -583,8 +584,8 @@ P.targets=()=>{
     </div>
     <p class="note" style="margin-top:9px">A new KPI enters as <b>monitoring</b>: measured, drillable, and outside the health score until the annual plan.
       That is the rule you set — the scored set changes once a year, between 1 November and 15 December, and adding one means removing one.
-      ${S.addedKpis.length?`<b style="color:var(--ink)">${S.addedKpis.length} added this session.</b>`:''}</p>
-    ${S.addedKpis.length?`<div class="setrow" style="margin-top:8px">${S.addedKpis.map(id=>{const k=KPI(id);const m=LK(id);
+      ${added.length?`<b style="color:var(--ink)">${added.length} added to ${esc(view)}.</b>`:''} Added KPIs belong to the view they were added in.</p>
+    ${added.length?`<div class="setrow" style="margin-top:8px">${added.map(k=>{const id=k.id;const m=LK(id);
       return `<span class="lite">${esc(k.name)} · ${fmt(k,m.actual)} of ${fmt(k,m.target)} · ${pctx(m.ach)} <button class="btn" data-kdel="${id}" style="padding:0 5px;border:0;background:none">×</button></span>`;}).join('')}</div>`:''}
   </div>`)}
   ${panel('Set a target','type a number, press Enter — every view updates at once',`<div class="pb">
@@ -593,12 +594,9 @@ P.targets=()=>{
       <input class="inp num" id="tval" type="number" step="any" placeholder="Target value" aria-label="Target value" style="width:150px">
       <input class="inp" id="tnote" placeholder="Why it changed (logged with the version)" aria-label="Reason">
       <button class="btn pri" id="tapply">Apply target</button>
-      ${edits.length?`<button class="btn" id="treset">Reset all ${edits.length}</button>`:''}
     </div>
-    <p class="note" style="margin-top:9px">Targets are versioned, never overwritten. A change takes effect from the period you set it in, so closed periods keep resolving against the version that was in force — history is never restated.</p>
-    ${edits.length?`<div class="alert w" style="margin-top:12px"><div><b>${edits.length} target${edits.length>1?'s':''} edited this session.</b>
-      Company health moved from ${base} to ${hh.score}. ${S.log.filter(l=>l.a==='target').slice(0,4).map(l=>
-        `<div class="note" style="margin-top:4px">${esc(l.name)} · ${esc(l.from)} → <b style="color:var(--ink)">${esc(l.to)}</b>${l.note?' — '+esc(l.note):''}</div>`).join('')}</div></div>`:''}
+    <p class="note" style="margin-top:9px">Targets are kept per view — ${esc(view)} now — each in that view's currency, and saved for everyone the moment you press Enter.
+      Every change is logged with who made it and why. Empty a box (or press ×) to clear a target. ${withTarget} of ${D.kpis.length} KPIs have a target here.</p>
   </div>`)}
   <div class="alert"><div><b>Twelve KPIs are on the dashboard; the rest live here.</b>
     Your own rule is ten at agency tier — ceilings, not targets, and adding one means removing one. The front pages show the ten agency KPIs plus cash runway and project margin.
@@ -608,11 +606,11 @@ P.targets=()=>{
     measured and wired into the risk engine now, and join the health composite at the 2027 lock.</div></div>
   ${panel('Target vs actual',`${D.kpis.filter(k=>k.scored).length} scored · ${D.kpis.filter(k=>!k.scored).length} monitoring · click a column to sort`,
     sortTable('tgt',[{t:'KPI'},{t:'Target',n:1},{t:'Actual',n:1},{t:'Variance',n:1},{t:'Achievement',n:1},{t:'Status',n:1},{t:'In score',n:1}],rows))}
-  ${panel('Health composite',`${hh.score} / 100${hh.score!==base?` · was ${base}`:''}`,`<div class="pb">
+  ${panel('Health composite',hh.score==null?'not scored yet — set targets on the scored KPIs':`${hh.score} / 100 · ${hh.scoredAreas} of ${hh.components.length} areas scored`,`<div class="pb">
     ${hh.components.map(c=>`<div class="mrow"><span class="n" style="width:94px">${esc(c.name)}</span>
       <span class="lite">${c.weight}%</span>
-      <span class="track"><i style="width:${c.score}%;background:${c.score>=70?'var(--good)':c.score>=55?'var(--warn)':'var(--crit)'}"></i></span>
-      <span class="v">${c.score}</span></div>
+      <span class="track"><i style="width:${c.score||0}%;background:${c.score>=70?'var(--good)':c.score>=55?'var(--warn)':'var(--crit)'}"></i></span>
+      <span class="v">${c.score==null?'—':c.score}</span></div>
       <div class="note" style="margin:-4px 0 7px">${c.kpis.map(id=>{const m=LK(id);return esc(m.k.name)+' '+pctx(m.ach);}).join(' · ')}</div>`).join('')}
     <p class="note">Only scored KPIs move this number. Weights are configuration: change a target to move the score, change a weight to move the emphasis.</p></div>`)}`;
 };

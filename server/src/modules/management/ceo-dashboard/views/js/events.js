@@ -1,6 +1,6 @@
 import { D } from './data.js';
 import { loadEntity } from './loader.js';
-import { addKpi, ceoQueue, KPI, LB, pages, S, setBudget, setPlan, setTarget } from './model.js';
+import { addKpi, ceoQueue, KPI, LB, pages, removeKpi, S, setBudget, setPlan, setTarget } from './model.js';
 import { largestInvoicesBody } from './pages.js';
 import { applyBrand, closeDrill, draw, goto, openDrill, render } from './shell.js';
 import { isDarkTheme, setTheme, syncThemeChip } from './theme.js';
@@ -54,10 +54,7 @@ document.addEventListener('click',e=>{
   const ro=e.target.closest('[data-reopen]');if(ro){delete S.decisions[ro.dataset.reopen];toast('Reopened');render();return;}
   const a=e.target.closest('[data-ack]');if(a){const[i,op]=a.dataset.ack.split('|');
     if(op==='clear')delete S.acks['r'+i];else S.acks['r'+i]=op;toast(op==='clear'?'Risk reopened':'Risk '+op);render();return;}
-  const tr=e.target.closest('[data-treset]');if(tr){const id=tr.dataset.treset;const k=KPI(id);
-    delete S.targets[id];S.log.unshift({a:'target',name:k.name,from:'edited',to:fmt(k,k.target),note:'reset'});
-    toast(k.name+' restored to '+fmt(k,k.target));render();return;}
-  if(e.target.closest('#treset')){S.targets={};toast('All targets restored');render();return;}
+  const tr=e.target.closest('[data-treset]');if(tr){setTarget(tr.dataset.treset,null,'cleared');return;}
   if(e.target.closest('#tapply')){
     const id=$('#tkpi').value,v=parseFloat(String($('#tval').value).replace(/,/g,'')),note=$('#tnote').value.trim(),k=KPI(id);
     if(isNaN(v)){toast('Enter a target value first');return;}
@@ -95,10 +92,7 @@ document.addEventListener('click',e=>{
     if(isNaN(v)||v<0){toast('Enter an annual budget first');return;}
     setBudget(n,v,note);return;}
   if(e.target.closest('#nkadd')){addKpi();return;}
-  const kd=e.target.closest('[data-kdel]');if(kd){const id=kd.dataset.kdel;
-    const i=D.kpis.findIndex(k=>k.id===id);if(i>-1)D.kpis.splice(i,1);
-    S.addedKpis=S.addedKpis.filter(x=>x!==id);delete S.targets[id];
-    toast('KPI removed');render();return;}
+  const kd=e.target.closest('[data-kdel]');if(kd){removeKpi(kd.dataset.kdel);return;}
   const pf=e.target.closest('[data-pref]');if(pf){S.prefs.ceo[pf.dataset.pref]^=1;toast('Queue re-routed');render();return;}
   if(e.target.closest('#collapse')){S.narrow=!S.narrow;$('#app').classList.toggle('narrow',S.narrow);setTimeout(draw,180);return;}
   if(e.target.closest('#hideamt')){const on=document.body.classList.toggle('blurred');
@@ -131,7 +125,9 @@ document.addEventListener('change',e=>{
   if(bs){const v=parseFloat(String(bs.value).replace(/,/g,''));
     if(!isNaN(v)&&v>=0)setBudget(bs.dataset.bset,v);else render();return;}
   const ts=e.target.closest('[data-tset]');
-  if(ts){const v=parseFloat(String(ts.value).replace(/,/g,''));if(!isNaN(v))setTarget(ts.dataset.tset,v);else render();return;}
+  // An emptied box clears the target.
+  if(ts){const raw=String(ts.value).replace(/,/g,'').trim(),v=parseFloat(raw);
+    if(raw==='')setTarget(ts.dataset.tset,null);else if(!isNaN(v))setTarget(ts.dataset.tset,v);else render();return;}
   if(e.target.id==='mth'){S.prefs.money=+e.target.value||0;toast('Threshold updated');render();}});
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('tin')){e.target.blur();}

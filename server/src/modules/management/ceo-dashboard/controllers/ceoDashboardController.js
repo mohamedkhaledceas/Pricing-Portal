@@ -2,7 +2,7 @@
    forwards errors explicitly rather than relying on Express 4 catching a
    synchronous throw — deliberate, per the project's preference for
    explicit error paths in new controllers. */
-function createCeoDashboardController({ controlRoomService, clientBookService, budgetService }) {
+function createCeoDashboardController({ controlRoomService, clientBookService, budgetService, targetService }) {
   const actorOf = (req) => ({ id: req.user.id, role: req.user.role });
 
   function controlRoom(req, res, next) {
@@ -57,7 +57,38 @@ function createCeoDashboardController({ controlRoomService, clientBookService, b
     }
   }
 
-  return { controlRoom, budget, clients, clientDetail, updateBudgetLine, updateFunctionPlan };
+  function updateTarget(req, res, next) {
+    try {
+      const { entity, kpiId, target, note } = req.body || {};
+      res.json({ target: targetService.setTarget({ actor: actorOf(req), entity, kpiId, target, note, ip: req.ip }) });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  function addKpi(req, res, next) {
+    try {
+      const { entity, name, unit, direction, targetType, component, actual, target } = req.body || {};
+      res.status(201).json({
+        kpi: targetService.addCustomKpi({ actor: actorOf(req), entity, name, unit, direction, targetType, component, actual, target, ip: req.ip }),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  function archiveKpi(req, res, next) {
+    try {
+      const { entity } = req.body || {};
+      res.json({ kpi: targetService.archiveCustomKpi({ actor: actorOf(req), entity, kpiId: req.params.kpiId, ip: req.ip }) });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  return {
+    controlRoom, budget, clients, clientDetail, updateBudgetLine, updateFunctionPlan, updateTarget, addKpi, archiveKpi,
+  };
 }
 
 module.exports = createCeoDashboardController;
