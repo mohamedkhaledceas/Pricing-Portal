@@ -1,7 +1,7 @@
 import { chBars, chCols, chLine, chStack, chWater, ico } from './charts.js';
 import { loadBook } from './clientBook.js';
 import { D } from './data.js';
-import { ceoQueue, CUR, KPI, LK, pages, PAGES, S, tierOf, YRS } from './model.js';
+import { ceoQueue, CUR, KPI, LK, pages, PAGES, S, tierOf, YRS, curYear } from './model.js';
 import { P } from './pages.js';
 import { isDarkTheme } from './theme.js';
 import { $, egp, esc, fmt, fmtc, fmtD, money, num, pctx, r1, sevtag, TT, tval, V } from './util.js';
@@ -99,7 +99,7 @@ export function badge(id){
 }
 export function goto(id){S.page=id;location.hash='#'+id;render();scrollTo({top:0,behavior:'instant'});}
 export function render(){
-  const closed=S.year!=='2026';
+  const closed=S.year!==curYear();
   const p=pages().find(x=>x.id===S.page)||pages()[0];
   // A page this viewer can't see (typed hash, shortcut) falls back to the
   // first allowed one; keep the URL honest about what is showing.

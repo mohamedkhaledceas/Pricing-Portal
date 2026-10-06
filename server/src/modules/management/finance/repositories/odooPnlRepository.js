@@ -56,11 +56,17 @@ function sumByTypeForCompany(companyId, fromDate, toDate) {
   `).all(companyId, fromDate, toDate);
 }
 
+// The first posted P&L date for a company — when its Odoo books begin.
+function firstDate(companyId) {
+  const row = db.prepare('SELECT MIN(date) AS d FROM odoo_pnl_lines WHERE company_id = ?').get(companyId);
+  return row ? row.d : null;
+}
+
 function listRates(currency) {
   return db.prepare('SELECT date, inverse_rate AS inverseRate FROM odoo_currency_rates WHERE currency = ? ORDER BY date')
     .all(currency);
 }
 
 module.exports = {
-  replaceLines, replaceRates, countLines, sumByCompanyAndType, sumByCompanyTypeAndMonth, sumByTypeForCompany, listRates,
+  replaceLines, replaceRates, countLines, sumByCompanyAndType, sumByCompanyTypeAndMonth, sumByTypeForCompany, firstDate, listRates,
 };

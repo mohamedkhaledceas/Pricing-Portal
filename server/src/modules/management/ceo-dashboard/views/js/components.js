@@ -72,7 +72,7 @@ export function decisionItem(d,full){
    Variance is signed by whether it helps profit, not by whether it is bigger. */
 export function pnlTable(){
   const e=E(), B=D.budget, L=liveBudget();
-  const y=S.cmp?D.years[S.cmp].ytd:null;
+  const y=S.cmp&&D.years[S.cmp]?D.years[S.cmp].ytd:null;
   const sr=entShare('rev'), so=entShare('opex');
   const P2={revenue:e.revenue,directCost:e.directCost,grossProfit:e.grossProfit,
             cogs:e.cogs,opex:e.opex,opexTotal:e.opexTotal,

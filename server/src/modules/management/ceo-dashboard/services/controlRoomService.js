@@ -248,6 +248,54 @@ function applyTargets(D, state) {
   D.targetsSaved = true;
 }
 
+/* Closed years and year-on-year (phase 6) from finance getYearHistory —
+   one company's own Odoo figures. Replaces the sample's invented years:
+   the year review's rows are only what Odoo can answer, and only live
+   KPIs whose history has the same definition get a "vs <year>" line (not
+   DSO: the live card uses open invoices, history the balance sheet). */
+const YEAR_ROWS = [
+  { name: 'Revenue (invoiced)', unit: 'egp', grp: 'ytd', key: 'revenue', dir: 'higher' },
+  { name: 'Cost of revenue', unit: 'egp', grp: 'ytd', key: 'directCost', dir: 'lower' },
+  { name: 'Gross margin', unit: 'pct', grp: 'ytd', key: 'grossMargin', dir: 'higher' },
+  { name: 'Operating expenses', unit: 'egp', grp: 'ytd', key: 'opex', dir: 'lower' },
+  { name: 'OPEX ratio', unit: 'pct', grp: 'ytd', key: 'opexRatio', dir: 'lower' },
+  { name: 'Net profit', unit: 'egp', grp: 'ytd', key: 'netProfit', dir: 'higher' },
+  { name: 'Net margin', unit: 'pct', grp: 'ytd', key: 'netMargin', dir: 'higher' },
+  { name: 'Cash', unit: 'egp', grp: 'at', key: 'cash', dir: 'higher' },
+  { name: 'Cash runway', unit: 'mo', grp: 'at', key: 'runway', dir: 'higher' },
+  { name: 'Receivables (balance sheet)', unit: 'egp', grp: 'at', key: 'receivables', dir: 'lower' },
+  { name: 'DSO (balance-sheet receivables)', unit: 'd', grp: 'at', key: 'dso', dir: 'lower' },
+];
+const LIVE_YEAR_MAP = {
+  revenue_total: ['ytd', 'revenue'],
+  gross_margin: ['ytd', 'grossMargin'],
+  net_profit: ['ytd', 'netProfit'],
+  net_margin: ['ytd', 'netMargin'],
+  opex_ratio: ['ytd', 'opexRatio'],
+  cash_balance: ['at', 'cash'],
+  cash_runway: ['at', 'runway'],
+};
+
+function applyYears(D, h) {
+  D.years = h.years;
+  D.currentYear = h.currentYear;
+  D.booksStart = h.booksStart;
+  D.yearRows = YEAR_ROWS;
+  D.yearMap = LIVE_YEAR_MAP;
+  D.yearsLive = true;
+}
+
+/* Under All there is no year history (see getYearHistory): only the
+   current year, so the year selector offers nothing invented. */
+function currentYearOnly(D, todayIso) {
+  const y = todayIso.slice(0, 4);
+  D.years = { [y]: { label: y, status: 'current', through: todayIso, ytd: {}, at: {}, full: null } };
+  D.currentYear = y;
+  D.yearRows = [];
+  D.yearMap = {};
+  D.yearsLive = false;
+}
+
 function applyFinance(D, f, entity) {
   const cur = entity.currency;
   const { revenue: rev, collections: col } = f;
@@ -434,6 +482,10 @@ function createControlRoomService({
           applyBalance(D, financeMetricsService.getBalanceSheet(entity.key));
           sources.balance = 'odoo';
         }, sources);
+        overlay('years', () => {
+          applyYears(D, financeMetricsService.getYearHistory(entity.key));
+          sources.years = 'odoo';
+        }, sources);
         overlay('payables', () => {
           // Bills whose vendor is the company itself are flagged on the page.
           D.payablesLive = { ...financeMetricsService.getPayables(entity.key), companyName: entity.name };
@@ -462,6 +514,9 @@ function createControlRoomService({
     overlay('targets', () => applyTargets(D, targetService.getState(entity.key)), sources);
     // Saved escalation preferences (company-wide); the page copies them into its state.
     overlay('escalation', () => { D.prefs = escalationService.getPrefs(); }, sources);
+
+    // A view without an Odoo year history never shows the sample's invented years.
+    if (!D.yearsLive) currentYearOnly(D, todayIso);
 
     // The sample's own sync lines are invented times — never shown.
     D.sync = [];

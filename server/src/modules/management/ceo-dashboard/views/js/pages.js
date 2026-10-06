@@ -713,58 +713,56 @@ P.budget=()=>{
    pages need today's ClickUp and Odoo state, which no longer exists for 2025,
    so selecting a past year shows what was actually recorded and says so. */
 P.yearreview=()=>{
-  const y=D.years[S.year], cur=D.years['2026'];
+  const y=D.years[S.year];
   /* Columns stay in year order so the table reads as a trend. The delta always
      compares the year you selected against the one you are comparing it to —
-     by default the year immediately before it. */
+     by default the year immediately before it. Figures are this company's
+     own Odoo books; what Odoo has no history for shows "—". */
   const show=S.cmp?[S.year,S.cmp].sort().reverse():YRS();
   const yrs=YRS(),against=S.cmp||yrs[yrs.indexOf(S.year)+1]||null;
+  const day=t=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(t||'');return m?`${Number(m[3])} ${MONTH_NAME[Number(m[2])-1]}`:t;};
+  const thr=day(y.through);
   const rows=D.yearRows.map(r=>{
     const vals=show.map(k=>D.years[k][r.grp][r.key]);
     const cur=D.years[S.year][r.grp][r.key];
     const base=against?D.years[against][r.grp][r.key]:null;
-    const d=base!=null?ydel(r.unit,cur,base,r.dir):null;
+    const d=base!=null&&cur!=null?ydel(r.unit,cur,base,r.dir):null;
     return {v:[r.name,...vals.map(v=>v==null?0:v)],
       c:[`<b style="font-weight:500">${esc(r.name)}</b>`,
          ...vals.map((v,i)=>`<span class="num"${show[i]===S.year?'':' style="color:var(--muted)"'}>${yfmt(r.unit,v)}</span>`),
          d?`<span class="num ${d.cls}">${d.txt}</span>`:'<span class="note">—</span>']};});
   const hdr=[{t:'Metric'},...show.map(k=>({t:k+(D.years[k].status==='current'?' · to date':'')+(k===S.year?' ●':''),n:1})),
              {t:against?`${S.year} vs ${against}`:'Change',n:1}];
-  const f=y.full;
+  const f=y.full,partial=show.filter(k=>D.years[k].partialFrom);
   return `
   <div class="alert ${y.status==='closed'?'closed':''}"><div>
-    <b>${y.label} ${y.status==='closed'?'is a closed year.':'is the live year.'}</b>
+    <b>${esc(y.label)} ${y.status==='closed'?'is a closed year.':'is the live year.'}</b>
     ${y.status==='closed'
-      ?`Figures are as they were settled and are never recalculated — a target or budget changed today does not reach backwards. The operational pages read today's Odoo and ClickUp state, so they stay on ${cur.label}.`
-      :`Everything here is year to date through ${y.through}. Pick a closed year above to compare like for like.`}
+      ?`Figures come from ${esc(D.entity?D.entity.name:'this company')}'s posted entries in Odoo for that year. The operational pages still read today's Odoo and ClickUp.`
+      :`Everything here is year to date through ${esc(thr)}. Pick a closed year above to compare like for like.`}
+    ${partial.length?`<div class="note" style="margin-top:4px">Odoo's books for this company start on ${esc(day(D.years[partial[partial.length-1]].partialFrom))} ${esc(partial[partial.length-1])}, so that year is partial.</div>`:''}
   </div></div>
 
   <div class="strip">
-    ${stat('Net revenue · to '+y.through,'EGP '+egp(y.ytd.revenue),y.full?`full year EGP ${egp(y.full.revenue)}`:'year in progress')}
-    ${stat('Gross margin',y.ytd.grossMargin+'%',`direct cost EGP ${egp(y.ytd.directCost)}`)}
-    ${stat('Net profit','EGP '+egp(y.ytd.netProfit),`${y.ytd.netMargin}% margin · overhead ${y.ytd.opexRatio}%`)}
-    ${stat('Cash at '+y.through,'EGP '+egp(y.at.cash),`${y.at.runway} months of fixed cost`)}
-    ${stat('Headcount',num(y.at.headcount),`${y.at.clients} active clients`)}
+    ${stat('Revenue · to '+thr,yfmt('egp',y.ytd.revenue),f?`full year ${yfmt('egp',f.revenue)}`:'year in progress')}
+    ${stat('Gross margin',yfmt('pct',y.ytd.grossMargin),`cost of revenue ${yfmt('egp',y.ytd.directCost)}`)}
+    ${stat('Net profit',yfmt('egp',y.ytd.netProfit),`${yfmt('pct',y.ytd.netMargin)} margin · overhead ${yfmt('pct',y.ytd.opexRatio)}`)}
+    ${stat('Cash at '+thr,yfmt('egp',y.at.cash),y.at.runway!=null?`${r1(y.at.runway)} months of spending`:'runway not meaningful')}
+    ${stat('Receivables',yfmt('egp',y.at.receivables),y.at.dso!=null?`DSO ${y.at.dso} days`:'DSO not meaningful')}
   </div>
 
-  ${panel('Year on year',against?`${S.year} against ${against}, same period both years — 1 January to ${y.through}`:'same period every year — 1 January to '+y.through,
+  ${panel('Year on year'+srcBadge('years'),against?`${S.year} against ${against}, same period both years — 1 January to ${esc(thr)}`:'same period every year — 1 January to '+esc(thr),
     sortTable('yr'+S.year+(S.cmp||''),hdr,rows))}
 
-  ${f?panel('Full year '+y.label,'as closed',`<div class="pb"><div class="cols c2">
-    <div><div class="kv"><span>Net revenue</span><i>EGP ${egp(f.revenue)}</i></div>
-      <div class="kv"><span>Gross margin</span><i>${f.grossMargin}%</i></div>
-      <div class="kv"><span>Operating expenses</span><i>EGP ${egp(f.opex)}</i></div>
-      <div class="kv"><span>Overhead ratio</span><i>${f.opexRatio}%</i></div></div>
-    <div><div class="kv"><span>Net profit</span><i>EGP ${egp(f.netProfit)}</i></div>
-      <div class="kv"><span>Net margin</span><i>${f.netMargin}%</i></div>
-      <div class="kv"><span>Cash at 31 December</span><i>EGP ${egp(f.cash)}</i></div>
-      <div class="kv t"><span>Headcount at year end</span><i>${num(f.headcount)}</i></div></div>
-  </div></div>`):''}
-
-  <div class="alert w"><div><b>Read the three years as one sentence.</b>
-    Revenue has grown ${r1((cur.ytd.revenue/D.years['2024'].ytd.revenue-1)*100)}% in two years and net margin has fallen from
-    ${D.years['2024'].ytd.netMargin}% to ${cur.ytd.netMargin}%. Headcount went from ${D.years['2024'].at.headcount} to ${cur.at.headcount}
-    and DSO from ${D.years['2024'].at.dso} days to ${cur.at.dso}. The agency got bigger, slower to be paid, and thinner per pound.</div></div>`;
+  ${f?panel('Full year '+esc(y.label),'as posted in Odoo',`<div class="pb"><div class="cols c2">
+    <div><div class="kv"><span>Revenue (invoiced)</span><i>${yfmt('egp',f.revenue)}</i></div>
+      <div class="kv"><span>Gross margin</span><i>${yfmt('pct',f.grossMargin)}</i></div>
+      <div class="kv"><span>Operating expenses</span><i>${yfmt('egp',f.opex)}</i></div>
+      <div class="kv"><span>Overhead ratio</span><i>${yfmt('pct',f.opexRatio)}</i></div></div>
+    <div><div class="kv"><span>Net profit</span><i>${yfmt('egp',f.netProfit)}</i></div>
+      <div class="kv"><span>Net margin</span><i>${yfmt('pct',f.netMargin)}</i></div>
+      <div class="kv t"><span>Cash at 31 December</span><i>${yfmt('egp',f.cash)}</i></div></div>
+  </div></div>`):''}`;
 };
 P.risks=()=>{
   const open=D.risks.filter((r,i)=>!S.acks['r'+i]);

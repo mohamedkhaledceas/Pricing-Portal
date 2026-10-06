@@ -36,8 +36,10 @@ export function liveHealth(){
    Closed years are settled figures. Nothing here recomputes them, and a target
    edited today never reaches backwards — same rule as the target registry. */
 export const YRS=()=>Object.keys(D.years).sort().reverse();
+// The live year comes from the server (D.currentYear), never a literal.
+export const curYear=()=>D.currentYear||YRS()[0];
 export function yfmt(u,v){if(v==null)return'—';
-  return u==='egp'?'EGP '+egp(v):u==='pct'?r1(v)+'%':u==='mo'?r1(v)+' mo':
+  return u==='egp'?CUR()+' '+egp(v):u==='pct'?r1(v)+'%':u==='mo'?r1(v)+' mo':
          u==='d'?Math.round(v)+'d':u==='x'?v.toFixed(2)+'×':num(v);}
 export function ydel(u,a,b,dir){
   if(a==null||b==null)return null;

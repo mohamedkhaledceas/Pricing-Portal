@@ -21,6 +21,10 @@ export async function loadEntity(key) {
   // Targets and added KPIs come with each view's payload (saved per view);
   // escalation preferences are company-wide and saved on the server.
   setData(data);
+  // Each company has its own years (books started at different dates):
+  // fall back to the live year when the selected one isn't in this view.
+  if (!D.years[S.year]) S.year = D.currentYear;
+  if (S.cmp && !D.years[S.cmp]) S.cmp = '';
   // Only on first load: after that the page's state is current (edits update
   // it), and another view's cached payload may carry older preferences.
   if (data.prefs && !S.prefsLoaded) {

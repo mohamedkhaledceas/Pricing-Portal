@@ -1,7 +1,7 @@
 import { apiFetch } from './apiClient.js';
 import { D } from './data.js';
 import { loadEntity } from './loader.js';
-import { addKpi, ceoQueue, KPI, LB, pages, removeKpi, S, setBudget, setPlan, setTarget } from './model.js';
+import { addKpi, ceoQueue, curYear, KPI, LB, pages, removeKpi, S, setBudget, setPlan, setTarget } from './model.js';
 import { largestInvoicesBody } from './pages.js';
 import { applyBrand, closeDrill, draw, goto, openDrill, render } from './shell.js';
 import { isDarkTheme, setTheme, syncThemeChip } from './theme.js';
@@ -115,7 +115,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='yr'){S.year=e.target.value;if(S.cmp===S.year)S.cmp='';
-    toast(S.year==='2026'?'Back to the live year':`${S.year} · closed year scorecard`);render();return;}
+    toast(S.year===curYear()?'Back to the live year':`${S.year} · closed year scorecard`);render();return;}
   if(e.target.id==='cmp'){S.cmp=e.target.value;
     toast(S.cmp?`Comparing with ${S.cmp}`:'Comparison off');render();return;}
   const pl=e.target.closest('[data-plan]');

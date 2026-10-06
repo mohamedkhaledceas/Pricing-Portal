@@ -641,6 +641,86 @@ function createFinanceMetricsService({
     };
   }
 
+  /* One company's years from Odoo, for the Control Room's year review and
+     year-on-year comparison (phase 6). Each year since its books began:
+     - ytd: 1 January to today's date in that year — revenue (invoiced, the
+       Control Room's revenue), cost of revenue, gross margin, operating
+       expenses and ratio, net profit and margin (Profit and Loss lines);
+     - at: on that same date — cash (every bank/cash/credit-card account),
+       runway (cash ÷ average monthly cash spent over the three months
+       before), receivables (trade) and DSO (receivables ÷ the 90 days'
+       billing before, VAT incl., × 90);
+     - full: closed years only — the same over the whole year, cash at
+       31 December.
+     Delivery, people and pipeline history aren't in Odoo, so those stay
+     null. Per company: Odoo holds no AED rate before 2026-02-01, so an
+     all-companies history would count 2025's AED as EGP. */
+  function getYearHistory(entityKey) {
+    const { companyId, currency } = entityOrThrow(entityKey);
+    const asOf = today();
+    const thisYear = Number(asOf.slice(0, 4));
+    // 29 February has no twin in most years; compare on the 28th then.
+    const mmdd = asOf.slice(5) === '02-29' ? '02-28' : asOf.slice(5);
+    const first = pnlRepository.firstDate(companyId);
+    const firstYear = first ? Number(first.slice(0, 4)) : thisYear;
+    const r = (n) => (n == null ? null : Math.round(n));
+    const pct = (part, whole) => (whole ? Math.round((part / whole) * 1000) / 10 : null);
+
+    const periodFigures = (from, to) => {
+      const t = Object.fromEntries(pnlRepository.sumByTypeForCompany(companyId, from, to).map((x) => [x.accountType, x.balance]));
+      const p = toPnlLines(t);
+      const invoiced = invoiceRepository.sumUntaxedByMonth(companyId, from, to).reduce((s, m) => s + m.total, 0);
+      return {
+        revenue: r(invoiced),
+        directCost: p.costOfRevenue,
+        grossMargin: pct(p.grossProfit, p.revenue),
+        opex: p.operatingExpenses,
+        opexRatio: pct(p.operatingExpenses, p.revenue),
+        netProfit: p.netProfit,
+        netMargin: pct(p.netProfit, p.revenue),
+      };
+    };
+    const cashAt = (date) => balanceRepository.listCashAccounts(companyId, cashAccountTypes, date).reduce((s, a) => s + a.balance, 0);
+    const positionAt = (date) => {
+      const cash = cashAt(date);
+      const [y, m] = date.split('-').map(Number);
+      const spent3 = balanceRepository.sumCashFlowsByMonth(companyId, cashAccountTypes,
+        new Date(Date.UTC(y, m - 4, 1)).toISOString().slice(0, 10), addDays(`${date.slice(0, 7)}-01`, -1))
+        .reduce((s, mo) => s + mo.spent, 0);
+      const receivables = balanceRepository.sumByType(companyId, '0000-01-01', date)
+        .filter((x) => x.accountType === 'asset_receivable' && !x.nonTrade).reduce((s, x) => s + x.balance, 0);
+      const billed90 = invoiceRepository.sumTotalSigned(companyId, addDays(date, -89), date);
+      // Not meaningful → null: a runway on no or negative cash, or a DSO over
+      // a year (almost nothing billed in the window, e.g. FZE's first months).
+      const dso = billed90 > 0 ? Math.round((receivables / billed90) * 90) : null;
+      return {
+        cash: r(cash),
+        runway: spent3 > 0 && cash > 0 ? Math.round((cash / (spent3 / 3)) * 10) / 10 : null,
+        receivables: r(receivables),
+        dso: dso != null && dso <= 365 ? dso : null,
+      };
+    };
+
+    const years = {};
+    for (let y = firstYear; y <= thisYear; y += 1) {
+      const through = `${y}-${mmdd}`;
+      // Books that only began after this year's comparison date leave nothing to compare.
+      if (first && first > through) continue;
+      const closed = y < thisYear;
+      years[String(y)] = {
+        label: String(y),
+        status: closed ? 'closed' : 'current',
+        through,
+        // A year the books started part-way through: its figures are from that date.
+        partialFrom: first && first > `${y}-01-01` && first.startsWith(String(y)) ? first : null,
+        ytd: periodFigures(`${y}-01-01`, through),
+        at: positionAt(through),
+        full: closed ? { ...periodFigures(`${y}-01-01`, `${y}-12-31`), cash: r(cashAt(`${y}-12-31`)) } : null,
+      };
+    }
+    return { asOf, currency, currentYear: String(thisYear), booksStart: first, years };
+  }
+
   /* One status for Odoo as a whole: ok only when every synced model's last
      run succeeded; "as of" is the older of the models' last successes. The
      error text stays in the server log, not the response. */
@@ -656,7 +736,7 @@ function createFinanceMetricsService({
   }
 
   return {
-    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getBalanceSheet, getPayables, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
+    getEntityFinance, getConsolidatedRevenue, getSalesSummary, getProfitAndLoss, getBalanceSheet, getPayables, getYearHistory, getSyncStatus, isFinanceEntity: (key) => Boolean(ENTITIES[key]),
   };
 }
 

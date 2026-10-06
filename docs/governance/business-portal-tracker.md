@@ -457,9 +457,9 @@ Recorded 2026-10-06 — built last session, which ended before the tracker was u
 | C.1 | Budgets + function plans saved, ownership enforced server-side | ✅ 2026-10-06 — see "Phase 3.1" below |
 | C.2 | KPI targets + custom KPIs saved per view (Ceas Comm / FZE / LWM / All), starting empty | ✅ 2026-10-06 — see "Phase 3.2" below |
 | C.3 | Escalation routing + sign-off threshold saved | ✅ 2026-10-06 — see "Phase 3.3" below |
-| 4 | Phase 4 — wider Odoo sync (bank, vendor bills, P&L lines, SOs) | ⬜ |
+| 4 | Phase 4 — wider Odoo sync (bank, vendor bills, P&L lines, SOs) | ✅ 2026-10-06 — done through the §6p steps 1–4 |
 | 5 | Phase 5 — ClickUp delivery / time | ⬜ |
-| 6 | Phase 6 — closed years | ⬜ |
+| 6 | Phase 6 — closed years | ✅ 2026-10-06 — see "Phase 6" below (committed, not pushed) |
 | — | Blocked on business definitions: "lost" (win rate/coverage/sales cycle), paid-SO revenue, Consolidated FX (3c) | ⏸ |
 | — | Stays sample by decision: decision queue, risk register (future AI layer) | ⏸ |
 | — | Cleanup: prototype narrative copy ("5 October", fictional agency), hard-coded 2026 current-year check; phone-width check of client book | ⬜ |
@@ -563,6 +563,15 @@ User decision 2026-10-06: **targets per view** (Ceas Comm, FZE, LWM, All — eac
 - `/control-room` payload carries `prefs`; the page copies them into its state on first load only (cached views may hold older copies) and saves each toggle/threshold before re-routing the queue; a refusal toasts the reason.
 - Verified on a scratch DB copy (throwaway users deleted): none 401 / operations 403 / ceo 200; bad area 404, non-boolean 400, negative threshold 400; audit rows; Chrome as CEO: toggle + threshold saved, kept across a view switch and a reload, 0 JS errors.
 - Phase 3 complete. Still sample by decision: decision queue, risk register (future AI layer).
+
+### Phase 6 — closed years and year-on-year from Odoo (2026-10-06, committed, not pushed)
+
+- `financeMetricsService.getYearHistory(entity)` — per company, each year since its Odoo books began (Ceas Comm 20 May 2024, FZE 31 Dec 2024 → first comparable year 2025, LWM 16 Jul 2025): **ytd** 1 Jan → today's date in that year (revenue = invoiced; cost of revenue, gross margin, operating expenses + ratio, net profit + margin from the P&L lines), **at** that date (cash across bank/cash/credit-card accounts, runway = cash ÷ average monthly cash spent over the 3 months before, trade receivables from the balance sheet, DSO = receivables ÷ 90 days' billing incl. VAT × 90), **full** for closed years (+ cash at 31 Dec). Rules: a year whose books begin after its comparison date is skipped; a part-year is flagged (`partialFrom`); runway on no/negative cash and DSO over 365 days → "not meaningful". No new sync — all from tables 032/036/039.
+- Control Room: `applyYears` replaces the sample's invented years per company; year-review rows are only what Odoo can answer; the "vs <year>" line on KPI cards only for live KPIs with the same definition (revenue, gross/net margin, net profit, OPEX ratio, cash, runway — **not DSO**: the live card uses open invoices, history uses the balance sheet). Under **All** only the live year is offered (Odoo has no AED rate before Feb 2026). Year review rewritten: currency of the view, nulls as "—", books-start note, no invented narrative.
+- **Hard-coded "2026" removed** (closed-year check, year-switch toast, year review): the live year comes from the server (`currentYear`); switching company falls back to the live year when the selected year isn't in that company's books. Money formatting in year tables uses the view's currency.
+- "Partly live" banner rewritten to list exactly what is still sample.
+- Figures (to 6 Oct): **Ceas Comm** 2025 revenue 2.80M / net profit 427K (15.3%) / cash 285K / DSO 45 → 2026 4.68M / −1.48M (−31.6%) / 328K / 18 (balance-sheet basis); full 2025 revenue 3.74M, net profit 296K, cash 31 Dec 573K. **FZE** 2025 AED 65K revenue, net 5K. **LWM** 2025 (from 16 Jul) EGP 204K.
+- Verified in Chrome (real local DB, viewing only): Ceas Comm 2026/2025/2024 (partial), compare vs 2025 on live KPI cards, closed-year page; FZE/LWM 2026 + 2025; All 2026 only; fallback from 2024 on company switch; 0 JS errors.
 
 ## 7. Open Questions
 
