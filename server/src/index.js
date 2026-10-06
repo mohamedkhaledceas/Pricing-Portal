@@ -40,14 +40,14 @@ const config = require('./config');
    already gates its own user-management endpoints with. */
 const requirePlannerAccess = requireRole(USER_MANAGER_ROLES);
 
-if (!process.env.JWT_SECRET) {
+if (!config.jwtSecret) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
   process.exit(1);
 }
 
 const app = express();
-const PORT = Number(process.env.PORT || 3001);
-const HOST = process.env.HOST || '0.0.0.0';
+const PORT = config.port;
+const HOST = config.host;
 
 /* Render (and most PaaS hosts) sit the app behind a reverse proxy — without
    this, req.ip resolves to the proxy's address for every request, which

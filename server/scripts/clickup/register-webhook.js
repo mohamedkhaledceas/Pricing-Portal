@@ -10,6 +10,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const config = require('../../src/config');
 
 const ENV_PATH = path.join(__dirname, '..', '..', '.env');
 const TEAM_ID = '36181979'; // "The Ceas Workplace" — confirmed via GET /team during discovery
@@ -22,7 +23,7 @@ if (!targetUrl) {
   process.exit(1);
 }
 
-const apiKey = process.env.CLICKUP_API_KEY;
+const apiKey = config.clickupApiKey;
 if (!apiKey) {
   console.error('CLICKUP_API_KEY not found in server/.env');
   process.exit(1);

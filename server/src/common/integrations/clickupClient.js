@@ -8,6 +8,7 @@
    just a body and a different HTTP method. */
 const { AppError } = require('../errors');
 const logger = require('../logger');
+const config = require('../../config');
 
 const CLICKUP_BASE = 'https://api.clickup.com/api/v2';
 
@@ -27,7 +28,7 @@ function rateLimitWait(res, attempt) {
 }
 
 async function clickupRequest(method, path, body, attempt = 0) {
-  const apiKey = process.env.CLICKUP_API_KEY;
+  const apiKey = config.clickupApiKey;
   if (!apiKey) {
     throw new AppError('ClickUp integration is not configured — set CLICKUP_API_KEY.', 500);
   }

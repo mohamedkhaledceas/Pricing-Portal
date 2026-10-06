@@ -1,12 +1,7 @@
 require('dotenv').config();
 
-/* The only file this pass reads process.env in for the pieces it touches
-   (auth, the database connection, the two inbound-webhook signature
-   secrets). common/integrations/clickupClient.js (the outbound
-   CLICKUP_API_KEY) and backup.js/seed-owner.js still read process.env
-   directly for now — deliberately out of scope here; that's a wider
-   refactor already tracked in docs/governance/business-portal-tracker.md,
-   not something to do piecemeal alongside an unrelated change.
+/* The only file that reads process.env (CLAUDE.md). Every setting and
+   secret the server, its jobs and its scripts use is defined here once.
 
    Deliberately does NOT validate JWT_SECRET's presence here — index.js's
    existing startup check (logger.error + process.exit(1), a clean
@@ -71,4 +66,14 @@ module.exports = Object.freeze({
   // Incremental Odoo sync interval (management/finance). Should divide 60
   // evenly — it's used as a */N cron minute field.
   odooSyncMinutes: Number(process.env.ODOO_SYNC_MINUTES || 15),
+  // Outbound ClickUp API token (common/integrations/clickupClient.js and the
+  // webhook-registration scripts). Unset → the client fails at call time.
+  clickupApiKey: process.env.CLICKUP_API_KEY,
+  // ClickUp job intervals in minutes (offset per job by common/jobs/stagger.js).
+  clickupReconcileMinutes: Number(process.env.CLICKUP_RECONCILE_MINUTES || 30),
+  clickupUserSyncMinutes: Number(process.env.CLICKUP_USER_SYNC_MINUTES || 30),
+  kpiClickupListSyncMinutes: Number(process.env.KPI_CLICKUP_LIST_SYNC_MINUTES || 60),
+  // First-owner seeding (src/seed-owner.js, run by hand on an empty database only).
+  seedOwnerUsername: process.env.SEED_OWNER_USERNAME,
+  seedOwnerPassword: process.env.SEED_OWNER_PASSWORD,
 });

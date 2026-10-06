@@ -9,6 +9,7 @@
    schema-creation/migration statements that module also carries. */
 const path = require('path');
 const Database = require('better-sqlite3');
+const config = require('./config');
 
 const destPath = process.argv[2];
 if (!destPath) {
@@ -16,7 +17,7 @@ if (!destPath) {
   process.exit(1);
 }
 
-const dbDir = process.env.DB_DIR || path.join(__dirname, '..', 'data');
+const dbDir = config.dbDir || path.join(__dirname, '..', 'data');
 const dbPath = path.join(dbDir, 'app.db');
 
 const db = new Database(dbPath, { readonly: true, fileMustExist: true });
