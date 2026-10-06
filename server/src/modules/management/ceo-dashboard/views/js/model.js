@@ -156,13 +156,15 @@ export const PAGES=[
  {id:'risks',name:'Risks',icon:'risks',crumb:'Rule-based register'},
 ];
 export const S={page:'focus',scope:'full',role:null,brand:false,scale:0,calm:false,single:false,ent:'ceas',bmode:'function',fn:'people',plan:{},year:'2026',cmp:'',sort:{},filter:{},targets:{},budgets:{},addedKpis:[],decisions:{},acks:{},prefs:{money:150000,ceo:{cash:1,collections:1,revenue:1,pipeline:1,strategic:1,delivery:0,people:0,operations:0}},narrow:false,log:[]};
-/* Who sees what. 'full' (ceo, admin) is every page; 'budget' (operations,
-   people_culture) is the Budget tab alone, fed by its own narrower
-   endpoint. Within the Budget tab, CEO/admin edit everything; P&C and
+/* Who sees what. 'full' (ceo, admin) is every page; 'limited' is the pages
+   in LIMITED_PAGES for that role, each fed by its own narrower endpoint —
+   operations: Budget + the client book (alone on the Clients page);
+   people_culture: Budget. Within the Budget tab, CEO/admin edit everything; P&C and
    Operations edit only the plan cells of the functions they own. The
    server enforces the same rules once edits are saved — this only stops
    the page offering a control the server would refuse. */
-export const pages=()=>S.scope==='budget'?PAGES.filter(p=>p.id==='budget'):PAGES;
+const LIMITED_PAGES={operations:['budget','clients'],people_culture:['budget']};
+export const pages=()=>S.scope==='limited'?PAGES.filter(p=>(LIMITED_PAGES[S.role]||['budget']).includes(p.id)):PAGES;
 const FULL_EDIT_ROLES=['ceo','admin'];
 const FN_EDITORS={people_culture:['people','hiring'],operations:['ops']};
 export const canEditBudgets=()=>FULL_EDIT_ROLES.includes(S.role);

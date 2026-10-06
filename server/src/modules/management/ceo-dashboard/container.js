@@ -20,6 +20,7 @@ const { authenticate } = require('../../auth');
 const { financeMetricsService, customerLedgerService } = require('../finance/container');
 const { getPipelineSummary, getClientDeals, getDealsForClient } = require('../commercial-leads/container');
 const { clickupGet } = require('../../../common/integrations/clickupClient');
+const { CLIENT_NAME_FIELD_ID } = require('../clients/container');
 const { getWorkforceSummary } = require('../../employees');
 
 const controlRoomService = createControlRoomService({
@@ -34,7 +35,7 @@ const clientBookService = createClientBookService({
   customerLedgerService,
   getClientDeals,
   getDealsForClient,
-  clientTasksService: createClientTasksService({ clickupGet }),
+  clientTasksService: createClientTasksService({ clickupGet, clientNameFieldId: CLIENT_NAME_FIELD_ID }),
   logger,
 });
 const ceoDashboardController = createCeoDashboardController({ controlRoomService, clientBookService });

@@ -104,7 +104,7 @@ function onListClick(event) {
       const input = document.querySelector(`[data-picker="${partnerId}"]`);
       const picked = clientIdFromLabel(input ? input.value : '');
       if (!picked) {
-        showRowError(partnerId, 'Pick a portal client from the list, or create a new one.');
+        showRowError(partnerId, 'Pick a ClickUp client from the list, or create a new one.');
         return;
       }
       act(row, () => postJson('/links', { clientId: picked, odooPartnerId: partnerId }),
@@ -113,10 +113,37 @@ function onListClick(event) {
     }
     case 'create':
       act(row, () => postJson('/clients', { odooPartnerId: partnerId }),
-        `Created portal client “${customerName(partnerId)}” and linked it.`);
+        `Created client “${customerName(partnerId)}” and linked it.`);
       break;
     default:
   }
+}
+
+function onBulkClick(event) {
+  const btn = event.target.closest('[data-action]');
+  if (!btn) return;
+  if (btn.dataset.action === 'bulk-open') { state.bulkOpen = true; renderAll(); }
+  if (btn.dataset.action === 'bulk-cancel') { state.bulkOpen = false; renderAll(); }
+  if (btn.dataset.action === 'bulk-link') {
+    const n = (state.data.exactPairs || []).length;
+    state.bulkOpen = false;
+    act($('#cmBulk'), () => postJson('/links/exact-names', {}), `Linked ${n} same-name pair${n === 1 ? '' : 's'}.`);
+  }
+}
+
+/* Re-reads ClickUp's "Client Name" list (throttled server-side to once a
+   minute); if it brought new or renamed clients, reload so they show. */
+async function checkClickupClients() {
+  state.clickupSync = { checking: true };
+  renderAll();
+  try {
+    const { sync } = await apiFetch('/api/clients/clickup-sync', { method: 'POST' });
+    state.clickupSync = sync;
+    if (sync.changed) await loadData();
+  } catch (err) {
+    state.clickupSync = { status: 'error' };
+  }
+  renderAll();
 }
 
 function bindUi() {
@@ -138,6 +165,7 @@ function bindUi() {
   }));
   $('#search').addEventListener('input', (e) => { state.search = e.target.value; renderAll(); });
   $('#cmList').addEventListener('click', onListClick);
+  $('#cmBulk').addEventListener('click', onBulkClick);
   $('#cmList').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || !e.target.matches('[data-picker]')) return;
     e.preventDefault();
@@ -185,6 +213,7 @@ function bindUi() {
     await loadData();
     if (state.data.summary.suggested === 0 && state.data.summary.unmatched > 0) state.status = 'unmatched';
     renderAll();
+    checkClickupClients();
   } catch (err) {
     $('#app').style.display = 'none';
     $('#loginGate').style.display = 'flex';

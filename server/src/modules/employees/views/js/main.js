@@ -32,7 +32,8 @@ const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
 // 'ceo' only — see modules/management/ceo-dashboard/routes/index.js's
 // own comment on why this doesn't use USER_MANAGER_ROLES like the others.
 const CEO_DASHBOARD_ROLES = ['ceo', 'admin'];
-// Same page, Budget tab only (server: GET /api/ceo-dashboard/budget).
+// Same page, limited view (server: GET /api/ceo-dashboard/budget, plus the
+// client book for operations).
 const CEO_BUDGET_ONLY_ROLES = ['operations', 'people_culture'];
 
 // opts.kpiView lets a caller deep-link into a specific KPI sub-view (see
@@ -126,7 +127,8 @@ function bindUi() {
     $('#maintab-leave-report').style.display = canSeeLeaveReport ? '' : 'none';
     const dashRole = state.currentUser && state.currentUser.role;
     $('#btnCeoDashboard').hidden = !(CEO_DASHBOARD_ROLES.includes(dashRole) || CEO_BUDGET_ONLY_ROLES.includes(dashRole));
-    $('#btnCeoDashboard').textContent = CEO_BUDGET_ONLY_ROLES.includes(dashRole) ? 'Budget' : 'CEO Dashboard';
+    $('#btnCeoDashboard').textContent = dashRole === 'operations' ? 'Budget & clients'
+      : CEO_BUDGET_ONLY_ROLES.includes(dashRole) ? 'Budget' : 'CEO Dashboard';
     $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
     const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
     window.AccountMenu.mount($('#accountMenuWrap'), {

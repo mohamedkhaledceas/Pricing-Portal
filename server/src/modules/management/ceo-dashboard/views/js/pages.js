@@ -221,6 +221,8 @@ P.focus=()=>{
   </div>`;
 };
 P.clients=()=>{
+  // The limited view (operations) has no revenue data — the book only.
+  if(S.scope==='limited')return clientBookPanel();
   const live=D.revenue.live;
   return `
   <div class="strip">

@@ -40,7 +40,15 @@ function createClientMappingController({ clientMappingService }) {
     }
   }
 
-  return { overview, link, reject, createClient };
+  function linkExactPairs(req, res, next) {
+    try {
+      return res.json({ result: clientMappingService.linkExactPairs({ actor: actorOf(req), ip: req.ip }) });
+    } catch (err) {
+      return next(err);
+    }
+  }
+
+  return { overview, link, reject, createClient, linkExactPairs };
 }
 
 module.exports = createClientMappingController;

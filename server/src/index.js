@@ -237,4 +237,5 @@ httpServer.listen(PORT, HOST, () => {
   management.startReconciliationSchedule();
   management.scheduleQuarterFreeze();
   management.startOdooSyncSchedule();
+  management.startClientSyncSchedule();
 });

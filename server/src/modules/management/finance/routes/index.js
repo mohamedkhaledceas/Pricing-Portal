@@ -14,6 +14,7 @@ function createFinanceRouter({ clientMappingController, authenticate }) {
 
   router.get('/finance/client-mapping', authenticate, requireMapper, clientMappingController.overview);
   router.post('/finance/client-mapping/links', authenticate, requireMapper, clientMappingController.link);
+  router.post('/finance/client-mapping/links/exact-names', authenticate, requireMapper, clientMappingController.linkExactPairs);
   router.post('/finance/client-mapping/rejections', authenticate, requireMapper, clientMappingController.reject);
   router.post('/finance/client-mapping/clients', authenticate, requireMapper, clientMappingController.createClient);
 

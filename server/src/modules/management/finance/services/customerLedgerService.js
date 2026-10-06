@@ -4,8 +4,11 @@
 
    A "customer" is a portal client (key `client:<id>`, with every Odoo
    customer linked to it on the client-mapping page) or an Odoo customer
-   nobody has linked yet (key `partner:<odooId>`). Every portal client is
-   listed even with no invoices — most came from ClickUp, not Odoo.
+   nobody has linked yet (key `partner:<odooId>`). Portal clients are the
+   ClickUp "Client Name" dropdown (migration 034) plus clients created
+   from Odoo; every one is listed even with no invoices. An Odoo customer
+   linked to a row that isn't a client (an old lead row) is shown as its
+   own customer rather than dropped.
 
    Figures are per Odoo company, in that company's own currency (EGP for
    Ceas Comm and Learn with Marie, AED for FZE) — never added across
@@ -51,11 +54,10 @@ function createCustomerLedgerService({
       const company = COMPANIES.get(row.companyId);
       if (!company) continue;
       const clientId = clientByPartner.get(row.partnerId);
-      const key = clientId ? `client:${clientId}` : `partner:${row.partnerId}`;
+      const clientKey = clientId ? `client:${clientId}` : null;
+      const key = clientKey && entries.has(clientKey) ? clientKey : `partner:${row.partnerId}`;
       let entry = entries.get(key);
       if (!entry) {
-        // A link to a client row that no longer exists can't happen (FK), so
-        // a missing entry here is always an unlinked Odoo customer.
         entry = { key, clientId: null, client: null, name: row.partnerName, partnerIds: [], companies: {} };
         entries.set(key, entry);
       }

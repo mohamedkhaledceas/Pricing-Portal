@@ -32,4 +32,5 @@ module.exports = {
   getPipelineSummary: dealsService.getPipelineSummary,
   getClientDeals: dealsService.getClientDeals,
   getDealsForClient: dealsService.getDealsForClient,
+  linkDealsByClientName: dealsService.linkDealsByClientName,
 };

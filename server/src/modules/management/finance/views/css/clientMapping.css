@@ -156,3 +156,12 @@ main{max-width:1180px; margin:0 auto; padding:22px 20px 60px}
   .seg button{flex:1; padding:6px 4px}
   .cm-meta{text-align:left}
 }
+
+/* Same-name pairs: review-then-link panel above the list. */
+.cm-bulk{border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:0 0 14px; background:var(--surface-2, transparent)}
+.cm-bulk p{margin:0 0 8px; font-size:13px}
+.cm-bulk-list{margin:0 0 10px; padding-left:18px; max-height:220px; overflow:auto; font-size:12.5px; columns:2; column-gap:28px}
+.cm-bulk-list .muted{color:var(--muted)}
+.cm-bulk-actions{display:flex; gap:8px}
+.cm-sync-bad{color:var(--critical)}
+@media (max-width:640px){ .cm-bulk-list{columns:1} }

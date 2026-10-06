@@ -11,7 +11,7 @@ export function buildCmd(){cmdAll=[
   ...pages().map(p=>({t:p.name,k:'Page',go:()=>goto(p.id)})),
   ...D.kpis.map(k=>({t:k.name,k:fmt(k,k.actual),go:()=>openDrill(k.id)})),
   ...D.decisions.map(d=>({t:d.title,k:'Decision',go:()=>goto('risks')})),
-  ...(S.scope==='budget'?[]:D.revenue.clients.map(c=>({t:c.name,k:'Client',go:()=>goto('clients')}))),
+  ...(S.scope==='limited'?[]:D.revenue.clients.map(c=>({t:c.name,k:'Client',go:()=>goto('clients')}))),
 ];}
 export const cmdOpen=()=>{$('#cmd').dataset.open='true';$('#cmdin').value='';cmdS=0;cmdRender('');setTimeout(()=>$('#cmdin').focus(),20);};
 export const cmdClose=()=>$('#cmd').dataset.open='false';
@@ -141,7 +141,7 @@ addEventListener('keydown',e=>{
     if(e.key==='ArrowUp'){e.preventDefault();cmdS=Math.max(0,cmdS-1);cmdRender($('#cmdin').value);}
     if(e.key==='Enter'&&cmdF[cmdS]){cmdClose();cmdF[cmdS].go();}
     return;}
-  if(e.key==='f'&&S.scope!=='budget'&&!/input|textarea|select/i.test(e.target.tagName)){goto('focus');return;}
+  if(e.key==='f'&&S.scope!=='limited'&&!/input|textarea|select/i.test(e.target.tagName)){goto('focus');return;}
   if(/^[1-9]$/.test(e.key)&&!/input|textarea|select/i.test(e.target.tagName)&&pages()[+e.key-1])goto(pages()[+e.key-1].id);
 });
 /* Back/forward between pages. goto() sets S.page before the hash, so its

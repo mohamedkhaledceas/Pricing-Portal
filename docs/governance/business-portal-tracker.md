@@ -427,6 +427,66 @@ User decisions (2026-10-05): ops + P&C see **only** the Budget tab; each edits o
 - **Verified on local app.db (Chrome):** paging 1–25/26–50 of 100, search, type tabs, FZE filter (19), AED sort, overdue filter (6), Juno Babies portal row → 1 deal + 177 live tasks (37 open, 12 lists), Odoo-only row → 6 invoices / 7 payments + same tasks via partner name, Lightix → no-match message, KPI drawer back to normal width, 0 JS errors. Not verified: phone width (window resize didn't apply).
 - **Known:** until clients are linked on the mapping page, a client can appear twice (portal row + Odoo row) — the rows say so and link to mapping.
 
+### B2. Clients = ClickUp "Client Name" dropdown (2026-10-05/06, uncommitted, branch feature/ceo-control-room)
+
+Recorded 2026-10-06 — built last session, which ended before the tracker was updated.
+
+- **Decision:** a portal client is an option of ClickUp's workspace-wide "Client Name" dropdown, stored by option id (renames in ClickUp keep the link). Replaces name-matching in the drawer.
+- **Migration 034** (additive): `clients.clickup_option_id` (partial unique index), `kind` client|lead, `is_internal`, `source` clickup|deal_import|odoo; `clickup_client_sync_state` single-row status table. Nothing deleted: unmatched import rows become `lead` (hidden), options removed from ClickUp → `inactive`.
+- **New `management/clients` sub-module:** `clickupClientSyncService` (one GET of the field; create / attach exact-name import row / rename / deactivate / mark lead / link unlinked deals by their own Client Name via commercial-leads' public `linkDealsByClientName`; one transaction; audit `clients.clickup_sync` when anything changed; refuses an empty option list). Triggers share one in-flight guard + 60 s throttle: every 30 min, startup, page load. `POST /api/clients/clickup-sync` → authenticate (401) + USER_MANAGER_ROLES (403). Dry-run script `server/scripts/clients/clickup-client-sync-report.js [--names]`.
+- **Client book / drawer:** finance `clientRepository` reads only real clients (`kind='client' AND is_internal=0`); drawer tasks fetched by stored option id (`getTasksForOption`) — clients without an option show "no match".
+- **Client mapping page:** "Link same-name pairs" bulk action (`POST /api/finance/client-mapping/links/exact-names`, server recomputes the pairs, one audit entry per link, rejected pairs skipped); page triggers the ClickUp sync on load and reloads if it changed anything; copy says "client", not "portal client".
+- **Local state (2026-10-06):** migration applied; last scheduled sync 08:00Z ok. Clients: 124 created from ClickUp + 57 import rows attached + 3 internal; 117 import rows → lead; 46 deals still unlinked (no Client Name set).
+
+## 6o. Control Room — task board (updated 2026-10-06)
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Phase 1 — port prototype on sample data | ✅ committed 7a36369 |
+| 2 | Phase 2 — wire live Odoo / ClickUp / roster / planner | ✅ committed 7a36369 |
+| A | Budget-only view for operations + P&C | ✅ committed a33550b, pushed |
+| B | Cross-company client book + drawer | ✅ committed be7b5db |
+| B2.1 | Clients from ClickUp dropdown — backend, migration 034, sync job | 🟡 built, sync verified running locally; uncommitted |
+| B2.2 | Client book (`/ceo` Clients) calls `POST /api/clients/clickup-sync` on load like the mapping page | ✅ 2026-10-06 — `clientBook.js` fires it once per page visit alongside the first book load (doesn't delay it), reloads the book if the sync changed anything, shows a one-line note if the check failed. Verified in Chrome: 1 sync call (200), not repeated on Money→Clients navigation, 25 rows, 0 JS errors; no-token call → 401 |
+| B2.3 | Browser check: client book counts, drawer tasks by option id, mapping bulk link, 401/403 on the new routes | ✅ 2026-10-06 — on a scratch DB copy with throwaway users (deleted after): **access** — `POST /api/clients/clickup-sync` none 401 / employee 403 / P&C 403 / ops·admin·ceo 200; `GET /api/ceo-dashboard/clients` 200 only ceo/admin (ops 403); mapping GET + bulk POST 401/403 for none/employee/P&C. **Drawer** — Juno Babies (client 68) → `ok`, 177 tasks via stored option id; Odoo-only partner → `no_match`; internal (Ceas Figures) and lead rows (e.g. Lightix) absent from the book. **Bulk link** — 41 pairs linked, 41 audit rows, a request body with injected pairs ignored (server recomputes), re-run links 0, Odoo-only rows 76→40. 36/41 identical ignoring case; 5 differ only by punctuation/accent/suffix (Men-tell Men, Multi M Group, Replit Inc., yole egypt, Yole Saudi) — all the same company. Banner copy fixed: no longer says "exactly the same name". UI checked in Chrome on the real local DB (review list renders, Cancel — nothing linked, 0 JS errors). |
+| B2.4 | Review `looseCandidates` from the dry-run script (business task — near-name import rows) | ✅ 2026-10-06 locally: 0 pending changes, 0 loose candidates. Re-run against production after deploy (prod data may differ) |
+| B2.6 | User decisions 2026-10-06: (a) operations sees the client book; (b) the four CEAS companies — Ceas Comm, Ceas Comm FZE, Ceas Figures, Learn with Marie — are companies, never clients, and are the labels for which company a client is serviced from (a client can belong to several); (c) client book shows 10 rows by default | ✅ 2026-10-06 — (a) `GET /api/ceo-dashboard/clients` + `/clients/:key` gate → ceo/admin/operations (`requireClientBookViewer`); frontend scope `budget` renamed `limited`, per-role `LIMITED_PAGES` (operations: Budget + Clients, where Clients shows the book alone — no revenue KPIs/charts; people_culture: Budget), Client mapping in the rail, phone tab bar when >1 page, banner mentions the live client book, Employees header button reads "Budget & clients" for operations. (b) "Learn with Marie" added to `INTERNAL_CLIENT_NAMES` (next sync flags it, verified); company labels/filter now full names (Ceas Comm / Ceas Comm FZE / Learn with Marie). (c) default page size 10 (client + server). **Verified:** curl on scratch copy — operations book/detail/budget 200, control-room 403; P&C budget 200, book 403; employee 403; none 401. Chrome as a throwaway operations user (scratch copy, deleted after): rail Budget + Clients, book alone, 10 rows "1–10 of 104", drawer opens, `#money` stays on an allowed page, 0 JS errors. Chrome as CEO on the real local DB: all 10 pages, KPI strip intact, 0 JS errors. |
+| B2.7 | Ceas Figures as a company label: not one of the integration's Odoo companies (only Ceas Comm 1, FZE 2, LWM 2268; Et3alemha id 3 not accessible) — needs the source of "serviced by Ceas Figures" | ⬜ question for user |
+| B2.5 | Commit + push B2 (ask first) | ✅ 2026-10-06 — user asked; committed with B2.6 + the §6p plan to feature/ceo-control-room and pushed |
+| C | Phase 3 — persist targets, custom KPIs, budgets, function plans, routing prefs (seed from prototype; server-side function-ownership rule for ops/P&C) | ⬜ waiting for go-ahead |
+| 4 | Phase 4 — wider Odoo sync (bank, vendor bills, P&L lines, SOs) | ⬜ |
+| 5 | Phase 5 — ClickUp delivery / time | ⬜ |
+| 6 | Phase 6 — closed years | ⬜ |
+| — | Blocked on business definitions: "lost" (win rate/coverage/sales cycle), paid-SO revenue, Consolidated FX (3c) | ⏸ |
+| — | Stays sample by decision: decision queue, risk register (future AI layer) | ⏸ |
+| — | Cleanup: prototype narrative copy ("5 October", fictional agency), hard-coded 2026 current-year check; phone-width check of client book | ⬜ |
+
+## 6p. Odoo Dashboards app → Control Room mapping (PROPOSED 2026-10-06 — awaiting user approval)
+
+Read from Odoo's own dashboard definitions (`spreadsheet.dashboard`, read-only API): every scorecard's model, filter and formula, so the Control Room can use the **same definitions** as Odoo. Data presence checked per company (2026): sales orders yes; vendor bills 187/137/2; journal items 1811/853/50; hr.expense 90/4/0; subscriptions 1 active; timesheets 5 lines; payslips 0.
+
+| Step | Odoo source (dashboard) | Control Room place | Needs |
+|---|---|---|---|
+| 1 | Invoiced = posted invoices − credit notes, untaxed (Invoicing) | Already live: `revenue_total`, Clients "Invoiced revenue by month" — same definition | rename to "Revenue" if confirmed as THE revenue |
+| 1 | Average invoice + invoice count; Top invoices (Invoicing) | Clients page — stat line + "Largest invoices" panel | nothing new (synced headers) |
+| 1 | Invoiced by salesperson (Invoicing) | Growth — "Revenue by account manager" | nothing new |
+| 2 | Quotations draft/sent count + value; Orders; Revenue (confirmed SO, untaxed); Average order; top quotations/orders (Sales) | Growth — "Open quotations" panel; KPI `avg_deal_size` (live); Money "Sales against target" bookings; KPI `backlog` = confirmed, not yet invoiced | sync `sale.order` |
+| 2 | Best sellers by revenue/units, best category (Product) | Growth — "What's selling" (ordered by service) | sync `sale.order.line` |
+| 3 | Income, cost of revenue, gross profit, expenses, net profit (Accounting) | Money "Income statement"; KPIs `gross_margin`, `net_profit`, `net_margin`, `opex_ratio`; Year review | sync `account.move.line` balances by account type (phase 4) |
+| 3 | Cash received / spent / surplus, closing bank balance (Accounting) | Money "Cash bridge"; KPIs `cash_balance`, `cash_runway` | same + decision on which bank accounts are business cash |
+| 3 | Receivables, payables, creditor days, short-term cash forecast, balance sheet ratios (Accounting, Benchmark) | Money "Payables", "Working capital", "Balance sheet" | same |
+| 3 | Invoiced by product/category (Invoicing) | Clients — "Revenue by service"; later revenue side of Delivery "Margin by service line" | invoice lines |
+| 4 | Expenses to report / validate / reimburse (Expenses) | Money "Payables" (owed to staff) | sync `hr.expense` |
+| — | Subscriptions/MRR, Timesheets, Payroll, Project | **Not used** — almost no data in Odoo (1 subscription, 5 timesheet lines, 0 payslips) | — |
+
+Keep portal definitions where better: DSO (trailing-90 vs Odoo's yearly balance ratio), open receivables (residual incl. partial payments vs Odoo "unpaid" = fully-unpaid only).
+
+**User decisions 2026-10-06:** (1) revenue = **invoiced** (Invoicing dashboard: posted customer invoices − credit notes, untaxed) — replaces the 2026-10-05 "paid SO − project expenses" definition. (2) business-cash accounts: user doesn't know → proposal: show every bank/cash account exactly as Odoo's "Closing bank balance" does, listed per account, until the accountant says otherwise. (3) "All companies" figures must be **Odoo's own numbers** — no portal-chosen FX.
+
+**Verified 2026-10-06 — Odoo's multi-company P&L method, reproduced to the piastre.** Accounting → Reporting → Profit and Loss (account.report 7) lines are sums of posted journal items by account type (income, expense_direct_cost, expense, income_other, expense_depreciation+expense_other, equity_unaffected). Each company's figures are summed in its own currency, then AED is converted at the **daily average of Odoo's AED rates over the report period** (1 Jan–31 Dec 2026; future days carry the latest rate; days before the first stored rate count as 1 — Odoo has no AED rate before 2026-02-01) = 12.794048. Rebuilt: Revenue 12,270,007.24 (Odoo .25), Cost of revenue 3,069,541.94, Operating expenses 5,311,391.03, Allocations 298,934.70 — all equal. Per company 2026: Ceas Comm revenue 4,654,659.71 EGP, FZE 477,616.43 AED, LWM 1,504,700.00 EGP. **Data-quality flag for the accountant:** no January AED rate in Odoo → January AED counted 1:1 in consolidated reports.
+
+Invoiced vs ledger revenue 2026: Ceas Comm 4,654,659.71 = 4,654,659.71; LWM equal; FZE invoiced 469,963.83 vs ledger 477,616.43 (7,652.60 posted to income outside invoices). The portal's Ceas Comm YTD card read 4.87M this morning because INV/2026/00073 + 00074 (219,830) were cancelled in Odoo at ~13:27 — portal now equals Odoo.
+
 ## 7. Open Questions
 
 - CEO-vs-`manager` role naming; `finance`'s dead-role status.

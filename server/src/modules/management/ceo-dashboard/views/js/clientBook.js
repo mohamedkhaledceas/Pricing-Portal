@@ -10,7 +10,8 @@ import { $, egp, esc, num } from './util.js';
    Independent of the entity switcher: it always covers all three
    companies, with EGP and AED kept apart (no FX yet). */
 
-const COMPANY_NAMES = { ceas: 'Ceas Comm', fze: 'FZE', lwm: 'LWM' };
+// The CEAS company a client is invoiced from — a client can have several.
+const COMPANY_NAMES = { ceas: 'Ceas Comm', fze: 'Ceas Comm FZE', lwm: 'Learn with Marie' };
 const TYPE_LABELS = { client: 'Clients', prospect: 'Prospects', lost: 'Lost', all: 'All' };
 const SOURCE_LABELS = {
   linked: 'Linked to Odoo',
@@ -25,11 +26,12 @@ const SORT_OPTIONS = [
 ];
 
 const book = {
-  query: { search: '', company: '', type: 'client', link: 'all', overdue: '0', sort: 'invoiced', currency: 'EGP', dir: 'desc', page: 1, pageSize: 25 },
+  query: { search: '', company: '', type: 'client', link: 'all', overdue: '0', sort: 'invoiced', currency: 'EGP', dir: 'desc', page: 1, pageSize: 10 },
   result: null,
   loading: false,
   error: null,
   seq: 0,
+  clickupSync: null, // null = not run yet, then 'running' | 'ok' | 'error'
 };
 const drawer = { seq: 0, detail: null, taskFilter: 'open' };
 
@@ -62,7 +64,7 @@ export function clientBookPanel() {
     </select>
     <button class="btn" data-cb="dir" title="Reverse the order">${q.dir === 'asc' ? '↑ Ascending' : '↓ Descending'}</button>
   </div>`;
-  return panel('Client book · all companies', 'Ceas Comm, FZE and Learn with Marie · EGP and AED shown separately',
+  return panel('Client book · all companies', 'Ceas Comm, Ceas Comm FZE and Learn with Marie · EGP and AED shown separately',
     `<div class="pb" style="padding-bottom:0">${controls}</div><div id="cb-body">${bodyHtml()}</div>`);
 }
 
@@ -105,6 +107,7 @@ function bodyHtml() {
       <span class="note">Page ${q.page} of ${r.pages}</span>
       <button class="btn" data-cb-page="${q.page + 1}"${q.page >= r.pages ? ' disabled' : ''}>Next</button>
     </div>
+    ${book.clickupSync === 'error' ? `<p class="note" style="padding:0 16px">Couldn't check ClickUp for new clients — showing the last synced list.</p>` : ''}
     <p class="note" style="padding:0 16px 14px">Odoo customers become one row with their portal client once linked on the
       <button class="btn" data-href="/client-mapping?from=ceo" style="padding:0 6px">client-mapping page</button>; until then a client can appear twice.</p>`;
 }
@@ -114,10 +117,27 @@ function paint() {
   if (body) body.innerHTML = bodyHtml();
 }
 
+/* Asks the server to re-read ClickUp's "Client Name" list once per page
+   visit (throttled server-side to once a minute, shared with the
+   client-mapping page). Runs alongside the first book load rather than
+   before it; if it brought new or renamed clients, the book reloads. */
+async function syncClickupClients() {
+  book.clickupSync = 'running';
+  try {
+    const { sync } = await apiFetch('/api/clients/clickup-sync', { method: 'POST' });
+    book.clickupSync = sync.status === 'error' ? 'error' : 'ok';
+    if (sync.changed) { loadBook(true); return; }
+  } catch (err) {
+    book.clickupSync = 'error';
+  }
+  if (book.result) paint();
+}
+
 /* Called after every page render; fetches the first time and whenever the
    query changed. */
 export async function loadBook(force) {
   if (!$('#cb-body')) return;
+  if (book.clickupSync === null) syncClickupClients();
   if (book.result && !force) { paint(); return; }
   const seq = ++book.seq;
   book.loading = true;

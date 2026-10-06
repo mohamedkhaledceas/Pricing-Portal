@@ -66,10 +66,13 @@ export function openDrill(id){
 export const closeDrill=()=>{$('#dr').dataset.open='false';$('#dr').classList.remove('wide');document.body.style.overflow='';};
 /* ═════ shell ═════ */
 export function renderShell(){
-  if(S.scope==='budget'){
+  if(S.scope==='limited'){
     $('#railnav').innerHTML=pages().map(navItem).join('');
-    $('#railfoot').innerHTML=`<button class="ri" id="collapse">${ico('settings')}<span class="lb">Collapse rail</span></button>`;
-    $('#tabs').innerHTML='';
+    $('#railfoot').innerHTML=(pages().some(p=>p.id==='clients')?`<button class="ri" data-href="/client-mapping?from=ceo">${ico('clients')}<span class="lb">Client mapping</span></button>`:'')+
+      `<button class="ri" id="collapse">${ico('settings')}<span class="lb">Collapse rail</span></button>`;
+    // Phone tab bar only when there's more than one page to switch between.
+    const lp=pages();
+    $('#tabs').innerHTML=lp.length>1?lp.map(p=>`<button data-go="${p.id}" aria-current="${S.page===p.id?'page':'false'}">${ico(p.icon)}${p.name}</button>`).join(''):'';
     return;
   }
   $('#railnav').innerHTML=`<div class="rsec">Overview</div>`+
@@ -104,9 +107,9 @@ export function render(){
   $('#page').innerHTML=closed?P.yearreview():P[p.id]();
   renderShell();
   /* Focus shows only the controls that change what is on it; the
-     budget-only view has no entity, year or source controls at all. */
-  const budgetOnly=S.scope==='budget',bare=S.page==='focus'||budgetOnly;
-  if(!budgetOnly){renderYearSel();renderEntSel();renderSync();}
+     limited view has no entity, year or source controls at all. */
+  const limited=S.scope==='limited',bare=S.page==='focus'||limited;
+  if(!limited){renderYearSel();renderEntSel();renderSync();}
   ['#entsel','#yr','#cmp','#syncchip'].forEach(q=>{const n=$(q);if(n)n.hidden=bare;});
   draw();
   loadBook();

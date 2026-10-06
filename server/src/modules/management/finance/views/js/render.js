@@ -54,10 +54,10 @@ function customerCell(c) {
 function picker(c) {
   return `
     <div class="cm-pick">
-      <input list="clientOptions" data-picker="${c.odooPartnerId}" placeholder="Type a portal client name…" aria-label="Portal client for ${esc(c.name)}">
+      <input list="clientOptions" data-picker="${c.odooPartnerId}" placeholder="Type a ClickUp client name…" aria-label="ClickUp client for ${esc(c.name)}">
       <button type="button" data-action="pick-link" data-partner="${c.odooPartnerId}">Link</button>
       <span class="or">or</span>
-      <button type="button" class="ghost" data-action="create" data-partner="${c.odooPartnerId}">Create portal client</button>
+      <button type="button" class="ghost" data-action="create" data-partner="${c.odooPartnerId}">Create client</button>
     </div>
     <div class="cm-error" data-error="${c.odooPartnerId}" hidden></div>`;
 }
@@ -114,7 +114,10 @@ export function renderAll() {
   const counts = { suggested: summary.suggested, unmatched: summary.unmatched, linked: summary.linked, all: summary.odooCustomers };
   $$('[data-count]').forEach((el) => { el.textContent = counts[el.dataset.count]; });
   $$('#statusFilter [data-status]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.status === state.status)));
-  $('#cmMeta').textContent = `${summary.clientsWithoutOdoo} of ${data.clients.length} portal clients not linked to Odoo yet`;
+  $('#cmMeta').textContent = `${summary.clientsWithoutOdoo} of ${data.clients.length} clients not linked to Odoo yet`;
+
+  renderBulk(data.exactPairs || []);
+  renderSync();
 
   const q = state.search.trim().toLowerCase();
   const rows = data.customers.filter((c) => (state.status === 'all' || c.status === state.status) && matchesSearch(c, q));
@@ -127,6 +130,38 @@ export function renderAll() {
       ${customerCell(c)}
       <div class="cm-side">${sideCell(c)}</div>
     </div>`).join('');
+}
+
+/* Same-name pairs: listed in full before anything is linked. */
+function renderBulk(pairs) {
+  const el = $('#cmBulk');
+  if (!pairs.length) { el.innerHTML = ''; return; }
+  const n = pairs.length;
+  el.innerHTML = state.bulkOpen ? `
+    <div class="cm-bulk">
+      <p><b>Link ${n} Odoo customer${n > 1 ? 's' : ''} to the ClickUp client with the same name?</b>
+        Names are compared ignoring case, punctuation and suffixes like LLC or Co. Each link is recorded in the audit log and can be unlinked later.</p>
+      <ul class="cm-bulk-list">${pairs.map((p) => `<li>${esc(p.partnerName)} <span class="muted">→</span> ${esc(p.clientName)}</li>`).join('')}</ul>
+      <div class="cm-bulk-actions">
+        <button type="button" class="primary" data-action="bulk-link">Yes, link ${n}</button>
+        <button type="button" class="ghost" data-action="bulk-cancel">Cancel</button>
+      </div>
+    </div>` : `
+    <div class="cm-bulk">
+      <p><b>${n} Odoo customer${n > 1 ? 's have' : ' has'} the same name as a ClickUp client</b> (ignoring case, punctuation and suffixes like LLC or Co.). Review them and link them in one step.</p>
+      <div class="cm-bulk-actions"><button type="button" data-action="bulk-open">Review ${n} same-name pair${n > 1 ? 's' : ''}</button></div>
+    </div>`;
+}
+
+/* Result of the ClickUp "Client Name" check run when this page loads. */
+function renderSync() {
+  const s = state.clickupSync;
+  const el = $('#cmSync');
+  if (!s) { el.textContent = ''; return; }
+  el.textContent = s.status === 'error' ? 'ClickUp check failed — showing the last known clients'
+    : s.checking ? 'Checking ClickUp for new clients…'
+      : s.state && s.state.lastSuccessAt ? `ClickUp clients checked ${new Date(s.state.lastSuccessAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+  el.classList.toggle('cm-sync-bad', s.status === 'error');
 }
 
 export function loadClientOptions() {

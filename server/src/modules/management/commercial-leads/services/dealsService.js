@@ -156,6 +156,27 @@ function getDealsForClient(clientId) {
   return dealRecordRepository.findByClientId(clientId).map(toClientDeal);
 }
 
+/* Ties unlinked deals to their client by the deal's own "Client Name"
+   dropdown — the same workspace-wide field clients are built from, so this
+   is an exact match on one source, not the fuzzy identity matching
+   ADR-0010 warns against. clientIdByName: normalized option name ->
+   client id, supplied by the clients sync. A deal with no Client Name set
+   stays unlinked. Returns how many deals were linked. */
+const normalizeName = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+function linkDealsByClientName(clientIdByName) {
+  let linked = 0;
+  for (const row of dealRecordRepository.listUnlinkedWithFields()) {
+    const field = JSON.parse(row.fieldsJson || '{}')['Client Name '];
+    const clientId = field && clientIdByName.get(normalizeName(field.value));
+    if (clientId) {
+      dealRecordRepository.setClientId(row.dealId, clientId);
+      linked += 1;
+    }
+  }
+  return linked;
+}
+
 // Wraps a value in quotes and doubles any embedded quotes whenever it
 // contains a comma, quote, or newline — the one thing the older KPI-export
 // precedent (kpiScoringService.exportHistoryCsv) skips, safely only because
@@ -202,5 +223,5 @@ function exportDealsCsv(listKey) {
 
 module.exports = {
   getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis, getPipelineSummary, exportDealsCsv,
-  getClientDeals, getDealsForClient,
+  getClientDeals, getDealsForClient, linkDealsByClientName,
 };

@@ -80,7 +80,7 @@ function parseQuery(q) {
   if (search.length > 100) throw new ValidationError('"search" must be 100 characters or fewer.');
   const page = q.page === undefined || q.page === '' ? 1 : Number(q.page);
   if (!Number.isInteger(page) || page < 1 || page > 10000) throw new ValidationError('"page" must be a whole number from 1.');
-  const pageSize = q.pageSize === undefined || q.pageSize === '' ? 25 : Number(q.pageSize);
+  const pageSize = q.pageSize === undefined || q.pageSize === '' ? 10 : Number(q.pageSize);
   if (!PAGE_SIZES.includes(pageSize)) throw new ValidationError(`"pageSize" must be one of: ${PAGE_SIZES.join(', ')}.`);
   return {
     search: search.toLowerCase(),
@@ -164,10 +164,14 @@ function createClientBookService({ customerLedgerService, getClientDeals, getDea
     const entry = entries.find((e) => e.key === key);
     const deals = odoo.client ? getDealsForClient(odoo.client.id) : [];
 
+    // Tasks come from the client's stored ClickUp "Client Name" option id;
+    // an Odoo-only customer, or a client created from Odoo, has none.
     let clickup;
+    const optionId = odoo.client && odoo.client.clickupOptionId;
     try {
-      const names = [row ? row.name : null, ...odoo.partners.map((p) => p.name)].filter(Boolean);
-      clickup = await clientTasksService.getTasksForClient(names);
+      clickup = optionId
+        ? { ...(await clientTasksService.getTasksForOption(optionId)), optionName: odoo.client.name }
+        : { status: 'no_match', optionName: null, tasks: [], truncated: false };
     } catch (error) {
       logger.error('Client book: ClickUp task fetch failed', { key, error: error.message });
       clickup = { status: 'error', optionName: null, tasks: [], truncated: false };

@@ -6,13 +6,12 @@ import { applyBrand, render } from './shell.js';
 import { setTheme, syncThemeChip, updateAppearanceControls } from './theme.js';
 import { $ } from './util.js';
 
-/* Server-side enforcement is requireRole([ROLES.CEO, ROLES.ADMIN]) on every
-   /api/ceo-dashboard/* route (see ../../routes/index.js) — this check is
-   defense in depth for the UI only. */
+/* Server-side enforcement is the per-route role gate in ../../routes/index.js
+   — this check is defense in depth for the UI only. */
 const CEO_VIEW_ROLES = ['ceo', 'admin'];
-// Budget tab only — server-side, GET /api/ceo-dashboard/budget is the one
-// route these roles pass; /control-room answers them 403.
-const BUDGET_ONLY_ROLES = ['operations', 'people_culture'];
+// Limited view (model.js LIMITED_PAGES): the pages these roles get, each fed
+// by its own narrower endpoint; /control-room answers them 403.
+const LIMITED_VIEW_ROLES = ['operations', 'people_culture'];
 // Matches every other surface's own Users-menu-item gate.
 const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
 
@@ -58,17 +57,17 @@ function mountAccountMenu() {
 
   const ok = await bootstrapAuth();
   const role = ok && session.currentUser ? session.currentUser.role : null;
-  if (!CEO_VIEW_ROLES.includes(role) && !BUDGET_ONLY_ROLES.includes(role)) {
+  if (!CEO_VIEW_ROLES.includes(role) && !LIMITED_VIEW_ROLES.includes(role)) {
     showGate('fail');
     return;
   }
   S.role = role;
-  S.scope = CEO_VIEW_ROLES.includes(role) ? 'full' : 'budget';
+  S.scope = CEO_VIEW_ROLES.includes(role) ? 'full' : 'limited';
   // Open on the function this role owns (P&C's People & Culture is already the default).
   if (role === 'operations') S.fn = 'ops';
 
   try {
-    if (S.scope === 'budget') await loadBudget();
+    if (S.scope === 'limited') await loadBudget();
     else await loadEntity(S.ent);
   } catch (err) {
     // A 401/403 is a permissions problem; anything else (500, network) is a
@@ -85,9 +84,10 @@ function mountAccountMenu() {
   // data for them to render.
   const { buildCmd } = await import('./events.js');
   applyBrand();
-  if (S.scope === 'budget') {
+  if (S.scope === 'limited') {
     $('.samplebar').innerHTML = '<div><b>Budget.</b> These are the starting budget figures from the workbook. '
-      + 'You can change the plan for the functions you own; changes aren\'t saved yet.</div>';
+      + 'You can change the plan for the functions you own; changes aren\'t saved yet.'
+      + (pages().some((p) => p.id === 'clients') ? ' The client book is live from Odoo and ClickUp.' : '') + '</div>';
   }
   const hash = (location.hash || '').slice(1);
   S.page = pages().some((p) => p.id === hash) ? hash : pages()[0].id;

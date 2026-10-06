@@ -42,6 +42,26 @@ function createClientMappingService({
     return partner;
   }
 
+  /* Unlinked Odoo customers whose name equals exactly one client's name
+     (same normalization as the matcher: case, punctuation, legal
+     suffixes like LLC/Co.). Never a pair someone already rejected. The
+     page shows this list before anything is linked. */
+  function findExactPairs(clients, partners, links) {
+    const linked = new Set(links.filter((l) => l.status === 'linked').map((l) => l.odooPartnerId));
+    const rejected = new Set(links.filter((l) => l.status === 'rejected').map((l) => `${l.clientId}:${l.odooPartnerId}`));
+    const clientsByName = new Map();
+    for (const c of clients) {
+      const key = normalizeName(c.name);
+      if (!key) continue;
+      clientsByName.set(key, [...(clientsByName.get(key) || []), c]);
+    }
+    return partners.flatMap((p) => {
+      const matches = linked.has(p.odooPartnerId) ? null : clientsByName.get(normalizeName(p.name));
+      if (!matches || matches.length !== 1 || rejected.has(`${matches[0].id}:${p.odooPartnerId}`)) return [];
+      return [{ odooPartnerId: p.odooPartnerId, partnerName: p.name, clientId: matches[0].id, clientName: matches[0].name }];
+    });
+  }
+
   function getOverview(actor) {
     requireCanManage(actor);
     const clients = clientRepository.listActive();
@@ -85,7 +105,32 @@ function createClientMappingService({
       },
       customers,
       clients: clients.map((c) => ({ id: c.id, name: c.name })),
+      exactPairs: findExactPairs(clients, partners, links),
     };
+  }
+
+  /* Links every same-name pair in one go — recomputed here, never taken
+     from the request, so it links exactly what the page showed (or fewer,
+     if something changed meanwhile). One audit entry per pair. */
+  function linkExactPairs({ actor, ip }) {
+    requireCanManage(actor);
+    const pairs = findExactPairs(clientRepository.listActive(), partnerRepository.listAll(), linkRepository.listAll());
+    transaction(() => {
+      for (const p of pairs) {
+        linkRepository.upsert({ clientId: p.clientId, odooPartnerId: p.odooPartnerId, status: 'linked', decidedBy: actor.id });
+      }
+    });
+    for (const p of pairs) {
+      audit.record({
+        userId: actor.id,
+        action: 'client_odoo_link.link',
+        entityType: 'client',
+        entityId: String(p.clientId),
+        details: { clientName: p.clientName, odooPartnerId: p.odooPartnerId, odooPartnerName: p.partnerName, bulkExactName: true },
+        ip,
+      });
+    }
+    return { linked: pairs.length };
   }
 
   function link({ actor, clientId, odooPartnerId, ip }) {
@@ -150,12 +195,12 @@ function createClientMappingService({
     const pId = requirePositiveInt(odooPartnerId, 'odooPartnerId');
     const partner = requirePartner(pId);
     if (linkRepository.findLinkedByPartner(pId)) {
-      throw new FinanceError('This Odoo customer is already linked to a portal client.', 409);
+      throw new FinanceError('This Odoo customer is already linked to a client.', 409);
     }
     const key = normalizeName(partner.name);
     const sameName = clientRepository.listActive().find((c) => normalizeName(c.name) === key);
     if (sameName) {
-      throw new FinanceError(`A portal client "${sameName.name}" already matches this name — link it instead.`, 409);
+      throw new FinanceError(`A client "${sameName.name}" already matches this name — link it instead.`, 409);
     }
 
     const client = transaction(() => {
@@ -178,7 +223,7 @@ function createClientMappingService({
     return { client: { id: client.id, name: client.name }, odooPartnerId: pId, status: 'linked' };
   }
 
-  return { getOverview, link, reject, createClientFromPartner };
+  return { getOverview, link, reject, createClientFromPartner, linkExactPairs };
 }
 
 module.exports = createClientMappingService;
