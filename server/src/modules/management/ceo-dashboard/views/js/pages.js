@@ -256,8 +256,12 @@ function revenueByMonthPanel(){
   const r=D.revenue;
   return panel('Revenue by month'+srcBadge('finance'),`${CUR()} · untaxed, net of credit notes · ${esc(D.months.at(-1))} is ${r.monthDay} days in`,
     `<div class="pb"><figure><div class="plot" id="rev1"></div></figure>
-      <div class="kv t push"><span>Average invoice<div class="note">${num(r.documentCount)} invoices and credit notes this year</div></span>
-        <i class="num">${r.averageInvoice==null?'—':CUR()+' '+egp(r.averageInvoice,false)}</i></div></div>`);
+      ${r.pnl?`<div class="kv push"><span>Invoiced, converted at about today's rate<div class="note">Odoo → Dashboards → Finance → Invoicing · this year to date — the figure used here</div></span>
+        <i class="num nw">EGP ${egp(r.ytd,false)}</i></div>
+      <div class="kv"><span>Odoo Profit and Loss revenue, ${esc(r.pnl.year)}<div class="note">Accounting → Reporting → Profit and Loss · AED at the year-average rate (${Object.entries(r.pnl.rates).map(([c,v])=>`${esc(c)} ${v.toFixed(4)}`).join(', ')}) · includes income posted outside invoices</div></span>
+        <i class="num nw">EGP ${egp(r.pnl.revenue,false)}</i></div>`:''}
+      <div class="kv t${r.pnl?'':' push'}"><span>Average invoice<div class="note">${num(r.documentCount)} invoices and credit notes this year</div></span>
+        <i class="num nw">${r.averageInvoice==null?'—':CUR()+' '+egp(r.averageInvoice,false)}</i></div></div>`);
 }
 const COMPANY_LABEL={ceas:'Ceas Comm',fze:'Ceas Comm FZE',lwm:'Learn with Marie'};
 const PAY_STATE={paid:['Paid','g-green'],in_payment:['In payment','g-green'],partial:['Partly paid','g-amber'],not_paid:['Unpaid','g-red'],reversed:['Reversed','']};

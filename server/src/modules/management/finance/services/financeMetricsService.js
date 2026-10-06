@@ -49,8 +49,28 @@ const daysBetween = (from, to) => Math.round((toUtc(to) - toUtc(from)) / DAY_MS)
 const round = (value) => Math.round(value);
 const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
 
+/* Odoo's multi-company Profit and Loss converts each company's figures at
+   the average of Odoo's daily rate over the report period: every day
+   counts once, a day takes the latest rate dated on or before it (so
+   future days carry today's), and days before the first stored rate count
+   as 1 — Odoo has no AED rate before 2026-02-01, so January counts AED as
+   EGP. Reproduced to the piastre against Odoo's own report on 2026-10-06
+   (12.794048 for 2026); never a rate the portal chose. */
+function periodAverageRate(rates, fromDate, toDate) {
+  let sum = 0;
+  let days = 0;
+  let idx = -1;
+  for (let d = fromDate; d <= toDate; d = addDays(d, 1)) {
+    while (idx + 1 < rates.length && rates[idx + 1].date <= d) idx += 1;
+    sum += idx >= 0 ? rates[idx].inverseRate : 1;
+    days += 1;
+  }
+  return days ? sum / days : 1;
+}
+
 function createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, paymentRepository, syncStateRepository, linkRepository, today = cairoToday,
+  invoiceRepository, invoiceReportRepository, pnlRepository, paymentRepository, syncStateRepository, linkRepository,
+  today = cairoToday,
 }) {
   /* partnerId -> { key, clientId, name } for this call. */
   function buildCustomerResolver() {
@@ -268,7 +288,36 @@ function createFinanceMetricsService({
           name: s.salespersonName, value: round(s.total), invoices: s.invoices,
         })),
       },
+      pnl: getConsolidatedPnlRevenue(year),
     };
+  }
+
+  /* The Revenue line of Odoo's Profit and Loss for all companies, for the
+     whole calendar year (Odoo's "2026" filter): −(income balance) per
+     company in its own currency, then other currencies converted the way
+     Odoo's report does (periodAverageRate). Differs from the invoiced
+     figure twice over: a different conversion, and income posted outside
+     invoices counts here. */
+  function getConsolidatedPnlRevenue(year) {
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+    const byCompany = new Map();
+    for (const row of pnlRepository.sumByCompanyAndType(from, to)) {
+      if (row.accountType === 'income') byCompany.set(row.companyId, -row.balance);
+    }
+    const rateCache = new Map();
+    let total = 0;
+    const rates = {};
+    for (const entity of Object.values(ENTITIES)) {
+      const own = byCompany.get(entity.companyId) || 0;
+      if (entity.currency === CONSOLIDATION_CURRENCY) { total += own; continue; }
+      if (!rateCache.has(entity.currency)) {
+        rateCache.set(entity.currency, periodAverageRate(pnlRepository.listRates(entity.currency), from, to));
+      }
+      rates[entity.currency] = rateCache.get(entity.currency);
+      total += own * rates[entity.currency];
+    }
+    return { year, revenue: round(total), rates };
   }
 
   /* One status for Odoo as a whole: ok only when every synced model's last
@@ -291,3 +340,5 @@ function createFinanceMetricsService({
 }
 
 module.exports = createFinanceMetricsService;
+// The sync stamps "this year" with the same Cairo calendar date.
+module.exports.cairoToday = cairoToday;

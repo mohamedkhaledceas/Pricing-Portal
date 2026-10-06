@@ -25,6 +25,17 @@ const CONSOLIDATION_COMPANY_IDS = Object.freeze([
 ]);
 const CONSOLIDATION_CURRENCY = ENTITIES.ceas.currency;
 
+/* Account types on Odoo's Profit and Loss report (account.report 7,
+   Accounting → Reporting → Profit and Loss), line by line:
+   Revenue = −income; Costs of Revenue = expense_direct_cost; Operating
+   Expenses = expense; Other Income = −income_other; Other Expenses =
+   expense_depreciation + expense_other; Allocations and Withdrawals =
+   equity_unaffected. */
+const PNL_ACCOUNT_TYPES = Object.freeze([
+  'income', 'income_other', 'expense_direct_cost', 'expense', 'expense_depreciation', 'expense_other',
+  'equity_unaffected',
+]);
+
 /* Odoo 19 payment states that count as cash collected. `in_process` (posted
    but not yet matched to a bank statement line) is deliberately excluded —
    user decision 2026-10-05: unreconciled to the bank is not collected. */
@@ -41,6 +52,6 @@ const FINANCE_THRESHOLDS = Object.freeze({
 });
 
 module.exports = {
-  ENTITIES, ENTITY_COMPANY_IDS, SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY,
+  ENTITIES, ENTITY_COMPANY_IDS, SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY, PNL_ACCOUNT_TYPES,
   COLLECTED_PAYMENT_STATES, FINANCE_THRESHOLDS,
 };

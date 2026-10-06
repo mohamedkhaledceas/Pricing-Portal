@@ -11,6 +11,7 @@ export function kpi(id,{hero,label}={}){
     <span class="k">${esc(k.live?k.name:(label||k.name))}${k.live?'<span class="mon live">LIVE</span>':''}${k.scored?'':'<span class="mon">MON</span>'}${m.edited?'<span class="mon" style="color:var(--accent);border-color:var(--accent)">EDITED</span>':''}</span>
     <span class="val">${fmtc(k,m.actual)}</span>
     <span class="meta">${m.target==null?'no target set':`${TT[k.targetType]} ${fmt(k,m.target)} · ${pctx(m.ach)}`}</span>
+    ${k.alt?`<span class="meta" title="${esc(k.alt.hint||'')}">${esc(k.alt.label)} ${fmtc(k,k.alt.value)}</span>`:''}
     ${yoyLine(id,k)}
     ${s?spark(s):''}
   </button>`;

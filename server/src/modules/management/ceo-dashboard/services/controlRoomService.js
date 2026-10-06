@@ -63,8 +63,11 @@ function applyConsolidatedRevenue(D, f) {
     averageInvoice: rev.averageInvoice,
     largestInvoices: rev.largestInvoices,
     bySalesperson: rev.bySalesperson,
+    // Odoo's other all-companies revenue: the Profit and Loss Revenue line.
+    pnl: f.pnl,
   };
   Object.assign(D.kpis.find((k) => k.id === 'revenue_total'), {
+    alt: { label: 'Odoo P&L', value: f.pnl.revenue, hint: `Odoo's Profit and Loss Revenue line for ${f.pnl.year}, AED at the year-average rate` },
     live: true,
     currency: f.currency,
     source: 'Odoo',
@@ -73,7 +76,7 @@ function applyConsolidatedRevenue(D, f) {
     actual: rev.ytd,
     target: null,
     query: 'Odoo Invoices Analysis, all three companies, converted into EGP by Odoo — Odoo Dashboards → Finance → Invoicing → "Invoiced" with every company selected (Period: this year)',
-    formula: 'Year to date, invoice basis. The conversion is Odoo\'s own, at its current rates; Odoo\'s Profit and Loss converts at the year\'s average rate instead, so its Revenue line differs.',
+    formula: 'Year to date, invoice basis, converted by Odoo at about today\'s rate (Odoo\'s Invoicing dashboard). The second figure is Odoo\'s Profit and Loss Revenue line for the whole year: AED converted at the year\'s average of Odoo\'s daily rates, and income posted outside invoices included.',
   });
   delete D.series.revenue_total;
   delete D.yearMap.revenue_total;

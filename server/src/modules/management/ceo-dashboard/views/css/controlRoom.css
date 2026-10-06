@@ -143,6 +143,7 @@ main{min-width:0;display:flex;flex-direction:column}
 .kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px}
 .kv:last-child{border-bottom:0}
 .kv i{font-style:normal;font-weight:600}
+.kv i.nw{white-space:nowrap}
 .kv.t{border-top:1px solid var(--axis);border-bottom:0;margin-top:3px;padding-top:9px;font-weight:600}
 .mrow{display:flex;align-items:center;gap:10px;padding:7px 0}
 .mrow .n{flex:none;font-size:12.5px}

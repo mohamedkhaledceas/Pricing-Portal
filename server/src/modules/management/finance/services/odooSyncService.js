@@ -22,7 +22,13 @@
    run, both modes: read with all three companies allowed and Ceas Comm
    first, so Odoo itself converts every line into EGP (migration 035), and
    the table is replaced whole — the conversion follows Odoo's rates, so an
-   unchanged line can still change value. A few hundred lines. */
+   unchanged line can still change value. A few hundred lines.
+
+   Profit and Loss inputs (migration 036) run after it, every run: each
+   company's posted journal items on P&L account types for this year and
+   last, read company by company (balances stay in that company's
+   currency), plus Odoo's dated rates for the other companies' currencies
+   as Ceas Comm records them. Both replaced whole; ~1,300 lines. */
 const {
   ODOO_INVOICE_FIELDS, ODOO_PAYMENT_FIELDS, ODOO_PARTNER_FIELDS, ODOO_INVOICE_REPORT_FIELDS,
   toInvoiceRow, toPaymentRow, toPartnerRow, toInvoiceReportRow,
@@ -31,8 +37,9 @@ const {
 const PAGE_SIZE = 500;
 
 function createOdooSyncService({
-  odooClient, invoiceRepository, paymentRepository, partnerRepository, invoiceReportRepository, syncStateRepository,
-  transaction, logger, companyIds, consolidationCompanyIds, consolidationCurrency,
+  odooClient, invoiceRepository, paymentRepository, partnerRepository, invoiceReportRepository, pnlRepository,
+  syncStateRepository, transaction, logger, companyIds, consolidationCompanyIds, consolidationCurrency,
+  pnlAccountTypes, foreignCurrencies, today,
 }) {
   const SPECS = [
     {
@@ -183,6 +190,62 @@ function createOdooSyncService({
     }
   }
 
+  async function readAll(model, params) {
+    const records = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      // eslint-disable-next-line no-await-in-loop
+      const page = await odooClient.searchRead(model, { ...params, order: 'id asc', limit: PAGE_SIZE, offset });
+      records.push(...page);
+      if (page.length < PAGE_SIZE) return records;
+    }
+  }
+
+  async function syncPnl() {
+    const model = 'account.move.line (P&L)';
+    const runAt = new Date().toISOString();
+    try {
+      const from = `${Number(today().slice(0, 4)) - 1}-01-01`;
+      const lines = [];
+      for (const companyId of companyIds) {
+        // eslint-disable-next-line no-await-in-loop
+        const records = await readAll('account.move.line', {
+          domain: [['company_id', '=', companyId], ['parent_state', '=', 'posted'], ['date', '>=', from],
+            ['account_type', 'in', pnlAccountTypes]],
+          fields: ['id', 'company_id', 'date', 'account_type', 'balance'],
+          companyIds: [companyId],
+        });
+        lines.push(...records.map((r) => ({
+          odoo_id: r.id, company_id: companyId, date: r.date, account_type: r.account_type, balance: r.balance || 0, synced_at: runAt,
+        })));
+      }
+      // Read as Ceas Comm, the consolidation company, so these are the rates
+      // Odoo itself uses when it converts into EGP.
+      const rates = await readAll('res.currency.rate', {
+        domain: [['currency_id.name', 'in', foreignCurrencies]],
+        fields: ['id', 'name', 'currency_id', 'inverse_company_rate'],
+        companyIds: [consolidationCompanyIds[0]],
+      });
+      const rateRows = rates.map((r) => ({
+        odoo_id: r.id, currency: r.currency_id[1], date: r.name, inverse_rate: r.inverse_company_rate, synced_at: runAt,
+      }));
+      transaction(() => {
+        // Same guard as the other syncs: never wipe on an empty answer.
+        if (lines.length === 0 && pnlRepository.countLines() > 0) {
+          logger.warn('Odoo P&L lines came back empty while the cache has some — keeping the cache.');
+        } else {
+          pnlRepository.replaceLines(lines);
+        }
+        if (rateRows.length) pnlRepository.replaceRates(rateRows);
+        syncStateRepository.recordSuccess(model, { lastWriteDate: null, recordsSynced: lines.length, runAt });
+      });
+      return { model, mode: 'replace', status: 'ok', upserted: lines.length, removed: 0 };
+    } catch (error) {
+      syncStateRepository.recordFailure(model, { error: error.message, runAt });
+      logger.error('Odoo sync failed for model.', { model, message: error.message });
+      return { model, mode: 'replace', status: 'error', error: error.message };
+    }
+  }
+
   async function run(mode) {
     const results = [];
     for (const spec of SPECS) {
@@ -191,6 +254,7 @@ function createOdooSyncService({
     }
     results.push(await syncPartners());
     results.push(await syncInvoiceReport());
+    results.push(await syncPnl());
     return results;
   }
 

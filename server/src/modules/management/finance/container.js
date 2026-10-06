@@ -14,6 +14,7 @@ const paymentRepository = require('./repositories/odooPaymentRepository');
 const partnerRepository = require('./repositories/odooPartnerRepository');
 const syncStateRepository = require('./repositories/odooSyncStateRepository');
 const invoiceReportRepository = require('./repositories/odooInvoiceReportRepository');
+const pnlRepository = require('./repositories/odooPnlRepository');
 const clientRepository = require('./repositories/clientRepository');
 const linkRepository = require('./repositories/clientOdooLinkRepository');
 const { transaction } = require('./repositories/unitOfWork');
@@ -25,7 +26,14 @@ const createClientMappingService = require('./services/clientMappingService');
 const createClientMappingController = require('./controllers/clientMappingController');
 const createFinanceRouter = require('./routes/index');
 const { startOdooSyncSchedule } = require('./jobs/odooSyncSchedule');
-const { SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY } = require('./constants');
+const {
+  ENTITIES, SYNCED_COMPANY_IDS, CONSOLIDATION_COMPANY_IDS, CONSOLIDATION_CURRENCY, PNL_ACCOUNT_TYPES,
+} = require('./constants');
+const { cairoToday } = require('./services/financeMetricsService');
+
+// Currencies the all-companies figures convert from (AED today).
+const FOREIGN_CURRENCIES = [...new Set(Object.values(ENTITIES).map((e) => e.currency))]
+  .filter((c) => c !== CONSOLIDATION_CURRENCY);
 
 const odooSyncService = createOdooSyncService({
   odooClient,
@@ -33,16 +41,20 @@ const odooSyncService = createOdooSyncService({
   paymentRepository,
   partnerRepository,
   invoiceReportRepository,
+  pnlRepository,
   syncStateRepository,
   transaction,
   logger,
   companyIds: [...SYNCED_COMPANY_IDS],
   consolidationCompanyIds: [...CONSOLIDATION_COMPANY_IDS],
   consolidationCurrency: CONSOLIDATION_CURRENCY,
+  pnlAccountTypes: [...PNL_ACCOUNT_TYPES],
+  foreignCurrencies: FOREIGN_CURRENCIES,
+  today: cairoToday,
 });
 
 const financeMetricsService = createFinanceMetricsService({
-  invoiceRepository, invoiceReportRepository, paymentRepository, syncStateRepository, linkRepository,
+  invoiceRepository, invoiceReportRepository, pnlRepository, paymentRepository, syncStateRepository, linkRepository,
 });
 
 // Read by the CEO Control Room's client book (same public-interface rule).
