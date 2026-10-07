@@ -1,48 +1,11 @@
-:root{
-  color-scheme: light;
-  --surface-1:#ffffff; --plane:#e5e5e5; --panel:#fafafa;
-  --ink:#191919; --ink-2:#4a4a4a; --muted:#8a8a8a;
-  --grid:#e0e0e0; --axis:#c2c2c2; --border:rgba(25,25,25,0.12);
-  --brand:#042940; --on-accent:#ffffff;
-  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
-  --good-text:#006300;
-  --accent:#042940;
-  --radius:10px;
-}
-@media (prefers-color-scheme: dark){
-  :root:where(:not([data-theme="light"])){
-    color-scheme: dark;
-    --surface-1:#191919; --plane:#0d0d0d; --panel:#212121;
-    --ink:#ffffff; --ink-2:#cfcfcf; --muted:#8a8a8a;
-    --grid:#2c2c2c; --axis:#3a3a3a; --border:rgba(255,255,255,0.12);
-    --brand:#a2c8ff; --on-accent:#191919;
-    --good-text:#0ca30c; --accent:#a2c8ff;
-  }
-}
-:root[data-theme="dark"]{
-  color-scheme: dark;
-  --surface-1:#191919; --plane:#0d0d0d; --panel:#212121;
-  --ink:#ffffff; --ink-2:#cfcfcf; --muted:#8a8a8a;
-  --grid:#2c2c2c; --axis:#3a3a3a; --border:rgba(255,255,255,0.12);
-  --brand:#a2c8ff; --on-accent:#191919;
-  --good-text:#0ca30c; --accent:#a2c8ff;
-}
-
+/* Employees — page components only. Fonts, colour tokens and the base body
+   type come from /shared/portal.css; the sidebar from /shared/appShell.css. */
 *{box-sizing:border-box}
 body{
   margin:0; background:var(--plane); color:var(--ink);
-  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-  font-size:14px; line-height:1.5;
 }
 a{color:var(--accent)}
 
-header.top{
-  background:var(--surface-1); border-bottom:1px solid var(--border);
-  padding:14px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-  position:sticky; top:0; z-index:20;
-}
-header.top h1{font-size:16px; margin:0; font-weight:650; letter-spacing:-0.01em}
-header.top .sub{color:var(--muted); font-size:12px}
 .spacer{flex:1}
 
 button,.btn{
@@ -60,20 +23,11 @@ button.small{font-size:12px; padding:5px 9px}
 button:disabled{opacity:0.6; cursor:default; filter:none; transform:none}
 
 #loginGate{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; text-align:center; padding:24px}
-/* Width/centering belongs on <main>, not here — #app also wraps
-   header.top, which (like /planner's header) needs to span the full
-   viewport width rather than being boxed in with the page content. */
 #app{display:none}
 
 .conn-status{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-2)}
 
-/* ── Nav tabs ── */
-.nav-tabs{display:flex; gap:4px; margin-bottom:14px; border-bottom:1px solid var(--border); flex-wrap:wrap}
-.nav-tab{
-  background:none; border:none; border-bottom:2px solid transparent; border-radius:0;
-  padding:10px 14px; font-size:13.5px; font-weight:600; color:var(--muted); cursor:pointer;
-}
-.nav-tab.active{color:var(--accent); border-bottom-color:var(--accent)}
+/* ── Sub-navigation (Time off, KPIs) ── */
 .sub-nav-tabs{display:flex; gap:4px; margin-bottom:16px; flex-wrap:wrap}
 .sub-nav-tab{
   background:var(--panel); border:1px solid var(--border); border-radius:20px;
@@ -372,8 +326,8 @@ table.data-table tbody tr:hover{background:rgba(127,127,127,0.06)}
 .team-tile-conflict-flag{font-size:11px; font-weight:700; color:#8a5b00; margin-top:4px}
 
 /* ── KPI page ── */
-/* KPI score panel + toolbar (panel system). Numerals are system-ui tabular,
-   same as the rest of the panel system — DM Mono is never loaded (CSP). */
+/* KPI score panel + toolbar (panel system). Numerals are IBM Plex Sans
+   tabular, same as the rest of the panel system. */
 .kpi-toolbar{display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 14px; margin-bottom:14px}
 .kpi-toolbar-end{margin-left:auto}
 .kpi-score-line{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px}

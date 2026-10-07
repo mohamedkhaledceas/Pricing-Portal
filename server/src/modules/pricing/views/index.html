@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Cost & Margin Planner</title>
+<title>Margin Planner — CEAS Portal</title>
 <script>
 /* Applied before body paint to avoid a flash of the wrong theme on load —
    the alternative (waiting for the main module script at the end of body)
@@ -15,48 +15,35 @@
   }catch(err){}
 })();
 </script>
+<link rel="stylesheet" href="/shared/portal.css">
+<link rel="stylesheet" href="/shared/appShell.css">
 <link rel="stylesheet" href="/planner/css/pricing.css">
 <link rel="stylesheet" href="/shared/accountMenu.css">
 <script src="/shared/orgConstants.js"></script>
 <script src="/shared/accountMenu.js"></script>
 <script src="/shared/accountSettings.js"></script>
+<script src="/shared/appShell.js"></script>
 </head>
 <body>
 
 <div id="appShell" style="display:none;">
-<header class="top">
-  <img id="brandLogo" alt="Back to planner" title="Back to planner" style="height:38px; width:auto; cursor:pointer">
+<div class="ps-main">
+<header class="ps-bar">
   <div>
-    <h1 id="appTitle">Cost &amp; Margin Planner</h1>
-    <div class="sub" id="appSub">Salaries → true hourly cost → project margins</div>
+    <h1 id="appTitle">Margin Planner</h1>
+    <div class="ps-sub" id="appSub">Salaries → true hourly cost → project margins</div>
   </div>
-  <div class="spacer"></div>
-  <label class="admin-only" style="display:flex; gap:6px; align-items:center; font-size:12px; color:var(--ink-2)">
-    Show figures in <select id="dispCur" style="padding:5px 7px"></select>
+  <div class="ps-sp"></div>
+  <label class="admin-only bar-field">
+    Show figures in <select id="dispCur"></select>
   </label>
   <span class="mode-badge bd-only"><span class="light" style="background:var(--s4)"></span>Team view</span>
   <button id="btnUnlock" class="bd-only ghost">Unlock owner view</button>
   <button id="btnLock" class="admin-only ghost">Switch to team view</button>
-  <button id="btnEmployees" class="ghost">Employees</button>
-  <button id="btnCommercialLead" class="ghost" hidden>Commercial Lead</button>
-  <button id="btnClientMapping" class="ghost" hidden>Client mapping</button>
-  <button id="btnLogin" class="primary">Log in</button>
   <input type="file" id="fileInput" accept="application/json" style="display:none">
-  <div id="accountMenuWrap"></div>
 </header>
 
-<nav class="tabs" role="tablist">
-  <button role="tab" class="admin-only" data-tab="dashboard" aria-selected="true">Dashboard</button>
-  <button role="tab" class="admin-only" data-tab="team" aria-selected="false">Team &amp; salaries</button>
-  <button role="tab" class="admin-only" data-tab="expenses" aria-selected="false">Fixed expenses</button>
-  <button role="tab" data-tab="projects" aria-selected="false">Project estimator</button>
-  <button role="tab" class="admin-only" data-tab="scenarios" aria-selected="false">Scenarios</button>
-  <button role="tab" class="admin-only" data-tab="capacity" aria-selected="false">Capacity</button>
-  <button role="tab" class="admin-only" data-tab="quote" aria-selected="false">Quotation</button>
-  <button role="tab" class="admin-only" data-tab="settings" aria-selected="false">Settings</button>
-</nav>
-
-<main>
+<main class="ps-page">
   <!-- DASHBOARD -->
   <section class="tabpanel" id="tab-dashboard">
     <div class="card">
@@ -493,6 +480,7 @@
     </div>
   </section>
 </main>
+</div>
 
 <div id="saveErrorToast" role="alert" hidden></div>
 <div id="saveOkToast" role="status" hidden></div>

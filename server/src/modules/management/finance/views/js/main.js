@@ -1,21 +1,12 @@
 import { $, $$, toast } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
-import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderAll, loadClientOptions, clientIdFromLabel } from './render.js';
 
 /* Server-side enforcement is requireRole(USER_MANAGER_ROLES) on every
    /api/finance/client-mapping route plus a role check in
    clientMappingService — this is defense in depth for the UI only. */
 const MAPPING_ROLES = ['admin', 'ceo', 'operations'];
-
-/* Entry points pass ?from= so the header can offer a way back to where the
-   person came from. Whitelisted — never an arbitrary URL from the query. */
-const BACK_TARGETS = {
-  ceo: { href: '/ceo', label: 'CEO Dashboard' },
-  planner: { href: '/planner', label: 'Margin Planner' },
-  'commercial-lead': { href: '/commercial-lead', label: 'Commercial Lead' },
-};
 
 const API = '/api/finance/client-mapping';
 
@@ -147,16 +138,8 @@ async function checkClickupClients() {
 }
 
 function bindUi() {
-  $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
   $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
   $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
-
-  const back = BACK_TARGETS[new URLSearchParams(window.location.search).get('from')];
-  if (back) {
-    $('#backLink').href = back.href;
-    $('#backLink').textContent = `← ${back.label}`;
-    $('#backLink').hidden = false;
-  }
 
   $$('#statusFilter [data-status]').forEach((b) => b.addEventListener('click', () => {
     state.status = b.dataset.status;
@@ -179,11 +162,6 @@ function bindUi() {
 }
 
 (async function init() {
-  updateAppearanceControls();
-  paintLogo();
-  if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
-  }
   bindUi();
 
   const ok = await bootstrapAuth();
@@ -192,21 +170,27 @@ function bindUi() {
     $('#loginGateFail').hidden = false;
     return;
   }
-  window.AccountMenu.mount($('#accountMenuWrap'), {
-    apiFetch,
-    currentUser: state.currentUser,
-    getAccessToken: () => state.accessToken,
-    canManageUsers: true, // every mapping role is also a user-manager role
-    onUsersClick: () => { window.location.href = '/?open=users'; },
-    onLogout: async () => {
-      try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
-      window.location.href = '/login';
-    },
-    setTheme,
-    updateAppearanceControls,
+  // One view, so the sidebar has no sections of its own here — the other
+  // portal pages, Users, appearance and the account.
+  window.AppShell.mount({
+    appEl: $('#app'),
+    page: 'client-mapping',
+    pageLabel: 'Client mapping',
+    role: state.currentUser.role,
+    items: [],
+    mountAccount: (el) => window.AccountMenu.mount(el, {
+      variant: 'rail',
+      apiFetch,
+      currentUser: state.currentUser,
+      getAccessToken: () => state.accessToken,
+      onLogout: async () => {
+        try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
+        window.location.href = '/login';
+      },
+    }),
   });
   $('#loginGate').style.display = 'none';
-  $('#app').style.display = 'block';
+  $('#app').style.display = 'grid';
   renderAll();
 
   try {

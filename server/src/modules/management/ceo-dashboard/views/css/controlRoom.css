@@ -1,26 +1,15 @@
 /* CEO Control Room — ported from the ceas-control-room.html design prototype
-   (supplied 2026-10-05). The rules below the font block are the prototype's
-   own, unchanged; portal-specific additions (login gate, account menu
-   tokens, sample banner) are at the end of the file.
+   (supplied 2026-10-05). IBM Plex and the shared sidebar come from
+   /shared/portal.css and /shared/appShell.css; the rules below are the
+   prototype's own, with portal-specific additions (login gate, account
+   tokens, sample banner) at the end of the file. */
 
-   IBM Plex is self-hosted from ../fonts (SIL OFL, see fonts/OFL.txt) — the
-   CSP allows fonts from 'self' only (src/index.js), so Google Fonts is not
-   an option. Latin subset only; anything outside it falls back to system-ui. */
-@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(../fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
-@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:500;font-display:swap;src:url(../fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2")}
-@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:600;font-display:swap;src:url(../fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2")}
-@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:700;font-display:swap;src:url(../fonts/ibm-plex-sans-latin-700-normal.woff2) format("woff2")}
-@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:400;font-display:swap;src:url(../fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2")}
-@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url(../fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2")}
-@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url(../fonts/ibm-plex-mono-latin-600-normal.woff2) format("woff2")}
-
-/* Layout: fixed dark rail · sticky context bar · single scrolling column.
+/* Layout: shared dark sidebar · sticky context bar · single scrolling column.
    Type: Plex Sans for language, Plex Mono for every figure — an instrument
    panel for money, where digits line up and labels stay quiet. */
 :root{
   color-scheme:light;
   --bg:#f5f6f8; --surface:#ffffff; --sunk:#fafbfc;
-  --rail:#111721; --rail-ink:#aeb8c6; --rail-ink-on:#ffffff; --rail-hover:#1b2432; --rail-line:#222c3b;
   --ink:#101620; --ink2:#49535f; --muted:#7e8795; --line:#e3e6eb; --line2:#eceef2;
   --accent:#2a78d6; --accent-soft:rgba(42,120,214,.10);
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --demph:#c3c2b7;
@@ -31,12 +20,10 @@
   --grid:#e8eaef; --axis:#c9ced7;
   --f-sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --railw:216px;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   color-scheme:dark;
   --bg:#0b0e13; --surface:#141922; --sunk:#10151d;
-  --rail:#080b10; --rail-ink:#8b95a3; --rail-ink-on:#ffffff; --rail-hover:#151b25; --rail-line:#1b2230;
   --ink:#eef1f5; --ink2:#a4aebb; --muted:#6c7684; --line:#222835; --line2:#1a202b;
   --accent:#4b94e8; --accent-soft:rgba(75,148,232,.14);
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; --demph:#4a4a46;
@@ -48,7 +35,6 @@
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#0b0e13; --surface:#141922; --sunk:#10151d;
-  --rail:#080b10; --rail-ink:#8b95a3; --rail-ink-on:#ffffff; --rail-hover:#151b25; --rail-line:#1b2230;
   --ink:#eef1f5; --ink2:#a4aebb; --muted:#6c7684; --line:#222835; --line2:#1a202b;
   --accent:#4b94e8; --accent-soft:rgba(75,148,232,.14);
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; --demph:#4a4a46;
@@ -66,29 +52,7 @@ button,input,select{font:inherit;color:inherit}
 .num,td.n,th.n,.kv i,.val{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 
 /* ── shell ─────────────────────────────────────────── */
-.app{display:grid;grid-template-columns:var(--railw) minmax(0,1fr);min-height:100%}
-.app.narrow{--railw:60px}
-nav.rail{background:var(--rail);color:var(--rail-ink);position:sticky;top:0;height:100vh;
-  display:flex;flex-direction:column;overflow:hidden;padding-block:12px}
-.rl{display:flex;align-items:center;gap:9px;padding:0 14px 12px;border-bottom:1px solid var(--rail-line);margin-bottom:10px}
-.rl .mk{width:26px;height:26px;border-radius:7px;background:var(--accent);flex:none;display:grid;place-items:center;color:#fff;font-weight:700;font-size:12px}
-.rl .tx{min-width:0}
-.rl b{display:block;color:var(--rail-ink-on);font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rl span{font-size:10.5px;color:var(--rail-ink);white-space:nowrap}
-.app.narrow .rl .tx{display:none}
-.rsec{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:#59646f;padding:12px 16px 5px}
-.app.narrow .rsec{opacity:0;height:14px;padding:0}
-.ri{display:flex;align-items:center;gap:10px;padding:7px 14px;margin:1px 8px;border-radius:8px;color:var(--rail-ink);
-  text-decoration:none;font-size:13px;white-space:nowrap;cursor:pointer;border:0;background:none;width:calc(100% - 16px);text-align:left}
-.ri:hover{background:var(--rail-hover);color:var(--rail-ink-on)}
-.ri[aria-current="page"]{background:var(--rail-hover);color:var(--rail-ink-on);font-weight:500}
-.ri svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.ri .lb{flex:1;overflow:hidden;text-overflow:ellipsis}
-.app.narrow .ri .lb,.app.narrow .ri .bd{display:none}
-.bd{font-family:var(--f-mono);font-size:10.5px;background:var(--crit);color:#fff;border-radius:9px;padding:1px 6px;font-weight:600}
-.bd.q{background:#2b3645;color:var(--rail-ink)}
-.rfoot{margin-top:auto;border-top:1px solid var(--rail-line);padding-top:8px}
-
+/* The left rail is the portal's shared sidebar (/shared/appShell.css). */
 main{min-width:0;display:flex;flex-direction:column}
 .bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:color-mix(in srgb,var(--bg) 86%,transparent);
   backdrop-filter:blur(8px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;
@@ -255,7 +219,6 @@ table.grid tr.sub td{background:var(--sunk);padding-top:8px;padding-bottom:3px}
    element; the component rules below stay on body. Both classes are applied. */
 :root.brand, body.brand{
   --bg:#F2F2F0; --surface:#FFFFFF; --sunk:#FAFAF8;
-  --rail:#191919; --rail-ink:#9A9A96; --rail-ink-on:#FFFFFF; --rail-hover:#262626; --rail-line:#2E2E2E;
   --ink:#191919; --ink2:#4E4E4C; --muted:#86867F; --line:#E5E5E5; --line2:#EFEFED;
   --accent:#0A6EFF; --accent-soft:rgba(162,200,255,.32);
   --brand:#FBFF5B;
@@ -266,9 +229,10 @@ table.grid tr.sub td{background:var(--sunk);padding-top:8px;padding-bottom:3px}
   --goodtx:#176128; --badtx:#9A2816;
   --grid:#EAEAE6; --axis:#CFCFC8;
 }
-body.brand .rl .mk{background:var(--brand);color:#191919}
-body.brand .ri[aria-current="page"]{background:var(--brand);color:#191919;font-weight:600}
-body.brand .ri[aria-current="page"] svg{stroke:#191919}
+/* the shared sidebar in the brand palette */
+body.brand .ps-rail{--ps-rail:#191919;--ps-rail-ink:#9A9A96;--ps-rail-hover:#262626;--ps-rail-line:#2E2E2E;--ps-accent:#FBFF5B}
+body.brand .ps-mark,body.brand .ps-account .account-avatar-initials{color:#191919}
+body.brand .ps-item[aria-current="page"]{background:var(--brand);color:#191919;font-weight:600;box-shadow:none}
 body.brand .seg button[aria-pressed="true"]{background:var(--brand);color:#191919}
 body.brand .fone{border-left-color:var(--brand);border-left-width:6px}
 body.brand .fone .fkick{color:#6E6E66}
@@ -280,7 +244,6 @@ body.brand .mon{background:var(--line2)}
 /* dark: the palette used literally, because this is where it works */
 :root.brand.dk, body.brand.dk{
   --bg:#0E0E0E; --surface:#191919; --sunk:#131313;
-  --rail:#070707; --rail-ink:#8A8A84; --rail-ink-on:#FFFFFF; --rail-hover:#1F1F1F; --rail-line:#2A2A2A;
   --ink:#E5E5E5; --ink2:#A9A9A3; --muted:#73736D; --line:#2A2A2A; --line2:#202020;
   --accent:#A2C8FF; --accent-soft:rgba(162,200,255,.16);
   --brand:#FBFF5B;
@@ -389,18 +352,10 @@ h3.sec{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:upperc
   border-radius:8px;box-shadow:0 5px 22px rgba(0,0,0,.16);padding:7px 10px;font-size:12px;color:var(--ink);max-width:260px;line-height:1.45}
 #tip .tk{color:var(--muted)}
 
-.tabs{display:none}
 @media(max-width:860px){
-  .app{grid-template-columns:minmax(0,1fr)}
-  nav.rail{display:none}
-  .page{padding:16px 16px 92px}
-  .bar{padding:10px 16px}
-  .tabs{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);
-    border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
-  .tabs button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;
-    padding:5px 2px;font-size:10px;color:var(--muted);cursor:pointer;border-radius:8px}
-  .tabs button svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .tabs button[aria-current="page"]{color:var(--accent)}
+  .page{padding:16px 16px 56px}
+  /* below the shared sidebar's slim phone bar */
+  .bar{padding:10px 16px;top:52px}
   .strip{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
   #dr{width:100%}
 }
@@ -418,12 +373,11 @@ body.blurred .num,body.blurred .val,body.blurred .kv i,body.blurred text{filter:
    modal are styled with the portal's token names; map them onto this
    page's tokens. --brand is set explicitly because the prototype's brand
    palette redefines it as the acid yellow, which can't carry white text. */
-#accountMenuWrap,.account-modal-overlay{
+.ps-account,.account-modal-overlay{
   --border:var(--line);--brand:var(--accent);--on-accent:#fff;--critical:var(--crit);
   --good-text:var(--goodtx);--good-txt:var(--goodtx);--ink-2:var(--ink2);--plane:var(--bg);
   --radius:10px;--surface-1:var(--surface);--surface-2:var(--sunk);
 }
-.rl{cursor:pointer}  /* back to the portal home, like every other page's logo */
 
 /* Every figure on this page is still the prototype's invented data — the
    banner stays until each block is wired to Odoo/ClickUp (phase 2). */

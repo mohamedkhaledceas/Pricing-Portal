@@ -1,7 +1,6 @@
 import { $, $all } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
-import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderOverview, bindOverviewUi } from './overview.js';
 import { renderNewRequestForm, renderRules, switchSubTab } from './timeOff.js';
 import { renderTeam } from './team.js';
@@ -24,25 +23,30 @@ const MANAGE_ROSTER_ROLES = ['admin', 'people_culture', 'ceo', 'operations'];
 // Leave Report is scoped to the two roles that actually review/approve
 // requests — not admin (canManageRoster's superset doesn't apply here).
 const LEAVE_REPORT_ROLES = ['ceo', 'people_culture', 'admin'];
-// Same gate as margin-planner_1.html's own Commercial Lead button
-// (USER_MANAGER_ROLES) — role only.
-const MARGIN_PLANNER_ROLES = ['ceo', 'operations', 'admin'];
 // Matches commercial-lead's own USER_MANAGER_ROLES gate for the Users menu item.
 const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
-// 'ceo' only — see modules/management/ceo-dashboard/routes/index.js's
-// own comment on why this doesn't use USER_MANAGER_ROLES like the others.
-const CEO_DASHBOARD_ROLES = ['ceo', 'admin'];
-// Same page, limited view (server: GET /api/ceo-dashboard/budget, plus the
-// client book for operations).
-const CEO_BUDGET_ONLY_ROLES = ['operations', 'people_culture'];
+
+// The sidebar's sections (shared shell, public/shared/appShell.js). Links
+// to the other portal pages, and Users (shown in the sidebar's Admin group,
+// opening the #tab-users panel here), come from the shell itself.
+const SECTIONS = [
+  { id: 'overview', label: 'Overview', icon: 'home' },
+  { id: 'timeoff', label: 'Time off', icon: 'calendar' },
+  { id: 'requests', label: 'Requests', icon: 'inbox' },
+  { id: 'kpi', label: 'KPIs', icon: 'targets' },
+  { id: 'team', label: 'My team', icon: 'people' },
+  { id: 'teams', label: 'Teams', icon: 'clients' },
+  { id: 'roster', label: 'Roster', icon: 'roster' },
+  { id: 'leave-report', label: 'Leave report', icon: 'report' },
+];
 
 // opts.kpiView lets a caller deep-link into a specific KPI sub-view (see
 // renderKpi's own comment) — e.g. Overview's "Go to Team Reviews" button
 // passes { kpiView: 'peerReview' } via bindOverviewUi's data-goto-kpi-view.
-export function switchMainTab(tabId, btn, opts = {}) {
+export function switchMainTab(tabId, opts = {}) {
   state.mainTab = tabId;
-  $all('.nav-tab').forEach((t) => t.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+  if (window.AppShell) window.AppShell.setActive(tabId);
+  window.scrollTo(0, 0);
   $all('#content > .tab-panel').forEach((p) => p.classList.remove('active'));
   const panel = $('#tab-' + tabId);
   if (panel) panel.classList.add('active');
@@ -70,14 +74,6 @@ async function doLogout() {
 }
 
 function bindUi() {
-  $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
-  $('#btnCeoDashboard').addEventListener('click', () => {
-    const budgetOnly = state.currentUser && CEO_BUDGET_ONLY_ROLES.includes(state.currentUser.role);
-    window.location.href = budgetOnly ? '/ceo#budget' : '/ceo';
-  });
-  $('#btnMarginPlanner').addEventListener('click', () => { window.location.href = '/planner'; });
-
-  $all('.nav-tab').forEach((btn) => btn.addEventListener('click', () => switchMainTab(btn.dataset.tab, btn)));
   $all('.sub-nav-tab').forEach((btn) => btn.addEventListener('click', () => switchSubTab(btn.dataset.subtab, btn)));
 
   bindUsersAdminUi();
@@ -85,11 +81,6 @@ function bindUi() {
 }
 
 (async function init() {
-  updateAppearanceControls();
-  paintLogo();
-  if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
-  }
   bindUi();
 
   const ok = await bootstrapAuth();
@@ -121,29 +112,33 @@ function bindUi() {
     // account with no employee record (e.g. one made via create-user.js).
     // Admin and P&C can both manage the roster with no employee profile at
     // all — the backend's canManageRoster grants it on auth role alone.
-    const canManageRoster = state.currentUser && MANAGE_ROSTER_ROLES.includes(state.currentUser.role);
-    $('#maintab-roster').style.display = canManageRoster ? '' : 'none';
-    const canSeeLeaveReport = state.currentUser && LEAVE_REPORT_ROLES.includes(state.currentUser.role);
-    $('#maintab-leave-report').style.display = canSeeLeaveReport ? '' : 'none';
-    const dashRole = state.currentUser && state.currentUser.role;
-    $('#btnCeoDashboard').hidden = !(CEO_DASHBOARD_ROLES.includes(dashRole) || CEO_BUDGET_ONLY_ROLES.includes(dashRole));
-    $('#btnCeoDashboard').textContent = dashRole === 'operations' ? 'Budget & clients'
-      : CEO_BUDGET_ONLY_ROLES.includes(dashRole) ? 'Budget' : 'CEO Dashboard';
-    $('#btnMarginPlanner').hidden = !(state.currentUser && MARGIN_PLANNER_ROLES.includes(state.currentUser.role));
-    const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
-    window.AccountMenu.mount($('#accountMenuWrap'), {
-      apiFetch,
-      currentUser: state.currentUser,
-      getAccessToken: () => state.accessToken,
-      canManageUsers,
-      onUsersClick: () => switchMainTab('users'),
-      onLogout: doLogout,
-      setTheme,
-      updateAppearanceControls,
+    const role = state.currentUser && state.currentUser.role;
+    const canManageRoster = MANAGE_ROSTER_ROLES.includes(role);
+    const canSeeLeaveReport = LEAVE_REPORT_ROLES.includes(role);
+    const canManageUsers = USER_MANAGER_ROLES.includes(role);
+    window.AppShell.mount({
+      appEl: $('#app'),
+      page: 'employees',
+      pageLabel: 'Employees',
+      role,
+      items: SECTIONS,
+      hidden: [
+        ...(canManageRoster ? [] : ['roster']),
+        ...(canSeeLeaveReport ? [] : ['leave-report']),
+      ],
+      onSelect: (id) => switchMainTab(id),
+      onUsers: () => switchMainTab('users'),
+      mountAccount: (el) => window.AccountMenu.mount(el, {
+        variant: 'rail',
+        apiFetch,
+        currentUser: state.currentUser,
+        getAccessToken: () => state.accessToken,
+        onLogout: doLogout,
+      }),
     });
 
     $('#loginGate').style.display = 'none';
-    $('#app').style.display = 'block';
+    $('#app').style.display = 'grid';
 
     renderNewRequestForm();
     renderRules();
@@ -157,7 +152,7 @@ function bindUi() {
       const query = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (query ? '?' + query : '') + window.location.hash);
     } else {
-      switchMainTab('overview', $('#maintab-overview'));
+      switchMainTab('overview');
     }
   } catch (err) {
     $('#loginGateChecking').hidden = true;

@@ -10,6 +10,7 @@ const cache = new Map();
 export async function loadBudget() {
   const { controlRoom } = await apiFetch('/api/ceo-dashboard/budget');
   setData(controlRoom);
+  S.year = D.currentYear || String(D.asOf || new Date().toISOString()).slice(0, 4);
 }
 
 export async function loadEntity(key) {

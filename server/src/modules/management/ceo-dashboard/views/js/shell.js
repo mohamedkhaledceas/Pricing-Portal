@@ -1,7 +1,7 @@
-import { chBars, chCols, chLine, chStack, chWater, ico } from './charts.js';
+import { chBars, chCols, chLine, chStack, chWater } from './charts.js';
 import { loadBook } from './clientBook.js';
 import { D } from './data.js';
-import { ceoQueue, CUR, KPI, LK, pages, PAGES, S, tierOf, YRS, curYear } from './model.js';
+import { ceoQueue, CUR, KPI, LK, pages, S, tierOf, YRS, curYear, daysBeforeAsOf } from './model.js';
 import { P } from './pages.js';
 import { isDarkTheme } from './theme.js';
 import { $, egp, esc, fmt, fmtc, fmtD, money, num, pctx, r1, sevtag, TT, tval, V } from './util.js';
@@ -69,35 +69,20 @@ export function openDrill(id){
 }
 export const closeDrill=()=>{$('#dr').dataset.open='false';$('#dr').classList.remove('wide');document.body.style.overflow='';};
 /* ═════ shell ═════ */
+/* The pages go into the portal's shared sidebar (public/shared/appShell.js),
+   grouped as before, with their badges. */
+const GROUPS={focus:'Overview',today:'The business',money:'The business',budget:'The business',clients:'The business',delivery:'The business'};
 export function renderShell(){
-  if(S.scope==='limited'){
-    $('#railnav').innerHTML=pages().map(navItem).join('');
-    $('#railfoot').innerHTML=(pages().some(p=>p.id==='clients')?`<button class="ri" data-href="/client-mapping?from=ceo">${ico('clients')}<span class="lb">Client mapping</span></button>`:'')+
-      `<button class="ri" id="collapse">${ico('settings')}<span class="lb">Collapse rail</span></button>`;
-    // Phone tab bar only when there's more than one page to switch between.
-    const lp=pages();
-    $('#tabs').innerHTML=lp.length>1?lp.map(p=>`<button data-go="${p.id}" aria-current="${S.page===p.id?'page':'false'}">${ico(p.icon)}${p.name}</button>`).join(''):'';
-    return;
-  }
-  $('#railnav').innerHTML=`<div class="rsec">Overview</div>`+
-    PAGES.slice(0,1).map(navItem).join('')+
-    `<div class="rsec">The business</div>`+PAGES.slice(1,6).map(navItem).join('')+
-    `<div class="rsec">System</div>`+PAGES.slice(6).map(navItem).join('');
-  $('#railfoot').innerHTML=`<button class="ri" data-href="/client-mapping?from=ceo">${ico('clients')}<span class="lb">Client mapping</span></button>`+
-    `<button class="ri" id="collapse">${ico('settings')}<span class="lb">Collapse rail</span></button>`;
-  const mob=['today','money','clients','delivery','risks'];
-  $('#tabs').innerHTML=mob.map(id=>{const p=PAGES.find(x=>x.id===id);
-    return `<button data-go="${id}" aria-current="${S.page===id?'page':'false'}">${ico(p.icon)}${p.name}</button>`;}).join('');
-}
-export function navItem(p){
-  const b=badge(p.id);
-  return `<button class="ri" data-go="${p.id}" aria-current="${S.page===p.id?'page':'false'}">${ico(p.icon)}<span class="lb">${p.name}</span>${b}</button>`;
+  if(!window.AppShell)return;
+  window.AppShell.setItems(pages().map(p=>({id:p.id,label:p.name,icon:p.icon,
+    group:S.scope==='limited'?'Control Room':(GROUPS[p.id]||'System'),...badge(p.id)})));
+  window.AppShell.setActive(S.page);
 }
 export function badge(id){
-  if(id==='risks'){const n=ceoQueue().filter(d=>!S.decisions[d.id]).length;return n?`<span class="bd">${n}</span>`:'';}
-  if(id==='money')return KPI('cash_runway').rag==='red'?'<span class="bd">!</span>':'';
-  if(id==='today'){const n=D.risks.filter(r=>r.since>='2026-09-21').length;return n?`<span class="bd q">${n}</span>`:'';}
-  return '';
+  if(id==='risks'){const n=ceoQueue().filter(d=>!S.decisions[d.id]).length;return n?{badge:String(n)}:{};}
+  if(id==='money')return KPI('cash_runway').rag==='red'?{badge:'!'}:{};
+  if(id==='today'){const n=D.risks.filter(r=>r.since>=daysBeforeAsOf(14)).length;return n?{badge:String(n),badgeQuiet:true}:{};}
+  return {};
 }
 export function goto(id){S.page=id;location.hash='#'+id;render();scrollTo({top:0,behavior:'instant'});}
 export function render(){

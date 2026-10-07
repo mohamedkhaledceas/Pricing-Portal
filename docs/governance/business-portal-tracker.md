@@ -462,7 +462,7 @@ Recorded 2026-10-06 — built last session, which ended before the tracker was u
 | 6 | Phase 6 — closed years | ✅ 2026-10-06 — see "Phase 6" below (committed, not pushed) |
 | — | Blocked on business definitions: "lost" (win rate/coverage/sales cycle), paid-SO revenue, Consolidated FX (3c) | ⏸ |
 | — | Stays sample by decision: decision queue, risk register (future AI layer) | ⏸ |
-| — | Cleanup: prototype narrative copy ("5 October", fictional agency), hard-coded 2026 current-year check; phone-width check of client book | ⬜ |
+| — | Cleanup: prototype narrative copy ("5 October", fictional agency), hard-coded 2026 current-year check; phone-width check of client book | 🟡 2026-10-07 — dates now follow the server's today: escalation SLA hours from now (was pinned 5 Oct 08:14), "new in the last two weeks" = 14 days before today (was ≥ 21 Sep), Budget profit bridge "1 January to <today>", Total budget subtitle uses the live year, the Today crumb literal dropped (server label already used); initial `S.year` no longer `'2026'` — set from the payload in both loaders (Budget-only loader too). Sample-only fallbacks (P&L, balance sheet, sales vs target) labelled "Sample figures" instead of 5 Oct copy. Unused `fx: 13.8` removed from the sample JSON (no code read it). "Agency" copy kept — CEAS is an agency, not fictional. Verified in Chrome as CEO on local app.db: all 10 pages, no "5 October" anywhere, bridge reads "1 January to 7 October", 0 console errors. **Open:** phone-width check of client book. Uncommitted |
 
 ## 6p. Odoo Dashboards app → Control Room mapping (PROPOSED 2026-10-06 — awaiting user approval)
 

@@ -4,6 +4,10 @@ import { render } from './shell.js';
 import { $, egp, fmt, num, pctx, r1, toast } from './util.js';
 
 export const KPI=id=>D.kpis.find(k=>k.id===id);
+/* Today in Cairo, from the server — the prototype pinned its copy to 5 October 2026. */
+export const asOfIso=()=>D.asOf||new Date().toISOString().slice(0,10);
+export const asOfDayMonth=()=>new Date(asOfIso()+'T12:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'long',timeZone:'UTC'});
+export function daysBeforeAsOf(n){const d=new Date(asOfIso()+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-n);return d.toISOString().slice(0,10);}
 /* Live view model. Targets are editable, so achievement, RAG, score and the
    health composite are all computed at render time, never read off the data. */
 export function LK(id){
@@ -157,7 +161,7 @@ export const allFn=()=>D.functions.map(f=>LF(f.id));
 /* ═════ state ═════ */
 export const PAGES=[
  {id:'focus',name:'Focus',icon:'focus',crumb:'The one thing, then the short list'},
- {id:'today',name:'Today',icon:'today',crumb:'Monday, 5 October 2026 · 08:00 Africa/Cairo'},
+ {id:'today',name:'Today',icon:'today',crumb:''},
  {id:'money',name:'Money',icon:'money',crumb:'Cash, profit and working capital'},
  {id:'budget',name:'Budget',icon:'budget',crumb:'Planned against spent, and what is left'},
  {id:'clients',name:'Clients',icon:'clients',crumb:'Revenue, collections and exposure'},
@@ -167,7 +171,7 @@ export const PAGES=[
  {id:'targets',name:'Targets',icon:'targets',crumb:'The one registry every view reads from'},
  {id:'risks',name:'Risks',icon:'risks',crumb:'Rule-based register'},
 ];
-export const S={page:'focus',scope:'full',role:null,brand:false,scale:0,calm:false,single:false,ent:'ceas',bmode:'function',fn:'people',plan:{},year:'2026',cmp:'',sort:{},filter:{},targets:{},budgets:{},addedKpis:[],decisions:{},acks:{},prefs:{money:150000,ceo:{cash:1,collections:1,revenue:1,pipeline:1,strategic:1,delivery:0,people:0,operations:0}},narrow:false,log:[]};
+export const S={page:'focus',scope:'full',role:null,brand:false,scale:0,calm:false,single:false,ent:'ceas',bmode:'function',fn:'people',plan:{},year:'',cmp:'',sort:{},filter:{},targets:{},budgets:{},addedKpis:[],decisions:{},acks:{},prefs:{money:150000,ceo:{cash:1,collections:1,revenue:1,pipeline:1,strategic:1,delivery:0,people:0,operations:0}},log:[]};
 /* Who sees what. 'full' (ceo, admin) is every page; 'limited' is the pages
    in LIMITED_PAGES for that role, each fed by its own narrower endpoint —
    operations: Budget + the client book (alone on the Clients page);
@@ -187,7 +191,7 @@ export function tierOf(d){const p=S.prefs,rs=[];let t='team';
   else{t='head';rs.push(`${d.category} is delegated to the head`);}
   if(d.value!=null){if(d.value>=p.money){if(t!=='ceo')rs.push(`EGP ${num(d.value)} is above your EGP ${num(p.money)} threshold`);t='ceo';}
     else if(t==='ceo'&&!p.ceo[d.category])t='head';}
-  const hrs=Math.round((new Date('2026-10-05T08:14:00+03:00')-new Date(d.raised+'T09:00:00+03:00'))/36e5);
+  const hrs=Math.round((Date.now()-new Date(d.raised+'T09:00:00+03:00'))/36e5);
   const br=d.sla?hrs>d.sla:false;
   if(br&&t==='head'){rs.push(`${hrs}h against a ${d.sla}h SLA — promoted`);t='ceo';}
   return{tier:t,reasons:rs,hrs,breached:br};

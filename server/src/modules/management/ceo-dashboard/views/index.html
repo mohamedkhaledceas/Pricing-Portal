@@ -12,11 +12,14 @@
   }catch(err){}
 })();
 </script>
+<link rel="stylesheet" href="/shared/portal.css">
+<link rel="stylesheet" href="/shared/appShell.css">
 <link rel="stylesheet" href="/ceo/css/controlRoom.css">
 <link rel="stylesheet" href="/shared/accountMenu.css">
 <script src="/shared/orgConstants.js"></script>
 <script src="/shared/accountMenu.js"></script>
 <script src="/shared/accountSettings.js"></script>
+<script src="/shared/appShell.js"></script>
 </head>
 <body>
 <div id="tip" role="status" aria-live="polite"></div>
@@ -34,13 +37,8 @@
   </div>
 </div>
 
-<div class="app" id="app">
-  <nav class="rail" aria-label="Sections">
-    <div class="rl" id="railhome" role="link" tabindex="0" title="Back to the portal"><div class="mk">C</div><div class="tx"><b>Ceas Comm</b><span>Control room</span></div></div>
-    <div id="railnav"></div>
-    <div class="rfoot" id="railfoot"></div>
-  </nav>
-  <main>
+<div id="app">
+  <main class="ps-main">
     <div class="bar">
       <div><h1 id="ptitle">Focus</h1><div class="crumb" id="pcrumb"></div></div>
       <div class="sp"></div>
@@ -52,15 +50,11 @@
       <select class="ysel" id="yr" aria-label="Year"></select>
       <select class="ysel" id="cmp" aria-label="Compare with"></select>
       <button class="chip" id="hideamt" title="Blur every figure — for reviewing in a room or on a plane">Hide amounts</button>
-      <button class="chip" id="search">Search <span class="kbd">⌘K</span></button>
-      <button class="chip" id="theme">Dark</button>
-      <div id="accountMenuWrap"></div>
     </div>
     <div class="samplebar" role="note"><div><b>Partly live.</b> Blocks marked <span class="srcb">Live</span> come from Odoo, ClickUp, the employee roster or the Margin Planner; budgets, targets and escalation settings are saved. Marked “not measured”: on-time delivery and utilisation. Still invented sample data: project margins and unbilled work, budget actuals, pipeline coverage, win rate and sales cycle, retainers, renewals and revenue at risk, attrition and time to fill, strategic initiatives, the morning brief, decisions and risks.</div></div>
     <div class="page" id="page"></div>
   </main>
 </div>
-<div class="tabs" id="tabs"></div>
 
 <aside id="dr" data-open="false" aria-label="Detail">
   <div class="dh"><b style="font-size:12.5px">Detail</b><div class="sp"></div><button class="btn" id="drclose">Close</button></div>

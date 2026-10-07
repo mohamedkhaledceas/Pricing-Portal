@@ -1,7 +1,7 @@
 import { clientBookPanel } from './clientBook.js';
 import { balanceSheet, bmodeBar, decisionItem, execSummary, fnByPl, fnGrid, fnMaster, kpi, panel, pnlTable, salesVsTarget, sortTable, srcBadge, stat } from './components.js';
 import { D } from './data.js';
-import { allFn, canEditBudgets, ceoQueue, CUR, E, KPI, LF, liveBudget, liveHealth, LK, S, tierOf, ydel, yfmt, YRS } from './model.js';
+import { allFn, asOfDayMonth, curYear, canEditBudgets, daysBeforeAsOf, ceoQueue, CUR, E, KPI, LF, liveBudget, liveHealth, LK, S, tierOf, ydel, yfmt, YRS } from './model.js';
 import { egp, esc, fmt, fmtD, num, pctx, r1, sevtag, tag, TT, tval } from './util.js';
 import { MONTH_NAME, checksAlert, perCompanyPanel, unavail } from './live/common.js';
 import { largestInvoicesPanel, revenueByMonthPanel } from './live/clients.js';
@@ -13,7 +13,7 @@ import { liveDeliveryPage } from './live/delivery.js';
 export const P={};
 P.today=()=>{
   const q=ceoQueue(),open=q.filter(d=>!S.decisions[d.id]);
-  const newRisks=D.risks.filter(r=>r.since>='2026-09-21');
+  const newRisks=D.risks.filter(r=>r.since>=daysBeforeAsOf(14));
   return `
   <div class="strip">
     ${kpi('cash_runway',{hero:true})}${kpi('net_profit')}${kpi('revenue_total',{label:'Net revenue'})}${kpi('revenue_at_risk')}
@@ -55,7 +55,7 @@ P.money=()=>{
     `<div class="pb"><figure><div class="plot" id="w1"></div></figure>
      <div class="alert" style="margin-top:12px"><div><b>Two bars explain the year.</b> Drawings exceeded profit by ${egp(D.cash.drawings-D.pnl.netProfit)},
        and ${egp(D.cash.arSwing)} more is sitting unpaid with clients than in January. The owner account is shown separately and never nets into business cash.</div></div></div>`)}
-  ${D.pnlLive?livePnlPanel():unavail('pnl','Income statement')||panel('Income statement',`Year to date · 1 January to 5 October${S.cmp?' · against '+S.cmp:''}`,`<div class="pb tight">
+  ${D.pnlLive?livePnlPanel():unavail('pnl','Income statement')||panel('Income statement',`Sample figures${S.cmp?' · against '+S.cmp:''}`,`<div class="pb tight">
       ${pnlTable()}</div><div class="pb" style="padding-top:0">
       <div class="alert" style="margin-top:12px"><div><b>${egp(D.pnl.freelancerCost,false)} — ${D.pnl.freelancerRatio}% of revenue — went to freelancers and contractors</b>
         against a 25% ceiling. Gross margin is ${LK('gross_margin').ach}% of target and net margin ${LK('net_margin').ach}%:
@@ -68,7 +68,7 @@ P.money=()=>{
           <td class="n"><span class="num">${egp(m.gross,false)}</span></td>
           <td class="n"><span class="num">${egp(m.operating,false)}</span></td>
           <td class="n"><span class="num" style="color:${m.margin<10?'var(--badtx)':m.margin<14?'var(--ink2)':'var(--goodtx)'}">${m.margin}%</span></td></tr>`).join('')}</tbody></table></div>
-      <p class="note">October is five days. Operating margin has fallen in four of the last five months while revenue held.</p></div>`)}
+      <p class="note">Sample figures from the prototype.</p></div>`)}
   <div class="cols c2">
     ${D.bsLive?liveBalanceSheetPanel():unavail('balance','Balance sheet')||perCompanyPanel('Balance sheet')||panel('Balance sheet',`${esc(e.name)} · ${e.balances?'balanced':'DOES NOT BALANCE'}`,`<div class="pb tight">${balanceSheet()}</div>`)}
     ${D.sales&&D.sales.live&&D.revenue.live?bookedVsInvoicedPanel():unavail('sales','Booked and invoiced')||unavail('finance','Booked and invoiced')||panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
@@ -129,7 +129,7 @@ P.budgetFn=()=>{
   return `
   ${bmodeBar()}
   <div class="strip">
-    ${stat('Total agency budget','EGP '+egp(annual),`${D.functions.length} functions · 2026`)}
+    ${stat('Total agency budget','EGP '+egp(annual),`${D.functions.length} functions · ${esc(curYear())}`)}
     ${stat('Plan to September','EGP '+egp(planYtd),`${CM} closed months`)}
     ${stat('Actual recorded','EGP '+egp(actYtd),`${r1(actYtd/planTracked*100)}% of plan for the same months`,actYtd>planTracked?'red':'green')}
     ${stat('Not yet tracked',untracked.length+' of '+D.functions.length,'functions with missing actuals',untracked.length?'red':'green')}
@@ -455,7 +455,7 @@ P.budget=()=>{
   </div>
 
   ${panel('Plan to actual','every pound of the profit gap, accounted for',`<div class="pb">
-    <figure><figcaption><b>Profit bridge · 1 January to 5 October</b><span>EGP</span></figcaption>
+    <figure><figcaption><b>Profit bridge · 1 January to ${esc(asOfDayMonth())}</b><span>EGP</span></figcaption>
       <div class="plot"><svg id="b1" height="230" role="img" aria-label="Profit bridge from plan to actual"></svg></div></figure>
     <p class="note" style="margin-top:10px">Plan profit for the period is EGP ${egp(B.npPlanYtd)} — the revenue plan at a ${B.gmPlan}% gross margin, less the ${B.opexPlanPct}% overhead allowance.
       Actual is EGP ${egp(D.pnl.netProfit)}. The gap has three causes and no residual: revenue arrived EGP ${egp(Math.abs(D.revenue.ytdTarget-D.revenue.ytd))} light, delivery cost ran EGP ${egp(Math.abs(B.dcVariance))} over, and overhead ran EGP ${egp(Math.abs(B.opexVariance))} over.

@@ -1,14 +1,33 @@
 import { $, skeletonBlock, skeletonTableRows } from './dom.js';
 import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
-import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
 import { renderStats } from './charts.js';
 import { renderStageDurations } from './stageDurations.js';
 import { renderQuarterlyKpis, bindQuarterlyUi } from './quarterlyKpis.js';
 import { renderPipelineTable, renderActiveClientsTable, bindDealsUi } from './deals.js';
 import { connectSocket } from './realtime.js';
 
-const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
+// The sidebar's sections (shared shell, public/shared/appShell.js) — this
+// is one scrolling page, so each scrolls to its block.
+const SECTIONS = [
+  { id: 'sec-quarter', label: 'This quarter', icon: 'targets' },
+  { id: 'sec-mix', label: 'Pipeline mix', icon: 'report' },
+  { id: 'sec-deals', label: 'Live deals', icon: 'list' },
+  { id: 'sec-active', label: 'Active clients', icon: 'clients' },
+];
+
+/* Highlights the section whose block is nearest the top of the screen. */
+function trackSections() {
+  if (!('IntersectionObserver' in window)) return;
+  const seen = new Map();
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null));
+    const current = SECTIONS.map((t) => [t.id, seen.get(t.id)]).filter(([, top]) => top != null)
+      .sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]))[0];
+    if (current) window.AppShell.setActive(current[0]);
+  }, { rootMargin: '-64px 0px -55% 0px' });
+  SECTIONS.forEach((t) => { const el = document.getElementById(t.id); if (el) io.observe(el); });
+}
 
 function renderDashboardSkeletons() {
   $('#qkGrid').innerHTML = Array.from({ length: 8 }, () => `
@@ -51,24 +70,17 @@ function scheduleStatsRefresh() {
 }
 
 function bindUi() {
-  $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
   // Not '/' — that always serves the Employees page (see src/index.js's
   // root route), which runs its own bootstrapAuth() check on load and
   // would just fail again with the same session gone, right back to an
   // "Unauthorized" screen instead of anywhere useful.
   $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
   $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
-  $('#btnClientMapping').addEventListener('click', () => { window.location.href = '/client-mapping?from=commercial-lead'; });
   bindDealsUi();
   bindQuarterlyUi();
 }
 
 (async function init() {
-  updateAppearanceControls();
-  paintLogo();
-  if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
-  }
   bindUi();
 
   const ok = await bootstrapAuth();
@@ -77,22 +89,31 @@ function bindUi() {
     $('#loginGateFail').hidden = false;
     return;
   }
-  const canManageUsers = state.currentUser && USER_MANAGER_ROLES.includes(state.currentUser.role);
-  window.AccountMenu.mount($('#accountMenuWrap'), {
-    apiFetch,
-    currentUser: state.currentUser,
-    getAccessToken: () => state.accessToken,
-    canManageUsers,
-    onUsersClick: () => { window.location.href = '/?open=users'; },
-    onLogout: async () => {
-      try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
-      window.location.href = '/login';
+  window.AppShell.mount({
+    appEl: $('#app'),
+    page: 'commercial-lead',
+    pageLabel: 'Commercial Lead',
+    role: state.currentUser && state.currentUser.role,
+    items: SECTIONS,
+    active: SECTIONS[0].id,
+    onSelect: (id) => {
+      window.AppShell.setActive(id);
+      document.getElementById(id).scrollIntoView({ block: 'start' });
     },
-    setTheme,
-    updateAppearanceControls,
+    mountAccount: (el) => window.AccountMenu.mount(el, {
+      variant: 'rail',
+      apiFetch,
+      currentUser: state.currentUser,
+      getAccessToken: () => state.accessToken,
+      onLogout: async () => {
+        try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
+        window.location.href = '/login';
+      },
+    }),
   });
   $('#loginGate').style.display = 'none';
-  $('#app').style.display = 'block';
+  $('#app').style.display = 'grid';
+  trackSections();
   renderDashboardSkeletons();
   try {
     await loadAll();

@@ -1,54 +1,11 @@
-/* Tokens and base controls match commercial-leads/views/css/commercialLeads.css
-   (same audience, same look); each surface keeps its own stylesheet, per
-   docs/frontend-architecture.md §3. Only this page's own pieces follow. */
-:root{
-  color-scheme: light;
-  --surface-1:#ffffff; --plane:#e5e5e5; --panel:#fafafa;
-  --ink:#191919; --ink-2:#4a4a4a; --muted:#8a8a8a;
-  --grid:#e0e0e0; --axis:#c2c2c2; --border:rgba(25,25,25,0.12);
-  --brand:#042940; --on-accent:#ffffff;
-  --s1:#2a78d6;
-  --good:#0ca30c; --warn:#fab219; --critical:#d03b3b;
-  --good-text:#006300; --warn-bg:#fff4d6; --link-bg:#eaf2fc;
-  --accent:#042940;
-  --radius:10px;
-}
-@media (prefers-color-scheme: dark){
-  :root:where(:not([data-theme="light"])){
-    color-scheme: dark;
-    --surface-1:#191919; --plane:#0d0d0d; --panel:#212121;
-    --ink:#ffffff; --ink-2:#cfcfcf; --muted:#8a8a8a;
-    --grid:#2c2c2c; --axis:#3a3a3a; --border:rgba(255,255,255,0.12);
-    --brand:#a2c8ff; --on-accent:#191919;
-    --s1:#3987e5;
-    --good-text:#0ca30c; --warn-bg:#3a2f12; --link-bg:#16263a; --accent:#a2c8ff;
-  }
-}
-:root[data-theme="dark"]{
-  color-scheme: dark;
-  --surface-1:#191919; --plane:#0d0d0d; --panel:#212121;
-  --ink:#ffffff; --ink-2:#cfcfcf; --muted:#8a8a8a;
-  --grid:#2c2c2c; --axis:#3a3a3a; --border:rgba(255,255,255,0.12);
-  --brand:#a2c8ff; --on-accent:#191919;
-  --s1:#3987e5;
-  --good-text:#0ca30c; --warn-bg:#3a2f12; --link-bg:#16263a; --accent:#a2c8ff;
-}
-
+/* Client mapping — page components only. Fonts, colour tokens and the base body
+   type come from /shared/portal.css; the sidebar from /shared/appShell.css. */
 *{box-sizing:border-box}
 body{
   margin:0; background:var(--plane); color:var(--ink);
-  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-  font-size:14px; line-height:1.5;
 }
 a{color:var(--accent)}
 
-header.top{
-  background:var(--surface-1); border-bottom:1px solid var(--border);
-  padding:14px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-  position:sticky; top:0; z-index:20;
-}
-header.top h1{font-size:16px; margin:0; font-weight:650; letter-spacing:-0.01em}
-header.top .sub{color:var(--muted); font-size:12px}
 .spacer{flex:1}
 
 button,.btn{
@@ -91,7 +48,6 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid va
 #toast.toast-danger{border-color:var(--critical); color:var(--critical)}
 #toast.toast-info{border-color:var(--good); color:var(--good-text)}
 
-main{max-width:1180px; margin:0 auto; padding:22px 20px 60px}
 .card{background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:18px}
 .card h2{font-size:15px; margin:0 0 4px; font-weight:650}
 .card p.hint{color:var(--muted); font-size:12.5px; margin:0 0 14px; max-width:78ch}

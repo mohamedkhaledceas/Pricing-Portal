@@ -12,12 +12,15 @@
   }catch(err){}
 })();
 </script>
+<link rel="stylesheet" href="/shared/portal.css">
+<link rel="stylesheet" href="/shared/appShell.css">
 <link rel="stylesheet" href="/employees/css/employees.css">
 <link rel="stylesheet" href="/shared/accountMenu.css">
 <script src="/shared/orgConstants.js"></script>
 <script src="/shared/departments.js"></script>
 <script src="/shared/accountMenu.js"></script>
 <script src="/shared/accountSettings.js"></script>
+<script src="/shared/appShell.js"></script>
 </head>
 <body>
 
@@ -34,40 +37,8 @@
 </div>
 
 <div id="app">
-  <header class="top">
-    <img id="brandLogo" alt="Back to Pricing Portal" title="Back to Pricing Portal" style="height:38px; width:auto; cursor:pointer">
-    <script>
-    (function(){
-      // Same fix as the login page's brandLogo: sets src synchronously so
-      // there's no gap where the browser paints the alt text before the
-      // deferred module script's paintLogo() gets to it.
-      var t = document.documentElement.getAttribute('data-theme');
-      var dark = t === 'dark' || (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.getElementById('brandLogo').src = dark ? '/logo-dark.png' : '/logo-light.png';
-    })();
-    </script>
-    <div>
-      <h1>Employees</h1>
-      <div class="sub">Leave, KPIs &amp; team management</div>
-    </div>
-    <div class="spacer"></div>
-    <button id="btnCeoDashboard" class="ghost" hidden>CEO Dashboard</button>
-    <button id="btnMarginPlanner" class="ghost" hidden>Margin Planner</button>
-    <div id="accountMenuWrap"></div>
-  </header>
-
-  <main style="max-width:1180px; margin:0 auto; padding:16px 20px 60px;">
-
-    <div class="nav-tabs" id="main-nav">
-      <button class="nav-tab active" id="maintab-overview" data-tab="overview">Overview</button>
-      <button class="nav-tab" id="maintab-timeoff" data-tab="timeoff">Time Off</button>
-      <button class="nav-tab" id="maintab-requests" data-tab="requests">Requests</button>
-      <button class="nav-tab" id="maintab-kpi" data-tab="kpi">KPIs</button>
-      <button class="nav-tab" id="maintab-team" data-tab="team">My Team</button>
-      <button class="nav-tab" id="maintab-teams" data-tab="teams">Teams</button>
-      <button class="nav-tab" id="maintab-roster" data-tab="roster" style="display:none;">Roster</button>
-      <button class="nav-tab" id="maintab-leave-report" data-tab="leave-report" style="display:none;">Leave Report</button>
-    </div>
+  <div class="ps-main">
+  <main class="ps-page">
 
     <div class="sub-nav-tabs" id="timeoff-subnav" style="display:none;">
       <button class="sub-nav-tab active" id="subtab-new-request" data-subtab="new-request">New Request</button>
@@ -159,6 +130,7 @@
 
     </div>
   </main>
+  </div>
 </div>
 
 <div id="toast" hidden></div>

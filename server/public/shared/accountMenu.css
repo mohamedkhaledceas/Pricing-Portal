@@ -1,14 +1,9 @@
-/* Styling for the shared account-menu avatar/dropdown and Account Settings
-   modal (accountMenu.js / accountSettings.js). Every value below falls back
-   to a hardcoded default alongside the page's own CSS variable, because the
-   four surfaces' token sets aren't identical — CEO Dashboard in particular
-   has no --brand/--on-accent/--radius of its own. This file has to look
-   right on all four without assuming any one page's full token set. */
+/* Styling for the shared account menu and Account Settings modal
+   (accountMenu.js / accountSettings.js), plus the avatar and directory
+   cards the Employees page reuses. Every value falls back to a hardcoded
+   default alongside the page's own CSS variable, because the Control Room
+   maps its own token names onto these. */
 
-.account-avatar-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; padding: 0; border-radius: 50%; overflow: hidden;
-}
 .account-avatar-img {
   width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;
 }
@@ -19,8 +14,9 @@
   font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
 }
 
+/* Positioned by appShell.css (opens upward from the sidebar's account row). */
 .account-menu-dropdown {
-  position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px;
+  position: absolute; min-width: 200px;
   background: var(--surface-1, #fff); border: 1px solid var(--border, rgba(0,0,0,0.12));
   border-radius: var(--radius, 10px); box-shadow: 0 14px 34px rgba(0,0,0,0.22);
   padding: 6px; z-index: 30;
@@ -36,17 +32,6 @@
 .account-menu-item-split { display: flex; justify-content: space-between; align-items: center; }
 .account-menu-item-danger { color: var(--critical, #d03b3b); }
 .account-menu-divider { border-top: 1px solid var(--border, rgba(0,0,0,0.12)); margin: 4px 0; }
-
-.account-menu-appearance { padding: 8px 10px 6px; }
-.account-menu-appearance-label { font-size: 12px; font-weight: 600; color: var(--ink-2, #4a4a4a); margin-bottom: 6px; }
-.theme-seg { display: flex; gap: 2px; background: var(--plane, rgba(0,0,0,0.06)); border-radius: 8px; padding: 2px; }
-.theme-seg-btn {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 6px 0; border: none; border-radius: 6px; background: transparent;
-  color: var(--ink-2, #4a4a4a); cursor: pointer; transition: background-color .12s ease, color .12s ease;
-}
-.theme-seg-btn:hover { background: rgba(0,0,0,0.06); }
-.theme-seg-btn[aria-pressed="true"] { background: var(--surface-1, #fff); color: var(--ink, #191919); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
 
 .account-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45);

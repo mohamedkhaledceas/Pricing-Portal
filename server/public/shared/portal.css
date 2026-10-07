@@ -1,0 +1,49 @@
+/* The portal's shared look: IBM Plex and the content colour tokens every
+   page uses, matching the CEO Control Room (controlRoom.css). Loaded first
+   on each page; the page's own stylesheet adds only its own components.
+
+   IBM Plex is self-hosted (SIL OFL, see fonts/OFL.txt) — the CSP allows
+   fonts from 'self' only. Latin subset; anything else falls back to
+   system-ui. */
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(/shared/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:500;font-display:swap;src:url(/shared/fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:600;font-display:swap;src:url(/shared/fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:700;font-display:swap;src:url(/shared/fonts/ibm-plex-sans-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/shared/fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url(/shared/fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url(/shared/fonts/ibm-plex-mono-latin-600-normal.woff2) format("woff2")}
+
+:root{
+  color-scheme:light;
+  --surface-1:#ffffff; --plane:#f5f6f8; --panel:#fafbfc;
+  --ink:#101620; --ink-2:#49535f; --muted:#7e8795;
+  --grid:#e8eaef; --axis:#c9ced7; --border:#e3e6eb;
+  --brand:#2a78d6; --accent:#2a78d6; --on-accent:#ffffff;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s6:#008300; --s8:#e34948;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --good-text:#046604; --warn-bg:#fff4d6; --link-bg:#eaf2fc;
+  --radius:10px;
+  --f-sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --surface-1:#141922; --plane:#0b0e13; --panel:#10151d;
+  --ink:#eef1f5; --ink-2:#a4aebb; --muted:#6c7684;
+  --grid:#1f2531; --axis:#333c4a; --border:#222835;
+  --brand:#4b94e8; --accent:#4b94e8; --on-accent:#ffffff;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s6:#008300; --s8:#e66767;
+  --good-text:#3fc13f; --warn-bg:#3a2f12; --link-bg:#16263a;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --surface-1:#141922; --plane:#0b0e13; --panel:#10151d;
+  --ink:#eef1f5; --ink-2:#a4aebb; --muted:#6c7684;
+  --grid:#1f2531; --axis:#333c4a; --border:#222835;
+  --brand:#4b94e8; --accent:#4b94e8; --on-accent:#ffffff;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s6:#008300; --s8:#e66767;
+  --good-text:#3fc13f; --warn-bg:#3a2f12; --link-bg:#16263a;
+}
+
+body{font-family:var(--f-sans);font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

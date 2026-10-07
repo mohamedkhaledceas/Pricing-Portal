@@ -1,0 +1,136 @@
+/* The portal's shared shell (appShell.js): the dark left rail the CEO
+   Control Room introduced, used by every page — the page's own sections,
+   the other portal pages, search (⌘K) and the account button, collapsible
+   to icons, an off-canvas drawer below 860px.
+
+   Needs /shared/portal.css first (fonts and the shared content tokens). */
+:root{
+  --ps-rail:#111721; --ps-rail-ink:#aeb8c6; --ps-rail-on:#ffffff; --ps-rail-hover:#1b2432; --ps-rail-line:#222c3b; --ps-rail-sec:#66717d;
+  --ps-accent:#2a78d6;
+  --ps-railw:216px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ps-rail:#080b10; --ps-rail-ink:#8b95a3; --ps-rail-hover:#151b25; --ps-rail-line:#1b2230; --ps-rail-sec:#56606d; --ps-accent:#4b94e8;
+}}
+:root[data-theme="dark"]{
+  --ps-rail:#080b10; --ps-rail-ink:#8b95a3; --ps-rail-hover:#151b25; --ps-rail-line:#1b2230; --ps-rail-sec:#56606d; --ps-accent:#4b94e8;
+}
+
+.ps-app{display:grid;grid-template-columns:var(--ps-railw) minmax(0,1fr);min-height:100vh}
+.ps-app.ps-narrow{--ps-railw:60px}
+.ps-main{min-width:0}
+
+/* ── rail ── */
+.ps-rail{background:var(--ps-rail);color:var(--ps-rail-ink);position:sticky;top:0;height:100vh;z-index:40;
+  display:flex;flex-direction:column;padding-block:12px;font-family:var(--f-sans)}
+.ps-home{display:flex;align-items:center;gap:9px;padding:0 14px 12px;margin-bottom:6px;border-bottom:1px solid var(--ps-rail-line);
+  color:inherit;text-decoration:none;border-radius:0}
+.ps-mark{width:26px;height:26px;border-radius:7px;background:var(--ps-accent);flex:none;display:grid;place-items:center;color:#fff;font-weight:700;font-size:12px}
+.ps-home-tx{min-width:0}
+.ps-home-tx b{display:block;color:var(--ps-rail-on);font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-home-tx span{display:block;font-size:10.5px;white-space:nowrap}
+.ps-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:var(--ps-rail-line) transparent}
+.ps-sec{font-size:11px;font-weight:500;color:var(--ps-rail-sec);padding:14px 16px 5px;white-space:nowrap}
+.ps-item{display:flex;align-items:center;gap:10px;padding:7px 14px;margin:1px 8px;border-radius:8px;color:var(--ps-rail-ink);
+  text-decoration:none;font:400 13px/1.35 var(--f-sans);white-space:nowrap;cursor:pointer;border:0;background:none;
+  width:calc(100% - 16px);text-align:left;filter:none;transform:none}
+.ps-item:hover{background:var(--ps-rail-hover);color:var(--ps-rail-on);filter:none}
+.ps-item:active{transform:none;filter:none}
+.ps-item[aria-current="page"]{background:var(--ps-rail-hover);color:var(--ps-rail-on);font-weight:500;box-shadow:inset 2px 0 0 var(--ps-accent)}
+.ps-item svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ps-lb{flex:1;overflow:hidden;text-overflow:ellipsis}
+.ps-kbd{font-family:var(--f-mono);font-size:10.5px;border:1px solid var(--ps-rail-line);border-radius:4px;padding:0 4px;color:var(--ps-rail-ink)}
+.ps-foot{border-top:1px solid var(--ps-rail-line);padding-top:8px;margin-top:6px}
+.ps-item:focus-visible,.ps-home:focus-visible{outline:2px solid var(--ps-accent);outline-offset:-2px}
+
+.ps-narrow .ps-home-tx,.ps-narrow .ps-lb,.ps-narrow .ps-kbd{display:none}
+.ps-narrow .ps-sec{height:1px;padding:0;margin:10px 16px;background:var(--ps-rail-line);font-size:0}
+.ps-narrow .ps-item{justify-content:center;padding-inline:0}
+.ps-narrow .ps-home{justify-content:center;padding-inline:0}
+
+.ps-bd{font-family:var(--f-mono);font-size:10.5px;background:var(--critical,#d03b3b);color:#fff;border-radius:9px;padding:1px 6px;font-weight:600}
+.ps-bd.q{background:#2b3645;color:var(--ps-rail-ink)}
+.ps-narrow .ps-bd{display:none}
+
+/* appearance: three-way segment when expanded, one cycling button when collapsed */
+.ps-theme{display:flex;align-items:center;gap:8px;padding:4px 14px 6px 16px}
+.ps-theme-lb{flex:1;font-size:12px;color:var(--ps-rail-ink);white-space:nowrap}
+.ps-seg{display:flex;gap:2px;background:var(--ps-rail-hover);border-radius:8px;padding:2px}
+.ps-seg button{display:grid;place-items:center;width:28px;height:24px;padding:0;border:0;border-radius:6px;background:none;
+  color:var(--ps-rail-ink);cursor:pointer;filter:none;transform:none}
+.ps-seg button:hover{color:var(--ps-rail-on);filter:none}
+.ps-seg button[aria-pressed="true"]{background:var(--ps-rail);color:var(--ps-rail-on);box-shadow:0 0 0 1px var(--ps-rail-line)}
+.ps-seg svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ps-theme-one{display:none}
+.ps-narrow .ps-theme{padding:0}
+.ps-narrow .ps-theme-lb,.ps-narrow .ps-seg{display:none}
+.ps-narrow .ps-theme-one{display:flex}
+
+/* account button, rendered by accountMenu.js with variant 'rail' */
+.ps-account{position:relative;margin:4px 8px 0}
+.ps-account .account-rail-btn{display:flex;align-items:center;gap:9px;width:100%;padding:6px;border:0;border-radius:8px;
+  background:none;color:var(--ps-rail-ink);text-align:left;cursor:pointer;filter:none;transform:none}
+.ps-account .account-rail-btn:hover{background:var(--ps-rail-hover);color:var(--ps-rail-on);filter:none}
+.ps-account .account-rail-avatar{width:28px;height:28px;border-radius:50%;overflow:hidden;flex:none}
+.ps-account .account-avatar-initials{font-size:11px;background:var(--ps-accent);color:#fff}
+.ps-account .account-rail-tx{min-width:0;flex:1;line-height:1.3}
+.ps-account .account-rail-tx b{display:block;color:var(--ps-rail-on);font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-account .account-rail-tx span{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-account .account-menu-dropdown{top:auto;bottom:calc(100% + 6px);left:0;right:auto;width:224px;font-family:var(--f-sans);color:var(--ink)}
+.ps-narrow .ps-account .account-rail-tx{display:none}
+.ps-narrow .ps-account .account-rail-btn{justify-content:center}
+
+/* ── page layout shared by every page ── */
+/* Sticky context bar: title + subtitle on the left, the page's own
+   controls on the right (the Control Room's .bar). */
+.ps-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 24px;
+  background:color-mix(in srgb,var(--plane) 86%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.ps-bar h1{font-size:15px;font-weight:600;margin:0;letter-spacing:-.01em}
+.ps-bar .ps-sub{font-size:11.5px;color:var(--muted)}
+.ps-bar .ps-sp{flex:1}
+.ps-page{max-width:1240px;margin:0 auto;padding:20px 24px 64px}
+
+/* ── phone: slim bar + off-canvas rail ── */
+.ps-mbar{display:none}
+.ps-scrim{display:none}
+@media (max-width:860px){
+  .ps-app,.ps-app.ps-narrow{grid-template-columns:minmax(0,1fr);--ps-railw:248px}
+  .ps-rail{position:fixed;left:0;top:0;bottom:0;width:var(--ps-railw);transform:translateX(-100%);transition:transform .2s ease;z-index:60}
+  .ps-app.ps-open .ps-rail{transform:none}
+  .ps-app.ps-open .ps-scrim{display:block;position:fixed;inset:0;z-index:55;background:rgba(6,9,14,.45)}
+  .ps-narrow .ps-home-tx,.ps-narrow .ps-lb,.ps-narrow .ps-kbd,.ps-narrow .ps-account .account-rail-tx{display:block}
+  .ps-narrow .ps-sec{height:auto;padding:14px 16px 5px;margin:0;background:none;font-size:11px}
+  .ps-narrow .ps-item,.ps-narrow .ps-home{justify-content:flex-start;padding-inline:14px}
+  .ps-collapse{display:none}
+  .ps-narrow .ps-theme{padding:4px 14px 6px 16px}
+  .ps-narrow .ps-theme-lb,.ps-narrow .ps-seg{display:flex}
+  .ps-narrow .ps-theme-one{display:none}
+  .ps-narrow .ps-bd{display:inline}
+  .ps-bar{top:52px;padding:10px 16px}
+  .ps-page{padding:16px 16px 56px}
+  .ps-mbar{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:30;padding:9px 12px;
+    background:var(--ps-rail);color:var(--ps-rail-on);font:500 14px/1.3 var(--f-sans)}
+  .ps-mbar button{display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:8px;background:none;color:inherit;cursor:pointer}
+  .ps-mbar button:hover{background:var(--ps-rail-hover);filter:none}
+  .ps-mbar svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round}
+  .ps-mbar-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
+@media (prefers-reduced-motion:reduce){.ps-rail{transition:none}}
+
+/* ── ⌘K ── */
+.ps-cmd{position:fixed;inset:0;z-index:90;display:none;align-items:flex-start;justify-content:center;background:rgba(6,9,14,.4);padding:11vh 16px}
+.ps-cmd[data-open="true"]{display:flex}
+.ps-cmdbox{background:var(--surface-1,#fff);color:var(--ink,#101620);border:1px solid var(--border,#e3e6eb);border-radius:12px;
+  width:min(540px,100%);box-shadow:0 26px 70px rgba(0,0,0,.3);overflow:hidden;font-family:var(--f-sans)}
+.ps-cmdin{width:100%;border:0;border-bottom:1px solid var(--border,#e3e6eb);background:none;color:inherit;padding:14px 16px;font:400 14px var(--f-sans);outline:none}
+.ps-cmdl{max-height:46vh;overflow:auto;padding:5px}
+.ps-ci{display:flex;gap:10px;align-items:center;padding:8px 11px;border-radius:8px;cursor:pointer;font-size:13px}
+.ps-ci svg{width:16px;height:16px;flex:none;stroke:var(--muted,#7e8795);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ps-ci[aria-selected="true"]{background:color-mix(in srgb,var(--ps-accent) 12%,transparent)}
+.ps-ci .ps-ck{margin-left:auto;font-size:11.5px;color:var(--muted,#7e8795)}
+.ps-cempty{padding:14px 12px;font-size:13px;color:var(--muted,#7e8795)}
+
+@media print{
+  .ps-rail,.ps-mbar,.ps-scrim,.ps-bar,.ps-cmd{display:none!important}
+  .ps-app{display:block!important}
+}

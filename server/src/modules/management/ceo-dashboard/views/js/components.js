@@ -171,7 +171,7 @@ export function balanceSheet(){
   const r=(l,v,{sub,t,grand}={})=>`<tr class="${grand?'grand':t?'tot':sub?'sub':''}">
     <td>${sub?'<span style="padding-left:14px;color:var(--muted)">':'<b style="font-weight:600">'}${esc(l)}${sub?'</span>':'</b>'}</td>
     <td class="n"><span class="num${v<0?' d-dn':''}">${(v<0?'−':'')}${egp(Math.abs(v),false)}</span></td></tr>`;
-  return `<div class="tw"><table class="pnl bs"><thead><tr><th>Line</th><th class="n">As at 5 October 2026</th></tr></thead><tbody>
+  return `<div class="tw"><table class="pnl bs"><thead><tr><th>Line</th><th class="n">Sample figures</th></tr></thead><tbody>
     ${r('ASSETS',e.assets,{t:1})}
     ${r('Bank and cash accounts',e.cash,{sub:1})}
     ${r('Receivables',e.receivables,{sub:1})}
@@ -209,7 +209,7 @@ export function salesVsTarget(){
       <td class="n"><span class="num" style="color:${ach>=tgt?'var(--goodtx)':'var(--badtx)'}">${r1(ach/tgt*100)}%</span></td>
       <td class="n"><span class="num ${ach-tgt<0?'d-dn':'d-up'}">${ach-tgt>0?'+':'−'}${egp(Math.abs(ach-tgt),false)}</span></td></tr>
     </tbody></table></div>
-    <p class="note" style="margin-top:10px">Nine complete months against target; October is five days and is excluded from the total.</p></div>`;
+    <p class="note" style="margin-top:10px">Sample figures from the prototype.</p></div>`;
 }
 /* The departmental budget, as the workbook lays it out — master view, then one
    function at a time, month by month, with the plan cells open to the team

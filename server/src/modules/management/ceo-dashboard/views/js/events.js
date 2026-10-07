@@ -4,7 +4,6 @@ import { loadEntity } from './loader.js';
 import { addKpi, ceoQueue, curYear, KPI, LB, pages, removeKpi, S, setBudget, setPlan, setTarget } from './model.js';
 import { largestInvoicesBody } from './live/clients.js';
 import { applyBrand, closeDrill, draw, goto, openDrill, render } from './shell.js';
-import { isDarkTheme, setTheme, syncThemeChip } from './theme.js';
 import { $, esc, fmt, toast } from './util.js';
 
 /* ═════ palette ═════ */
@@ -14,6 +13,7 @@ export function buildCmd(){cmdAll=[
   ...D.kpis.map(k=>({t:k.name,k:fmt(k,k.actual),go:()=>openDrill(k.id)})),
   ...D.decisions.map(d=>({t:d.title,k:'Decision',go:()=>goto('risks')})),
   ...(S.scope==='limited'?[]:D.revenue.clients.map(c=>({t:c.name,k:'Client',go:()=>goto('clients')}))),
+  ...(window.AppShell?window.AppShell.portalEntries().map(p=>({t:p.label,k:p.kind,go:p.run})):[]),
 ];}
 export const cmdOpen=()=>{$('#cmd').dataset.open='true';$('#cmdin').value='';cmdS=0;cmdRender('');setTimeout(()=>$('#cmdin').focus(),20);};
 export const cmdClose=()=>$('#cmd').dataset.open='false';
@@ -95,17 +95,10 @@ document.addEventListener('click',e=>{
   if(e.target.closest('#nkadd')){addKpi();return;}
   const kd=e.target.closest('[data-kdel]');if(kd){removeKpi(kd.dataset.kdel);return;}
   const pf=e.target.closest('[data-pref]');if(pf){setEscalation('routes/'+encodeURIComponent(pf.dataset.pref),{comesToCeo:!S.prefs.ceo[pf.dataset.pref]},'Queue re-routed');return;}
-  if(e.target.closest('#collapse')){S.narrow=!S.narrow;$('#app').classList.toggle('narrow',S.narrow);setTimeout(draw,180);return;}
   if(e.target.closest('#hideamt')){const on=document.body.classList.toggle('blurred');
     $('#hideamt').textContent=on?'Show amounts':'Hide amounts';toast(on?'Figures hidden':'Figures visible');return;}
-  if(e.target.closest('#search')){cmdOpen();return;}
   if(e.target.closest('#syncchip')){toast(sourcesSummary());return;}
-  /* Goes through the portal's setTheme so the choice persists and stays in
-     step with the account menu's own theme control. */
-  if(e.target.closest('#theme')){setTheme(isDarkTheme()?'light':'dark');syncThemeChip();
-    applyBrand();render();return;}
   if(e.target.closest('#drclose')||e.target.id==='sc'){closeDrill();return;}
-  if(e.target.closest('#railhome')){location.href='/';return;}
   const hr=e.target.closest('[data-href]');if(hr){location.href=hr.dataset.href;return;}
   const ci=e.target.closest('.ci');if(ci){const n=+ci.dataset.c;cmdClose();cmdF[n].go();return;}
   if(e.target.id==='cmd')cmdClose();
@@ -140,7 +133,6 @@ async function setEscalation(path,body,done){
   render();}
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('tin')){e.target.blur();}
-  if(e.key==='Enter'&&e.target.id==='railhome'){location.href='/';}
 });
 addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();cmdOpen();return;}

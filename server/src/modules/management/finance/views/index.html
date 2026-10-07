@@ -12,11 +12,14 @@
   }catch(err){}
 })();
 </script>
+<link rel="stylesheet" href="/shared/portal.css">
+<link rel="stylesheet" href="/shared/appShell.css">
 <link rel="stylesheet" href="/client-mapping/css/clientMapping.css">
 <link rel="stylesheet" href="/shared/accountMenu.css">
 <script src="/shared/orgConstants.js"></script>
 <script src="/shared/accountMenu.js"></script>
 <script src="/shared/accountSettings.js"></script>
+<script src="/shared/appShell.js"></script>
 </head>
 <body>
 
@@ -33,25 +36,15 @@
 </div>
 
 <div id="app">
-  <header class="top">
-    <img id="brandLogo" alt="Back to the portal" title="Back to the portal" style="height:38px; width:auto; cursor:pointer">
-    <script>
-    (function(){
-      var t = document.documentElement.getAttribute('data-theme');
-      var dark = t === 'dark' || (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.getElementById('brandLogo').src = dark ? '/logo-dark.png' : '/logo-light.png';
-    })();
-    </script>
+  <div class="ps-main">
+  <header class="ps-bar">
     <div>
-      <h1>Client Mapping</h1>
-      <div class="sub">ClickUp clients ↔ Odoo customers</div>
+      <h1>Client mapping</h1>
+      <div class="ps-sub">ClickUp clients ↔ Odoo customers</div>
     </div>
-    <div class="spacer"></div>
-    <a id="backLink" class="btn ghost" hidden></a>
-    <div id="accountMenuWrap"></div>
   </header>
 
-  <main>
+  <main class="ps-page">
     <div class="card">
       <div class="cm-head">
         <div>
@@ -79,6 +72,7 @@
       <div id="cmList" class="cm-list" aria-live="polite"></div>
     </div>
   </main>
+  </div>
 </div>
 
 <datalist id="clientOptions"></datalist>
