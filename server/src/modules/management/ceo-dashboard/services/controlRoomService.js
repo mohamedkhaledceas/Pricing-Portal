@@ -198,12 +198,12 @@ function createControlRoomService({
   /* The Budget tab alone — for operations and people_culture, who may see
      nothing else on this page. Only the blocks the Budget tab renders are
      copied out, so revenue, clients, cash, people and payroll-by-person
-     never leave the server for these roles. net_profit is the one KPI
-     the tab shows. */
+     never leave the server for these roles. Nor does profit: the tab's
+     profit figures (net profit, the plan-to-actual bridge) are left out
+     for them, rather than showing the sample's invented ones. */
   function getBudget() {
     const today = now();
     const sample = sampleRepository.getSample();
-    const netProfit = sample.kpis.find((k) => k.id === 'net_profit');
     const D = structuredClone({
       scope: 'budget',
       asOf: CAIRO_DATE.format(today),
@@ -216,12 +216,11 @@ function createControlRoomService({
       fnBudget: sample.fnBudget,
       functions: sample.functions,
       projects: { value: sample.projects.value, margin: sample.projects.margin },
-      pnl: { netProfit: sample.pnl.netProfit },
-      revenue: { ytd: sample.revenue.ytd, ytdTarget: sample.revenue.ytdTarget },
-      kpis: [netProfit],
+      pnl: {},
+      revenue: {},
+      kpis: [],
       series: {},
       yearMap: {},
-      years: {},
       records: {},
       risks: [],
       decisions: [],
@@ -229,6 +228,8 @@ function createControlRoomService({
       sources: {},
       sync: [],
     });
+    // The year switcher needs the live year, or the page treats it as a closed one.
+    currentYearOnly(D, D.asOf);
     try {
       applyBudgets(D, budgetService.getState());
     } catch (error) {

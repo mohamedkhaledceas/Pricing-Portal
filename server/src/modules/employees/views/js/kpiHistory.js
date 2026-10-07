@@ -43,11 +43,12 @@ export async function renderKpiHistory(container, employeeId) {
     // Oldest first for the trend row, most-recent-first for the table —
     // same underlying data, two natural reading orders.
     const trend = [...breakdowns].reverse();
-    const maxScore = Math.max(100, ...trend.map((b) => b.final.total));
+    // A quarter whose review window is still open has no final score yet.
+    const maxScore = Math.max(100, ...trend.map((b) => b.final.total || 0));
     const trendHtml = trend.map((b) => {
-      const heightPct = Math.max(2, (b.final.total / maxScore) * 100);
-      return `<div class="kpi-trend-bar" title="${escapeHtml(b.quarter)}: ${b.final.total.toFixed(1)}">
-        <div class="kpi-trend-bar-value">${b.final.total.toFixed(0)}</div>
+      const heightPct = Math.max(2, ((b.final.total || 0) / maxScore) * 100);
+      return `<div class="kpi-trend-bar" title="${escapeHtml(b.quarter)}: ${b.final.total === null ? 'reviews in progress' : b.final.total.toFixed(1)}">
+        <div class="kpi-trend-bar-value">${b.final.total === null ? '—' : b.final.total.toFixed(0)}</div>
         <div class="kpi-trend-bar-fill" style="height:${heightPct}%;"></div>
         <div class="kpi-trend-bar-label">${escapeHtml(b.quarter)}</div>
       </div>`;
@@ -60,9 +61,9 @@ export async function renderKpiHistory(container, employeeId) {
           ${breakdowns.map((b) => `
             <tr>
               <td>${escapeHtml(b.quarter)}</td>
-              <td class="num">${b.final.pillarAWeighted.toFixed(1)} / ${b.pillarA.maxTotal}</td>
+              <td class="num">${b.final.pillarAWeighted === null ? '—' : `${b.final.pillarAWeighted.toFixed(1)} / ${b.pillarA.maxTotal}`}</td>
               <td class="num">${b.pillarB.defined ? b.final.pillarBWeighted.toFixed(1) + ' / ' + b.pillarB.maxTotal : '—'}</td>
-              <td class="num" style="font-weight:650;">${b.final.total.toFixed(1)}</td>
+              <td class="num" style="font-weight:650;">${b.final.total === null ? '—' : b.final.total.toFixed(1)}</td>
               <td>${statusBadge(b.final.statusBand)}</td>
             </tr>`).join('')}
         </tbody>

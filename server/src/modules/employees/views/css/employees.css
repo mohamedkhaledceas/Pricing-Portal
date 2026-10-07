@@ -414,6 +414,7 @@ table.data-table th.num, table.data-table td.num{text-align:right; font-variant-
 .alert-info{background:rgba(66,140,255,0.10); color:var(--ink)}
 .alert-warn{background:rgba(250,178,25,0.14); color:var(--ink)}
 .alert-danger{background:rgba(208,59,59,0.12); color:var(--ink)}
+.alert-success{background:rgba(31,157,85,0.12); color:var(--ink)}
 
 .loading-spinner{
   width:26px; height:26px; margin:0 auto 8px; border-radius:50%;

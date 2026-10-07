@@ -10,7 +10,7 @@ export function kpi(id,{hero,label}={}){
   return `<button class="kpi r-${m.rag} ${hero?'hero':''}" data-kpi="${id}">
     <span class="k">${esc(k.live?k.name:(label||k.name))}${k.live?'<span class="mon live">LIVE</span>':''}${k.scored?'':'<span class="mon">MON</span>'}${m.edited?'<span class="mon" style="color:var(--accent);border-color:var(--accent)">EDITED</span>':''}</span>
     <span class="val">${k.unavailable?'—':fmtc(k,m.actual)}</span>
-    <span class="meta">${k.unavailable?'unavailable right now':k.notMeasured?'not measured':m.target==null?'no target set':`${TT[k.targetType]} ${fmt(k,m.target)} · ${pctx(m.ach)}`}</span>
+    <span class="meta">${k.unavailable?'unavailable right now':k.perCompany?'per company only':k.notMeasured?'not measured':m.target==null?'no target set':`${TT[k.targetType]} ${fmt(k,m.target)} · ${pctx(m.ach)}`}</span>
     ${k.alt?`<span class="meta" title="${esc(k.alt.hint||'')}">${esc(k.alt.label)} ${fmtc(k,k.alt.value)}</span>`:''}
     ${yoyLine(id,k)}
     ${s?spark(s):''}

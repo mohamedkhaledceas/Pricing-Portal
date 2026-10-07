@@ -33,9 +33,13 @@ async function loadViewCandidates() {
   kpiPerms.hasReports = false;
 
   try {
-    if (kpiPerms.isPeopleCulture) {
-      const res = await apiFetch('/api/employees');
+    // CEO, P&C and admin may view anyone's KPI (the server's
+    // canViewBreakdown); the directory is every active employee.
+    if (kpiPerms.isPeopleCulture || kpiPerms.isAdmin || kpiPerms.isManager) {
+      const res = await apiFetch('/api/employees/directory');
       (res.employees || []).forEach((e) => { byId[e.id] = byId[e.id] || { id: e.id, firstName: e.firstName, lastName: e.lastName }; });
+      const team = await apiFetch('/api/employees/team').catch(() => null);
+      kpiPerms.hasReports = !!(team && (team.employees || []).length);
     } else {
       const res = await apiFetch('/api/employees/team');
       (res.employees || []).forEach((e) => {
@@ -303,7 +307,12 @@ function pillarASectionHtml(pillarA, selfEvaluation, employeeId, quarter) {
       + (selfEvaluation.comment ? `<p class="panel-text">${escapeHtml(selfEvaluation.comment)}</p>` : '<div class="list-empty">Scores shown beside each dimension; no comment left.</div>');
   }
 
-  const dimsCol = colTitle('Peer review scores') + `<div class="kpi-dim-grid">${dims}</div>`;
+  // Hidden until the review window closes (server rule); comments arrive
+  // only for CEO, P&C and admin.
+  const dimsCol = pillarA.hidden
+    ? colTitle('Peer review scores') + '<div class="list-empty">Team reviews are in progress. Pillar A appears once the review window closes.</div>'
+    : colTitle('Peer review scores', `${pillarA.responseCount} ${plural(pillarA.responseCount, 'response', 'responses')}`) + `<div class="kpi-dim-grid">${dims}</div>`
+      + (pillarA.feedback.length ? colTitle('Comments from colleagues', 'anonymous') + pillarA.feedback.map((f) => `<p class="panel-text">${escapeHtml(f)}</p>`).join('') : '');
   return panel({
     title: 'Pillar A — peer review',
     meta: '60% of the score',
@@ -363,12 +372,12 @@ function pillarBSectionHtml(pillarB, employeeId, quarter) {
   return panel({ title: 'Pillar B — role metrics', meta: '40% of the score', body: `<div class="panel-body">${sectionsHtml}</div>` });
 }
 
-function pillarMeter(label, value, max) {
+function pillarMeter(label, value, max, emptyLabel = 'Not defined') {
   const pct = value === null || !max ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
   return `<div class="meter">
     <div class="meter-top">
       <span class="meter-label">${escapeHtml(label)}</span>
-      <span class="meter-value">${value === null ? '<strong>Not defined</strong>' : `<strong>${value.toFixed(1)}</strong> of ${max}`}</span>
+      <span class="meter-value">${value === null ? `<strong>${escapeHtml(emptyLabel)}</strong>` : `<strong>${value.toFixed(1)}</strong> of ${max}`}</span>
     </div>
     <div class="meter-track"><div class="meter-fill" style="width:${pct}%;"></div></div>
   </div>`;
@@ -379,17 +388,17 @@ function scorePanelHtml(breakdown, quarter, employeeId) {
   const deadline = currentQuarterInfo && currentQuarterInfo.quarter === quarter ? currentQuarterInfo.deadline : null;
   const left = `
     <div class="kpi-score-line">
-      <span class="kpi-score-big">${final.total.toFixed(1)}</span>
+      <span class="kpi-score-big">${final.total === null ? '—' : final.total.toFixed(1)}</span>
       <span class="kpi-score-unit">of 100 points</span>
       ${statusBadge(final.statusBand)}
     </div>
     <div class="kpi-score-facts">
-      <span>${final.achievementPct.toFixed(1)}% achievement</span>
+      ${final.achievementPct === null ? '' : `<span>${final.achievementPct.toFixed(1)}% achievement</span>`}
       <span>${breakdown.kpiProfile ? 'KPI profile: ' + escapeHtml(breakdown.kpiProfile) : 'No KPI profile assigned'}</span>
     </div>
     ${final.statusBand.note ? `<div class="kpi-band-note">${escapeHtml(final.statusBand.note)}</div>` : ''}`;
   const right = colTitle('How it adds up') + `<div class="meter-list">
-    ${pillarMeter(`Pillar A, peer review (${final.pillarAWeightPct}%)`, final.pillarAWeighted, pillarA.maxTotal)}
+    ${pillarMeter(`Pillar A, peer review (${final.pillarAWeightPct}%)`, final.pillarAWeighted, pillarA.maxTotal, pillarA.hidden ? 'After reviews close' : 'Not defined')}
     ${pillarMeter(`Pillar B, role metrics (${final.pillarBWeightPct}%)`, pillarB.defined ? final.pillarBWeighted : null, pillarB.maxTotal)}
   </div>`;
   return panel({
@@ -499,7 +508,7 @@ function renderSubNav() {
   // hasReports (computed in loadViewCandidates via the same reporting-line
   // FK as the backend's own team-head check) is what lets a real team head
   // see this tab too, not just the manager/admin company-wide roles.
-  if (kpiPerms.isManager || kpiPerms.isAdmin || kpiPerms.hasReports) tabs.push({ id: 'team', label: 'Team Performance' });
+  if (kpiPerms.isManager || kpiPerms.isAdmin || kpiPerms.isPeopleCulture || kpiPerms.hasReports) tabs.push({ id: 'team', label: 'Team Performance' });
   if (kpiPerms.isPeopleCulture) tabs.push({ id: 'frameworks', label: 'Browse Frameworks' });
   if (kpiPerms.isAdmin) tabs.push({ id: 'mappingAdmin', label: 'ClickUp Mappings' });
 
@@ -532,17 +541,26 @@ function renderActiveView(employeeId, quarter) {
 // silently defeated that button even once its onclick/CSP issue is fixed:
 // clicking it correctly switched to the KPI tab, but the tab itself always
 // reset back to its own default sub-view regardless of intent.
+// CEO, P&C and admin oversee everyone's KPIs, so they get the page even
+// without an employee profile of their own — just no "me" to default to.
+const OVERSIGHT_ROLES = ['ceo', 'people_culture', 'admin'];
+
 export async function renderKpi(initialView) {
   const container = $('#kpi-content');
-  const emp = state.myEmployee;
-  if (!emp) {
+  const role = state.currentUser && state.currentUser.role;
+  if (!state.myEmployee && !OVERSIGHT_ROLES.includes(role)) {
     container.innerHTML = panel({ title: 'KPIs', body: '<div class="panel-body"><div class="list-empty">You need an employee profile to view KPIs. Contact People &amp; Culture to get set up.</div></div>' });
     return;
   }
 
   container.innerHTML = '<div class="list-empty" style="border:none;">Loading…</div>';
   await Promise.all([loadViewCandidates(), loadCurrentQuarter(), loadAvailableQuarters()]);
-  activeView = initialView || 'overview';
+  activeView = initialView || (state.myEmployee ? 'overview' : 'team');
+  if (viewCandidates.length === 0) {
+    container.innerHTML = panel({ title: 'KPIs', body: '<div class="panel-body"><div class="list-empty">No employees to show yet.</div></div>' });
+    return;
+  }
+  const emp = state.myEmployee || viewCandidates[0];
 
   const current = currentQuarterInfo && currentQuarterInfo.quarter;
   const quarter = (current && availableQuarters.includes(current)) ? current : (availableQuarters[0] || current || `${new Date().getFullYear()}-Q1`);
