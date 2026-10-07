@@ -26,7 +26,7 @@ export function bindOverviewUi() {
     const btn = e.target.closest('[data-goto-tab]');
     if (!btn) return;
     const tab = btn.dataset.gotoTab;
-    switchMainTab(tab, document.getElementById('maintab-' + tab), { kpiView: btn.dataset.gotoKpiView });
+    switchMainTab(tab, { kpiView: btn.dataset.gotoKpiView });
   });
 }
 

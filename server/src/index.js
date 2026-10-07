@@ -1,6 +1,7 @@
 require('dotenv').config();
 const path = require('path');
 const http = require('http');
+const compression = require('compression');
 const express = require('express');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
@@ -39,14 +40,14 @@ const config = require('./config');
    already gates its own user-management endpoints with. */
 const requirePlannerAccess = requireRole(USER_MANAGER_ROLES);
 
-if (!process.env.JWT_SECRET) {
+if (!config.jwtSecret) {
   logger.error('FATAL: JWT_SECRET is not set. Refusing to start — set it in the environment before running the server.');
   process.exit(1);
 }
 
 const app = express();
-const PORT = Number(process.env.PORT || 3001);
-const HOST = process.env.HOST || '0.0.0.0';
+const PORT = config.port;
+const HOST = config.host;
 
 /* Render (and most PaaS hosts) sit the app behind a reverse proxy — without
    this, req.ip resolves to the proxy's address for every request, which
@@ -61,6 +62,7 @@ const employeesHtmlPath = path.join(__dirname, 'modules', 'employees', 'views', 
 const plannerHtmlPath = path.join(__dirname, 'modules', 'pricing', 'views', 'index.html');
 const commercialLeadHtmlPath = path.join(__dirname, 'modules', 'management', 'commercial-leads', 'views', 'index.html');
 const ceoDashboardHtmlPath = path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views', 'index.html');
+const clientMappingHtmlPath = path.join(__dirname, 'modules', 'management', 'finance', 'views', 'index.html');
 const loginHtmlPath = path.join(__dirname, 'modules', 'auth', 'views', 'index.html');
 
 /* Content-Security-Policy — see docs/security.md §2 for the full audit
@@ -78,7 +80,7 @@ const loginHtmlPath = path.join(__dirname, 'modules', 'auth', 'views', 'index.ht
    frontend alone has ~90 inline style="" attributes, and migrating
    those off is a separate, much larger effort than adding CSP. */
 const inlineScriptHashesAllowed = Array.from(new Set(
-  [employeesHtmlPath, plannerHtmlPath, commercialLeadHtmlPath, ceoDashboardHtmlPath, loginHtmlPath]
+  [employeesHtmlPath, plannerHtmlPath, commercialLeadHtmlPath, ceoDashboardHtmlPath, clientMappingHtmlPath, loginHtmlPath]
     .flatMap(inlineScriptHashes),
 ));
 app.use(helmet({
@@ -115,6 +117,10 @@ app.use(helmet({
    skip straight to the error handler, bypassing any middleware mounted after
    it, which would otherwise leave that error's log entry without one. */
 app.use(correlationId);
+/* gzip/deflate for every response the browser accepts it for — the CEO
+   Control Room's JSON drops from ~110 KB to ~27 KB. No response here
+   streams (no SSE); socket.io runs on the HTTP server, not through Express. */
+app.use(compression());
 
 /* Mounted before the global express.json() below on purpose — it carries
    its own express.raw() parser so the exact bytes ClickUp sent are still
@@ -166,6 +172,14 @@ app.get('/ceo', (req, res) => {
   res.sendFile(ceoDashboardHtmlPath);
 });
 app.use('/ceo', express.static(path.join(__dirname, 'modules', 'management', 'ceo-dashboard', 'views')));
+
+/* Client mapping review (ClickUp clients <-> Odoo customers) — its own page,
+   linked from the CEO dashboard, Margin Planner and Commercial Lead headers;
+   API gated to ceo/admin/operations, see modules/management/finance/. */
+app.get('/client-mapping', (req, res) => {
+  res.sendFile(clientMappingHtmlPath);
+});
+app.use('/client-mapping', express.static(path.join(__dirname, 'modules', 'management', 'finance', 'views')));
 
 /* /login — the one place auth (sign in / sign up) lives. Every other page
    redirects here when a silent refresh fails; on success this page's own
@@ -225,6 +239,15 @@ initRealtime(httpServer, { verifyAccessToken: authModule.verifyAccessToken });
 
 httpServer.listen(PORT, HOST, () => {
   logger.info(`Server listening on http://${HOST}:${PORT}`);
+  /* Background syncs run inside this web process (node-cron). That
+     assumes ONE server instance — as on Render today, and as SQLite on a
+     single disk requires anyway. Running two instances would run every
+     sync twice; scaling out means moving these to a separate worker first.
+     Schedules are staggered (common/jobs/stagger.js) to share ClickUp's
+     rate limit. */
   management.startReconciliationSchedule();
   management.scheduleQuarterFreeze();
+  management.startOdooSyncSchedule();
+  management.startClientSyncSchedule();
+  management.startDeliverySyncSchedule();
 });

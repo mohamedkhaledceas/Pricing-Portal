@@ -1,9 +1,9 @@
-import { state } from './state.js';
+import { session } from './session.js';
 
 export async function apiFetch(path, options, _isRetry) {
   const res = await fetch(path, {
     ...options,
-    headers: { ...(options && options.headers), Authorization: 'Bearer ' + state.accessToken },
+    headers: { ...(options && options.headers), Authorization: 'Bearer ' + session.accessToken },
   });
   if (res.status === 401 && !_isRetry) {
     const ok = await bootstrapAuth();
@@ -46,8 +46,8 @@ async function doRefresh(isRetry) {
   }
   if (res && res.ok) {
     const data = await res.json();
-    state.accessToken = data.token;
-    state.currentUser = data.user;
+    session.accessToken = data.token;
+    session.currentUser = data.user;
     return true;
   }
   if (isRetry || (res && res.status === 401)) return false;

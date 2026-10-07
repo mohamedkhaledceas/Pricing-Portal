@@ -644,7 +644,7 @@ function bindRequestsCenterUi(container) {
     if (action === 'cancel-confirm-rejection') cancelConfirmRejection();
     if (action === 'confirm-rejection-submit') confirmRejection(id, btn);
     if (action === 'show-all-team') { showAllTeamRequests = true; renderRequestsCenter(); }
-    if (action === 'new-request') switchMainTab('timeoff', document.getElementById('maintab-timeoff'));
+    if (action === 'new-request') switchMainTab('timeoff');
   });
 
   // "My Requests" filter bar — #my-requests-list gets replaced by

@@ -5,8 +5,10 @@
    statuses can be renamed by whoever manages it in ClickUp). Structurally
    the same boot+interval cron shape jobs/clickupUserSyncSchedule.js
    already uses. */
+const { staggeredMinutes } = require('../../../common/jobs/stagger');
 const cron = require('node-cron');
 const logger = require('../../../common/logger');
+const config = require('../../../config');
 
 function createKpiClickupListSync({ clickupGet, kpiAutoMetricMappingRepository, kpiClickupListRepository }) {
   async function run() {
@@ -58,11 +60,12 @@ function startKpiClickupListSyncSchedule({ clickupGet, kpiAutoMetricMappingRepos
     }
   }
 
-  const minutes = Number(process.env.KPI_CLICKUP_LIST_SYNC_MINUTES || 60);
-  cron.schedule(`*/${minutes} * * * *`, () => runOnce('scheduled'));
+  const minutes = config.kpiClickupListSyncMinutes;
+  cron.schedule(`${staggeredMinutes(minutes, 25)} * * * *`, () => runOnce('scheduled'));
   logger.info(`KPI ClickUp list sync scheduled every ${minutes} minute(s).`);
 
-  runOnce('startup');
+  // Startup runs are spaced out so the ClickUp syncs don't all hit its rate limit at once.
+  setTimeout(() => { runOnce('startup'); }, 40000);
 
   return sync;
 }

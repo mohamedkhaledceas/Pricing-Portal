@@ -4,11 +4,13 @@
 const { ValidationError } = require('../../../../common/errors');
 const { LISTS, INSIGHTS_LIST_ID } = require('../constants');
 const dealRepository = require('../repositories/dealRepository');
+const dealRecordRepository = require('../repositories/dealRecordRepository');
 const dailyCountsRepository = require('../repositories/dailyCountsRepository');
 const stageRepository = require('../repositories/stageRepository');
 const statusColorRepository = require('../repositories/statusColorRepository');
 const { toDeal } = require('../models/deal.model');
 const quarterMetricsService = require('./quarterMetricsService');
+const { mapStatusToBucket } = require('./bucketService');
 
 function getDeals() {
   const result = {};
@@ -85,6 +87,96 @@ function getQuarterlyKpis(requestedQuarter) {
   };
 }
 
+/* The CEO Control Room's pipeline block (modules/management/ceo-dashboard,
+   via this module's container). Counts only — ClickUp has a deal value on
+   too few deals (Project Value is set on ~7%) to show money honestly.
+   - open: deals in the 2026 Projects list by the funnel bucket their
+     current status maps to (bucketService), open buckets only.
+   - quarters: the current quarter's cohort row and the latest earlier one
+     (a quarter a few days old has an empty cohort), exactly as the
+     Commercial Lead page computes them (ADR-0010) — no second definition
+     of conversion.
+   - stageDurations: average days spent per status, same as that page. */
+const OPEN_BUCKETS = [
+  { bucket: 'leads', name: 'Leads' },
+  { bucket: 'qualified', name: 'Qualified' },
+  { bucket: 'onboarding', name: 'Onboarding' },
+  { bucket: 'in_progress', name: 'In progress' },
+];
+
+function getPipelineSummary() {
+  const counts = new Map(OPEN_BUCKETS.map((b) => [b.bucket, 0]));
+  for (const row of dealRepository.findAllByListId(LISTS.pipeline)) {
+    const bucket = mapStatusToBucket(row.status);
+    if (counts.has(bucket)) counts.set(bucket, counts.get(bucket) + 1);
+  }
+  const current = getQuarterlyKpis(null);
+  const previousId = current.availableQuarters.filter((q) => q < current.quarter).sort().pop();
+  const quarters = [current, previousId ? getQuarterlyKpis(previousId) : null]
+    .filter(Boolean)
+    .map((q) => ({ id: q.quarter, isCurrent: q.isCurrent, isEstimated: q.isEstimated, ...q.metrics }));
+  return {
+    open: OPEN_BUCKETS.map((b) => ({ bucket: b.bucket, name: b.name, count: counts.get(b.bucket) })),
+    quarters,
+    stageDurations: getStageDurations(),
+  };
+}
+
+/* The CEO Control Room's client book (via this module's container): every
+   deal record tied to a portal client, from any tracked list, with the
+   funnel bucket its status maps to (null for statuses outside the funnel,
+   e.g. the Active Clients list's own). */
+const LIST_NAMES = { pipeline: 'Pipeline', activeClients: 'Active clients', offboarding: 'Offboarding' };
+const LIST_KEY_BY_ID = new Map(Object.entries(LISTS).map(([key, id]) => [id, key]));
+
+function toClientDeal(row) {
+  const list = LIST_KEY_BY_ID.get(row.list_id) || null;
+  return {
+    clientId: row.client_id,
+    dealId: row.deal_id,
+    name: row.name,
+    status: row.status.trim(),
+    bucket: mapStatusToBucket(row.status),
+    list,
+    listName: LIST_NAMES[list] || 'Other',
+    value: row.value,
+    currency: row.currency,
+    salesPerson: row.sales_person,
+    accountManager: row.account_manager,
+    createdAt: row.clickup_created_at,
+    updatedAt: row.clickup_updated_at,
+  };
+}
+
+function getClientDeals() {
+  return dealRecordRepository.listWithClient().map(toClientDeal);
+}
+
+function getDealsForClient(clientId) {
+  return dealRecordRepository.findByClientId(clientId).map(toClientDeal);
+}
+
+/* Ties unlinked deals to their client by the deal's own "Client Name"
+   dropdown — the same workspace-wide field clients are built from, so this
+   is an exact match on one source, not the fuzzy identity matching
+   ADR-0010 warns against. clientIdByName: normalized option name ->
+   client id, supplied by the clients sync. A deal with no Client Name set
+   stays unlinked. Returns how many deals were linked. */
+const normalizeName = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+function linkDealsByClientName(clientIdByName) {
+  let linked = 0;
+  for (const row of dealRecordRepository.listUnlinkedWithFields()) {
+    const field = JSON.parse(row.fieldsJson || '{}')['Client Name '];
+    const clientId = field && clientIdByName.get(normalizeName(field.value));
+    if (clientId) {
+      dealRecordRepository.setClientId(row.dealId, clientId);
+      linked += 1;
+    }
+  }
+  return linked;
+}
+
 // Wraps a value in quotes and doubles any embedded quotes whenever it
 // contains a comma, quote, or newline — the one thing the older KPI-export
 // precedent (kpiScoringService.exportHistoryCsv) skips, safely only because
@@ -129,4 +221,7 @@ function exportDealsCsv(listKey) {
   return lines.join('\r\n');
 }
 
-module.exports = { getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis, exportDealsCsv };
+module.exports = {
+  getDeals, getDailyStats, getStageDurations, getStatusColors, getQuarterlyKpis, getPipelineSummary, exportDealsCsv,
+  getClientDeals, getDealsForClient, linkDealsByClientName,
+};

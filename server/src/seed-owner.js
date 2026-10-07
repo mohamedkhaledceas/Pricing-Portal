@@ -2,9 +2,10 @@ require('dotenv').config();
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
+const config = require('./config');
 
-const email = (process.env.SEED_OWNER_USERNAME || 'owner').trim().toLowerCase();
-const password = process.env.SEED_OWNER_PASSWORD || 'owner123';
+const email = (config.seedOwnerUsername || 'owner').trim().toLowerCase();
+const password = config.seedOwnerPassword || 'owner123';
 
 const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
 if (existing) {

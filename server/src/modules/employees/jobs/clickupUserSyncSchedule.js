@@ -4,14 +4,12 @@
    restart. Structurally identical to commercial-leads'
    jobs/reconcile.js#startReconciliationSchedule — same reentrant guard +
    cron + immediate startup run shape, applied to this module's own sync.
-
-   process.env read directly here, not through config/index.js — same
-   already-documented carve-out config/index.js's own header comment
-   states for clickupReconcile.js and friends (centralizing those is a
-   separate pass, not this one). */
+   Its interval comes from config (CLICKUP_USER_SYNC_MINUTES). */
+const { staggeredMinutes } = require('../../../common/jobs/stagger');
 const cron = require('node-cron');
 const logger = require('../../../common/logger');
 const createClickupUserSync = require('../services/clickupUserSync');
+const config = require('../../../config');
 
 function startClickupUserSyncSchedule({ employeeRepository, clickupClient, teamId }) {
   const clickupUserSync = createClickupUserSync({ employeeRepository, clickupClient, teamId });
@@ -35,11 +33,12 @@ function startClickupUserSyncSchedule({ employeeRepository, clickupClient, teamI
     }
   }
 
-  const minutes = Number(process.env.CLICKUP_USER_SYNC_MINUTES || 30);
-  cron.schedule(`*/${minutes} * * * *`, () => runOnce('scheduled'));
+  const minutes = config.clickupUserSyncMinutes;
+  cron.schedule(`${staggeredMinutes(minutes, 18)} * * * *`, () => runOnce('scheduled'));
   logger.info(`ClickUp user sync scheduled every ${minutes} minute(s).`);
 
-  runOnce('startup');
+  // Startup runs are spaced out so the ClickUp syncs don't all hit its rate limit at once.
+  setTimeout(() => { runOnce('startup'); }, 20000);
 
   return clickupUserSync;
 }

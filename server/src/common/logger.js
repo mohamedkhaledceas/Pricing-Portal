@@ -1,12 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const config = require('../config');
 
 const LOG_RETENTION_DAYS = 14;
 
 /* Mirrors db.js's DB_DIR resolution so logs land on the same Render
    persistent disk as the database — anywhere else on the container
    filesystem is wiped on every deploy/restart. */
-const logDir = path.join(process.env.DB_DIR || path.join(__dirname, '..', '..', 'data'), 'logs');
+const logDir = path.join(config.dbDir || path.join(__dirname, '..', '..', 'data'), 'logs');
 fs.mkdirSync(logDir, { recursive: true });
 
 function currentLogFile() {

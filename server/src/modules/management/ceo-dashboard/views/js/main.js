@@ -1,121 +1,103 @@
-import { $, $$, toast } from './dom.js';
-import { state } from './state.js';
 import { apiFetch, bootstrapAuth } from './apiClient.js';
-import { paintLogo, updateAppearanceControls, setTheme } from './theme.js';
-import { renderAll } from './render.js';
+import { loadBudget, loadEntity } from './loader.js';
+import { pages, S } from './model.js';
+import { session } from './session.js';
+import { applyBrand, draw, goto, render } from './shell.js';
+import { $ } from './util.js';
 
-/* Server-side enforcement is requireRole([ROLES.CEO, ROLES.ADMIN]) on
-   every /api/ceo-dashboard/* route (see ../../routes/index.js) — this is
-   defense in depth for the UI only. Anyone outside this set who reaches
-   this page gets the same "Unauthorized" loginGate state as a failed
-   login, driven by the 403 the API calls below will actually throw. */
+/* Server-side enforcement is the per-route role gate in ../../routes/index.js
+   — this check is defense in depth for the UI only. */
 const CEO_VIEW_ROLES = ['ceo', 'admin'];
-// Matches every other surface's own Users-menu-item gate.
-const USER_MANAGER_ROLES = ['admin', 'ceo', 'operations'];
+// Limited view (model.js LIMITED_PAGES): the pages these roles get, each fed
+// by its own narrower endpoint; /control-room answers them 403.
+const LIMITED_VIEW_ROLES = ['operations', 'people_culture'];
 
-async function loadEntity(entityKey) {
-  const [snapRes, briefRes] = await Promise.all([
-    apiFetch('/api/ceo-dashboard/snapshot?entity=' + encodeURIComponent(entityKey)),
-    apiFetch('/api/ceo-dashboard/brief?entity=' + encodeURIComponent(entityKey)),
-  ]);
-  state.shell = { asOf: snapRes.snapshot.asOf, asOfLabel: snapRes.snapshot.asOfLabel, currency: snapRes.snapshot.currency, syncStatus: snapRes.snapshot.syncStatus };
-  state.snapshotCache[entityKey] = snapRes.snapshot.entity;
-  state.briefCache[entityKey] = briefRes.brief;
-}
-
-async function switchEntity(entityKey) {
-  // This had no try/catch at all before — a failed fetch here (unlike the
-  // one in init()) was a plain unhandled promise rejection: the tab looked
-  // selected (aria-pressed already flipped below) but the content never
-  // updated, with nothing telling the user anything went wrong. Revert
-  // both state.entity and the tab selection on failure so the UI doesn't
-  // lie about which entity is actually showing.
-  const previousEntity = state.entity;
-  state.entity = entityKey;
-  $$('.seg [data-ent]').forEach((o) => o.setAttribute('aria-pressed', String(o.dataset.ent === entityKey)));
-  try {
-    if (!state.snapshotCache[entityKey]) {
-      await loadEntity(entityKey);
-    }
-    renderAll();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  } catch (err) {
-    state.entity = previousEntity;
-    $$('.seg [data-ent]').forEach((o) => o.setAttribute('aria-pressed', String(o.dataset.ent === previousEntity)));
-    toast(err.message || 'Could not load that entity.', 'danger');
+function showGate(which, message) {
+  $('#app').style.display = 'none';
+  $('#loginGate').style.display = 'flex';
+  $('#loginGateChecking').hidden = true;
+  if (which === 'error') {
+    $('#loginGateError').querySelector('p').textContent = message || "Couldn't load the dashboard.";
+    $('#loginGateError').hidden = false;
+  } else {
+    $('#loginGateFail').hidden = false;
   }
 }
 
-function bindUi() {
-  $('#brandLogo').addEventListener('click', () => { window.location.href = '/'; });
-  $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
-  $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
-  $$('.seg [data-ent]').forEach((b) => b.addEventListener('click', () => { switchEntity(b.dataset.ent); }));
-
-  const bh = $('#briefhead');
-  function toggleBrief() {
-    const b = $('#brief'), open = b.dataset.open === 'true';
-    b.dataset.open = String(!open); bh.setAttribute('aria-expanded', String(!open));
-  }
-  bh.addEventListener('click', toggleBrief);
-  bh.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBrief(); } });
-  $$('[data-fb]').forEach((b) => b.addEventListener('click', () => {
-    $('#fbnote').textContent = 'Logged — this tunes tomorrow’s brief.';
-  }));
+/* The portal's shared sidebar (public/shared/appShell.js) carries this
+   page's sections, the other pages, Users, appearance and the account;
+   ⌘K stays this page's own palette (KPIs, decisions, clients), which also
+   lists the portal entries. */
+function mountShell(cmdOpen) {
+  window.AppShell.mount({
+    appEl: $('#app'),
+    page: 'ceo',
+    pageLabel: 'Control Room',
+    role: session.currentUser.role,
+    items: [],
+    onSelect: (id) => goto(id),
+    onSearch: cmdOpen,
+    // Chart colours are read from CSS vars at draw time — redraw on change.
+    onThemeChange: () => { applyBrand(); render(); },
+    onResize: draw,
+    mountAccount: (el) => window.AccountMenu.mount(el, {
+      variant: 'rail',
+      apiFetch,
+      currentUser: session.currentUser,
+      getAccessToken: () => session.accessToken,
+      onLogout: async () => {
+        try {
+          await apiFetch('/api/auth/logout', { method: 'POST' });
+        } catch (err) {
+          // The refresh cookie is cleared server-side on a successful call; on
+          // failure /login still forces a fresh sign-in, so just go there.
+        }
+        window.location.href = '/login';
+      },
+    }),
+  });
 }
 
 (async function init() {
-  updateAppearanceControls();
-  paintLogo();
-  if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintLogo);
-  }
-  bindUi();
+  $('#btnLoginGateHome').addEventListener('click', () => { window.location.href = '/login'; });
+  $('#btnLoginGateRetry').addEventListener('click', () => { window.location.reload(); });
 
   const ok = await bootstrapAuth();
-  if (!ok || !state.currentUser || !CEO_VIEW_ROLES.includes(state.currentUser.role)) {
-    $('#loginGateChecking').hidden = true;
-    $('#loginGateFail').hidden = false;
+  const role = ok && session.currentUser ? session.currentUser.role : null;
+  if (!CEO_VIEW_ROLES.includes(role) && !LIMITED_VIEW_ROLES.includes(role)) {
+    showGate('fail');
     return;
   }
-  const canManageUsers = USER_MANAGER_ROLES.includes(state.currentUser.role);
-  window.AccountMenu.mount($('#accountMenuWrap'), {
-    apiFetch,
-    currentUser: state.currentUser,
-    getAccessToken: () => state.accessToken,
-    canManageUsers,
-    onUsersClick: () => { window.location.href = '/?open=users'; },
-    onLogout: async () => {
-      try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch (err) {}
-      window.location.href = '/login';
-    },
-    setTheme,
-    updateAppearanceControls,
-    // Chart colors are read live from CSS vars at draw time — redraw so
-    // they pick up the new theme instead of staying stuck on the old one.
-    onThemeChange: renderAll,
-  });
-  $('#loginGate').style.display = 'none';
-  $('#app').style.display = 'block';
+  S.role = role;
+  S.scope = CEO_VIEW_ROLES.includes(role) ? 'full' : 'limited';
+  // Open on the function this role owns (P&C's People & Culture is already the default).
+  if (role === 'operations') S.fn = 'ops';
 
   try {
-    await loadEntity(state.entity);
-    renderAll();
+    if (S.scope === 'limited') await loadBudget();
+    else await loadEntity(S.ent);
   } catch (err) {
-    // A real 401/403 means authenticated but not manager (requireRole on
-    // the server) — that's genuinely "Unauthorized". Anything else (a 500,
-    // a network drop) is a load failure, not a permissions problem, and
-    // showing "Unauthorized" for it misleads whoever's debugging — this
-    // now tells the two apart instead of always falling back to the same
-    // screen as a failed login.
-    $('#app').style.display = 'none';
-    $('#loginGate').style.display = 'flex';
-    $('#loginGateChecking').hidden = true;
-    if (err.status === 401 || err.status === 403) {
-      $('#loginGateFail').hidden = false;
-    } else {
-      $('#loginGateError').querySelector('p').textContent = err.message || "Couldn't load the dashboard.";
-      $('#loginGateError').hidden = false;
-    }
+    // A 401/403 is a permissions problem; anything else (500, network) is a
+    // load failure and says so rather than claiming "Unauthorized".
+    if (err.status === 401 || err.status === 403) showGate('fail');
+    else showGate('error', err.message);
+    return;
   }
+  // Listeners (keyboard shortcuts included) are only attached once there's
+  // data for them to render.
+  const { buildCmd, cmdOpen } = await import('./events.js');
+  mountShell(cmdOpen);
+  $('#loginGate').style.display = 'none';
+  $('#app').style.display = 'grid';
+  applyBrand();
+  if (S.scope === 'limited') {
+    $('.samplebar').innerHTML = '<div><b>Budget.</b> These are the starting budget figures from the workbook. '
+      + 'You can change the plan for the functions you own; every change is saved and logged.'
+      + (pages().some((p) => p.id === 'clients') ? ' The client book is live from Odoo and ClickUp.' : '') + '</div>';
+  }
+  const hash = (location.hash || '').slice(1);
+  S.page = pages().some((p) => p.id === hash) ? hash : pages()[0].id;
+  if (hash && hash !== S.page) history.replaceState(null, '', '#' + S.page);
+  buildCmd();
+  render();
 })();

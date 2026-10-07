@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Mapping — CEAS Portal</title>
+<script>
+(function(){
+  try{
+    var t = localStorage.getItem('pricingPortalTheme');
+    if(t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  }catch(err){}
+})();
+</script>
+<link rel="stylesheet" href="/shared/portal.css">
+<link rel="stylesheet" href="/shared/appShell.css">
+<link rel="stylesheet" href="/client-mapping/css/clientMapping.css">
+<link rel="stylesheet" href="/shared/accountMenu.css">
+<script src="/shared/orgConstants.js"></script>
+<script src="/shared/accountMenu.js"></script>
+<script src="/shared/accountSettings.js"></script>
+<script src="/shared/appShell.js"></script>
+</head>
+<body>
+
+<div id="loginGate">
+  <div id="loginGateChecking">Checking your session…</div>
+  <div id="loginGateFail" hidden>
+    <p>Unauthorized</p>
+    <button id="btnLoginGateHome" class="btn primary">Return to Home</button>
+  </div>
+  <div id="loginGateError" hidden>
+    <p>Couldn't load client mapping.</p>
+    <button id="btnLoginGateRetry" class="btn primary">Retry</button>
+  </div>
+</div>
+
+<div id="app">
+  <div class="ps-main">
+  <header class="ps-bar">
+    <div>
+      <h1>Client mapping</h1>
+      <div class="ps-sub">ClickUp clients ↔ Odoo customers</div>
+    </div>
+  </header>
+
+  <main class="ps-page">
+    <div class="card">
+      <div class="cm-head">
+        <div>
+          <h2>Odoo customers</h2>
+          <p class="hint">Each Odoo customer should point to its client in ClickUp's "Client Name" list. Once linked, the portal treats the two as one client. Suggestions come from matching names and company domains — nothing is linked until you confirm it, and every change is recorded in the audit log.</p>
+        </div>
+        <div class="cm-meta"><div id="cmMeta"></div><div id="cmSync"></div></div>
+      </div>
+
+      <div class="cm-toolbar">
+        <div class="seg" role="group" aria-label="Filter by status" id="statusFilter">
+          <button type="button" data-status="suggested" aria-pressed="true">Needs review <span class="count" data-count="suggested">–</span></button>
+          <button type="button" data-status="unmatched" aria-pressed="false">Unmatched <span class="count" data-count="unmatched">–</span></button>
+          <button type="button" data-status="linked" aria-pressed="false">Linked <span class="count" data-count="linked">–</span></button>
+          <button type="button" data-status="all" aria-pressed="false">All <span class="count" data-count="all">–</span></button>
+        </div>
+        <input type="search" id="search" placeholder="Search Odoo customer or client…" aria-label="Search Odoo customer or client">
+      </div>
+
+      <div id="cmBulk"></div>
+
+      <div class="cm-list-head" aria-hidden="true">
+        <span>Odoo customer</span><span>ClickUp client</span>
+      </div>
+      <div id="cmList" class="cm-list" aria-live="polite"></div>
+    </div>
+  </main>
+  </div>
+</div>
+
+<datalist id="clientOptions"></datalist>
+<div id="toast" hidden></div>
+
+<script type="module" src="/client-mapping/js/main.js"></script>
+
+</body>
+</html>

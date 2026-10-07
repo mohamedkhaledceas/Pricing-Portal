@@ -55,4 +55,19 @@ function setClientId(dealId, clientId) {
   db.prepare('UPDATE commercial_lead_deal_records SET client_id = ?, updated_at = ? WHERE deal_id = ?').run(clientId, new Date().toISOString(), dealId);
 }
 
-module.exports = { upsert, findByDealId, findByClientId, setClientId };
+function listWithClient() {
+  return db.prepare('SELECT * FROM commercial_lead_deal_records WHERE client_id IS NOT NULL ORDER BY updated_at DESC').all();
+}
+
+/* Deals not yet tied to a client, with their latest ClickUp fields (the
+   live cache) — for linking by the deal's own "Client Name" value. */
+function listUnlinkedWithFields() {
+  return db.prepare(`
+    SELECT r.deal_id AS dealId, l.fields_json AS fieldsJson
+    FROM commercial_lead_deal_records r
+    JOIN commercial_lead_live_cache l ON l.deal_id = r.deal_id
+    WHERE r.client_id IS NULL
+  `).all();
+}
+
+module.exports = { upsert, findByDealId, findByClientId, setClientId, listWithClient, listUnlinkedWithFields };

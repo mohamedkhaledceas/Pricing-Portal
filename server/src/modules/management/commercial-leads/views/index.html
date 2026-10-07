@@ -12,11 +12,14 @@
   }catch(err){}
 })();
 </script>
+<link rel="stylesheet" href="/shared/portal.css">
+<link rel="stylesheet" href="/shared/appShell.css">
 <link rel="stylesheet" href="/commercial-lead/css/commercialLeads.css">
 <link rel="stylesheet" href="/shared/accountMenu.css">
 <script src="/shared/orgConstants.js"></script>
 <script src="/shared/accountMenu.js"></script>
 <script src="/shared/accountSettings.js"></script>
+<script src="/shared/appShell.js"></script>
 </head>
 <body>
 
@@ -33,29 +36,18 @@
 </div>
 
 <div id="app">
-  <header class="top">
-    <img id="brandLogo" alt="Back to Pricing Portal" title="Back to Pricing Portal" style="height:38px; width:auto; cursor:pointer">
-    <script>
-    (function(){
-      // Same fix as the login page's brandLogo: sets src synchronously so
-      // there's no gap where the browser paints the alt text before the
-      // deferred module script's paintLogo() gets to it.
-      var t = document.documentElement.getAttribute('data-theme');
-      var dark = t === 'dark' || (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.getElementById('brandLogo').src = dark ? '/logo-dark.png' : '/logo-light.png';
-    })();
-    </script>
+  <div class="ps-main">
+  <header class="ps-bar">
     <div>
       <h1>Commercial Lead</h1>
-      <div class="sub">Live from ClickUp</div>
+      <div class="ps-sub">Live from ClickUp</div>
     </div>
-    <div class="spacer"></div>
+    <div class="ps-sp"></div>
     <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connLabel">Connecting…</span></div>
-    <div id="accountMenuWrap"></div>
   </header>
 
-  <main style="max-width:1180px; margin:0 auto; padding:22px 20px 60px;">
-    <div class="card">
+  <main class="ps-page">
+    <div class="card cl-sec" id="sec-quarter">
       <div class="qk-header">
         <h2>Commercial Lead — <span id="qkQuarterLabel">—</span></h2>
         <span class="qk-badge" id="qkEstimatedBadge" hidden title="This quarter includes deals backfilled from before live tracking began — timing is approximate, which stages were reached is not.">Includes estimated data</span>
@@ -70,7 +62,7 @@
       <div class="kpi-grid" id="qkGrid"></div>
     </div>
 
-    <div class="grid-2">
+    <div class="grid-2 cl-sec" id="sec-mix">
       <div class="card">
         <h2>Pipeline by status</h2>
         <p class="hint">2026 Projects — current count per stage</p>
@@ -101,7 +93,7 @@
       </table>
     </div> -->
 
-    <div class="card">
+    <div class="card cl-sec" id="sec-deals">
       <h2>2026 Projects — live deals</h2>
       <p class="hint">Click a row for every populated field on that deal</p>
       <div class="table-toolbar">
@@ -131,7 +123,7 @@
       <div class="pagination" id="paginationPipeline"></div>
     </div>
 
-    <div class="card">
+    <div class="card cl-sec" id="sec-active">
       <h2>Active Clients — AM</h2>
       <p class="hint">Live display only — no computed insights for this list</p>
       <div class="table-toolbar">
@@ -149,6 +141,7 @@
       <div class="pagination" id="paginationActiveClients"></div>
     </div>
   </main>
+  </div>
 </div>
 
 <div id="toast" hidden></div>

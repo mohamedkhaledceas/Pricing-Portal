@@ -15,3 +15,5 @@ Each ADR captures one significant decision: the problem, the decision, alternati
 | [0009](0009-response-envelope-no-versioning.md) | Standard Response Envelope, No API Versioning | Accepted |
 | [0010](0010-commercial-lead-quarterly-kpis.md) | Cohort-Based Quarterly KPI Tracking for the Commercial Lead Funnel | Proposed |
 | [0011](0011-dynamic-department-list.md) | Department List as a Table, Not a Fixed Array | Accepted |
+| [0012](0012-kpi-evaluation-lifecycle.md) | KPI Evaluation Lifecycle — Manual Pillar B, Self-Evaluation Excluded, Module-Scoped Notifications | Accepted |
+| [0013](0013-odoo-integration-strategy.md) | Odoo Integration — Read-Only Cached Sync, CEO Dashboard First | Accepted |

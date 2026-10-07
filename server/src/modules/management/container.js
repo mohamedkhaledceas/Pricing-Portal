@@ -7,8 +7,14 @@
    share it — not before. */
 const commercialLeads = require('./commercial-leads/container');
 const ceoDashboard = require('./ceo-dashboard/container');
+const finance = require('./finance/container');
+const clients = require('./clients/container');
+const delivery = require('./delivery/container');
 
 module.exports = {
   commercialLeads,
   ceoDashboard,
+  finance,
+  clients,
+  delivery,
 };

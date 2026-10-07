@@ -1,37 +1,8 @@
-:root{
-  color-scheme: light;
-  --surface-1:#ffffff; --plane:#e5e5e5; --panel:#fafafa;
-  --ink:#191919; --ink-2:#4a4a4a; --muted:#8a8a8a;
-  --border:rgba(25,25,25,0.12);
-  --on-accent:#ffffff;
-  --critical:#d03b3b;
-  --accent:#042940;
-  --radius:10px;
-}
-@media (prefers-color-scheme: dark){
-  :root:where(:not([data-theme="light"])){
-    color-scheme: dark;
-    --surface-1:#191919; --plane:#0d0d0d; --panel:#212121;
-    --ink:#ffffff; --ink-2:#cfcfcf; --muted:#8a8a8a;
-    --border:rgba(255,255,255,0.12);
-    --on-accent:#191919;
-    --accent:#a2c8ff;
-  }
-}
-:root[data-theme="dark"]{
-  color-scheme: dark;
-  --surface-1:#191919; --plane:#0d0d0d; --panel:#212121;
-  --ink:#ffffff; --ink-2:#cfcfcf; --muted:#8a8a8a;
-  --border:rgba(255,255,255,0.12);
-  --on-accent:#191919;
-  --accent:#a2c8ff;
-}
-
+/* Login — page components only. Fonts and colour tokens come from
+   /shared/portal.css, the same as every other page. */
 *{box-sizing:border-box}
 body{
   margin:0; background:var(--plane); color:var(--ink);
-  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-  font-size:14px; line-height:1.5;
 }
 
 button,.btn{

@@ -1,7 +1,7 @@
 import { $, $$, setApplyModeHandler, setRenderAllHandler, recompute } from './dom.js';
 import { state, USER_MANAGER_ROLES, hashPin, isBD } from './state.js';
 import { attemptSilentRefresh, apiRequest, getStoredAuth, setStoredAuth, setSessionExpiredHandler, logoutFromApi } from './apiClient.js';
-import { bindTheme, setTheme, updateAppearanceControls, paintLogos } from './theme.js';
+import { bindTheme, paintLogos } from './theme.js';
 import { thisMonth, projectCalc } from './calc.js';
 import { renderTeam, bindTeamTable } from './team.js';
 import { renderExpenses, bindExpensesTable } from './expenses.js';
@@ -23,16 +23,25 @@ import './recompute.js';
    recompute() pass, so nothing extra is needed in renderAllStructuresImpl()
    below beyond the recompute() call already there). */
 
+// The sidebar's sections (shared shell, public/shared/appShell.js);
+// adminOnly ones are hidden in the team (BD) view, like their panels.
+const SECTIONS = [
+  { id: 'dashboard', label: 'Dashboard', icon: 'report', adminOnly: true },
+  { id: 'team', label: 'Team & salaries', icon: 'people', adminOnly: true },
+  { id: 'expenses', label: 'Fixed expenses', icon: 'receipt', adminOnly: true },
+  { id: 'projects', label: 'Project estimator', icon: 'calc' },
+  { id: 'scenarios', label: 'Scenarios', icon: 'layers', adminOnly: true },
+  { id: 'capacity', label: 'Capacity', icon: 'clock', adminOnly: true },
+  { id: 'quote', label: 'Quotation', icon: 'doc', adminOnly: true },
+  { id: 'settings', label: 'Settings', icon: 'settings', adminOnly: true },
+];
+let activeTab = 'dashboard';
+
 function selectTab(name) {
-  $$('nav.tabs button').forEach((x) => x.setAttribute('aria-selected', x.dataset.tab === name ? 'true' : 'false'));
+  activeTab = name;
   $$('section.tabpanel').forEach((s) => { s.hidden = true; });
   $('#tab-' + name).hidden = false;
-}
-function bindTabs() {
-  $$('nav.tabs button').forEach((b) => b.addEventListener('click', () => {
-    selectTab(b.dataset.tab);
-    window.scrollTo({ top: 0 });
-  }));
+  if (window.AppShell) window.AppShell.setActive(name);
 }
 
 function applyModeImpl() {
@@ -40,9 +49,10 @@ function applyModeImpl() {
   document.body.setAttribute('data-mode', bd ? 'bd' : 'admin');
   $('#appSub').textContent = bd ? 'Build an estimate and check the price'
     : 'Salaries → true hourly cost → project margins';
+  SECTIONS.filter((t) => t.adminOnly).forEach((t) => { if (window.AppShell) window.AppShell.setHidden(t.id, bd); });
   const onUsersTab = !$('#tab-users').hidden;
-  const active = $('nav.tabs button[aria-selected="true"]');
-  if (bd && !onUsersTab && (!active || active.classList.contains('admin-only'))) selectTab('projects');
+  const activeSection = SECTIONS.find((t) => t.id === activeTab);
+  if (bd && !onUsersTab && (!activeSection || activeSection.adminOnly)) selectTab('projects');
 }
 function setMode(m) { state.ui.mode = m; applyModeImpl(); renderAllStructuresImpl(); }
 
@@ -80,9 +90,6 @@ function bindModes() {
 }
 
 function bindNavButtons() {
-  $('#brandLogo').addEventListener('click', () => { window.scrollTo({ top: 0 }); });
-  $('#btnEmployees').addEventListener('click', () => { window.location.href = '/'; });
-  $('#btnCommercialLead').addEventListener('click', () => { window.location.href = '/commercial-lead'; });
   $('#btnLoadErrorRetry').addEventListener('click', () => { window.location.reload(); });
 }
 
@@ -96,25 +103,29 @@ function updateLoginUi() {
     return;
   }
   const appShell = $('#appShell');
-  $('#btnLogin').hidden = true;
-  if (auth.user) {
-    $('#btnCommercialLead').hidden = !USER_MANAGER_ROLES.includes(auth.user.role);
-    window.AccountMenu.mount($('#accountMenuWrap'), {
-      apiFetch: apiRequest,
-      currentUser: auth.user,
-      getAccessToken: () => getStoredAuth().token,
-      canManageUsers: USER_MANAGER_ROLES.includes(auth.user.role),
-      onUsersClick: openUsersView,
-      onLogout: async () => { await logoutFromApi(); window.location.href = '/login'; },
-      setTheme,
-      updateAppearanceControls,
+  if (auth.user && !appShell.classList.contains('ps-app')) {
+    window.AppShell.mount({
+      appEl: appShell,
+      page: 'planner',
+      pageLabel: 'Margin Planner',
+      role: auth.user.role,
+      items: SECTIONS,
+      hidden: isBD() ? SECTIONS.filter((t) => t.adminOnly).map((t) => t.id) : [],
+      active: activeTab,
+      onSelect: (id) => { selectTab(id); window.scrollTo({ top: 0 }); },
+      onThemeChange: paintLogos,
+      mountAccount: (el) => window.AccountMenu.mount(el, {
+        variant: 'rail',
+        apiFetch: apiRequest,
+        currentUser: auth.user,
+        getAccessToken: () => getStoredAuth().token,
+        onLogout: async () => { await logoutFromApi(); window.location.href = '/login'; },
+      }),
     });
   }
   appShell.hidden = false;
   appShell.style.display = '';
 }
-
-$('#btnLogin').addEventListener('click', () => { window.location.href = '/login'; });
 
 setSessionExpiredHandler(() => { window.location.href = '/login'; });
 
@@ -124,7 +135,6 @@ state.projects.forEach((pr) => {
   (pr.scenarios || []).forEach((s) => { if (s._pct) { s.price = Math.round(base * s._pct); delete s._pct; } });
 });
 
-bindTabs();
 bindTeamTable();
 bindExpensesTable();
 bindProjectsTable();
@@ -171,10 +181,7 @@ $('#fitStart').value = thisMonth();
         currentUser: auth.user,
         getAccessToken: () => getStoredAuth().token,
         canManageUsers: USER_MANAGER_ROLES.includes(auth.user.role),
-        onUsersClick: openUsersView,
         onLogout: async () => { await logoutFromApi(); window.location.href = '/login'; },
-        setTheme,
-        updateAppearanceControls,
       });
     } else if (open === 'users' && USER_MANAGER_ROLES.includes(auth.user.role)) openUsersView();
     else if (open === 'team') selectTab('team');
