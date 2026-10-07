@@ -1,7 +1,10 @@
 const { EmployeesError } = require('../errors');
 
+// Everyone sees their own; a team head sees the people they manage; CEO,
+// P&C and admin see everyone (user decision 2026-10-07). When Pillar A is
+// revealed at all is the scoring service's rule, not this one.
 function canViewBreakdown({ actorAuthRole, actorEmployee, targetEmployee, roles }) {
-  if (actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE) return true;
+  if (actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE || actorAuthRole === roles.CEO) return true;
   if (!actorEmployee) return false;
   if (actorEmployee.id === targetEmployee.id) return true;
   return targetEmployee.managerEmployeeId === actorEmployee.id;
@@ -45,7 +48,9 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
     const employeeId = Number(req.params.employeeId);
     const targetEmployee = requireTargetEmployee(employeeId);
     requireCanView(req, targetEmployee);
-    const breakdown = kpiScoringService.computeBreakdown(employeeId, quarter);
+    const breakdown = kpiScoringService.computeBreakdown(employeeId, quarter, {
+      actorAuthRole: req.user.role, actorEmployeeId: req.employee ? req.employee.id : null,
+    });
     return res.json(breakdown);
   }
 
@@ -208,6 +213,7 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
       closesAt: body.closesAt,
       actorAuthRole: req.user.role,
       actorEmployee: req.employee,
+      actorId: req.user.id,
       ip: req.ip,
     });
     return res.status(201).json({ window });
@@ -235,7 +241,7 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
       actorId: req.user.id,
       ip: req.ip,
     });
-    return res.status(201).json({ response: { id: response.id, revieweeEmployeeId: response.reviewee_employee_id, quarter: response.quarter } });
+    return res.status(201).json({ response });
   }
 
   function getPeerReviewCounter(req, res) {
@@ -261,12 +267,15 @@ function createKpiController({ kpiScoringService, employeeRepository, employeeMo
 
   function getPeerReviewResults(req, res) {
     const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
-    return res.json({ quarter, results: kpiPeerReviewService.getReviewResults({ quarter, actorAuthRole: req.user.role }) });
+    return res.json({
+      quarter,
+      results: kpiPeerReviewService.getReviewResults({ quarter, actorAuthRole: req.user.role, actorEmployeeId: req.employee ? req.employee.id : null }),
+    });
   }
 
   function exportPeerReviewReport(req, res) {
     const quarter = req.query.quarter || kpiScoringService.getCurrentKpiQuarter();
-    const csv = kpiPeerReviewService.exportReviewResultsCsv({ quarter, actorAuthRole: req.user.role });
+    const csv = kpiPeerReviewService.exportReviewResultsCsv({ quarter, actorAuthRole: req.user.role, actorEmployeeId: req.employee ? req.employee.id : null });
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="team-reviews-${quarter}.csv"`);
     return res.send(csv);

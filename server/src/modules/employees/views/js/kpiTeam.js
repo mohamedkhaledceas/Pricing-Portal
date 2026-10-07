@@ -10,7 +10,8 @@ import { panel, colTitle, plural, loadErrorPanel } from './panels.js';
 // already uses for is_team_head, reused here rather than inventing a new
 // style.
 function summaryTableHtml(title, rows, showTeamHeadBadge) {
-  const sorted = [...rows].sort((a, b) => b.total - a.total);
+  // A null total (review window still open) sorts last.
+  const sorted = [...rows].sort((a, b) => (b.total ?? -1) - (a.total ?? -1));
   return `<div class="kpi-pillar-section">
     ${colTitle(title, `${rows.length} ${plural(rows.length, 'person', 'people')}`)}
     <div class="table-scroll">
@@ -22,7 +23,7 @@ function summaryTableHtml(title, rows, showTeamHeadBadge) {
             <tr>
               <td>${escapeHtml(row.firstName + ' ' + row.lastName)}${showTeamHeadBadge && row.isTeamHead ? ' <span class="badge badge-approved">Team Head</span>' : ''}</td>
               <td>${row.kpiProfile ? escapeHtml(row.kpiProfile) : '<span class="muted">unassigned</span>'}</td>
-              <td class="num" style="font-weight:650;">${row.total.toFixed(1)}</td>
+              <td class="num" style="font-weight:650;">${row.total === null ? '—' : row.total.toFixed(1)}</td>
               <td>${statusBadge(row.statusBand)}</td>
             </tr>`).join('')}
         </tbody>

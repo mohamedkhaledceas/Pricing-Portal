@@ -74,7 +74,7 @@ P.money=()=>{
     ${D.sales&&D.sales.live&&D.revenue.live?bookedVsInvoicedPanel():unavail('sales','Booked and invoiced')||unavail('finance','Booked and invoiced')||panel('Sales against target',`${esc(e.name)} · month by month`,salesVsTarget())}
   </div>
   <div class="cols${D.payablesLive?'':' c2'}">
-    ${wc.live?receivablesPanel():unavail('finance','Receivables')||panel('Working capital',`Net 30-day position ${egp(wc.net30)}`,`<div class="pb">
+    ${wc.live?receivablesPanel():unavail('finance','Receivables')||perCompanyPanel('Receivables')||panel('Working capital',`Net 30-day position ${egp(wc.net30)}`,`<div class="pb">
       <figure><figcaption><b>Receivables</b> ${egp(wc.receivables,false)} · DSO ${wc.dso} days</figcaption><div class="plot" id="ar1"></div></figure>
       <div class="kv" style="margin-top:14px"><span>Owed to freelancers</span><i class="num">${egp(wc.freelancer,false)}</i></div>
       <div class="kv"><span>Owed to suppliers and vendors</span><i class="num">${egp(wc.supplier,false)}</i></div>
@@ -451,10 +451,10 @@ P.budget=()=>{
     ${stat('Left for the year','EGP '+egp(L.left),`EGP ${egp(Math.round(L.left/Math.max(12-D.elapsed,.1)))} a month for the ${r1(12-D.elapsed)} months left`,L.left<0?'red':'green')}
     ${stat('Overhead vs plan today',(L.variance<0?'−':'+')+'EGP '+egp(Math.abs(L.variance)),`budget to date EGP ${egp(L.ytdBudget)}`,L.variance<0?'red':'green')}
     ${stat('Delivery cost vs plan',(B.dcVariance<0?'−':'+')+'EGP '+egp(Math.abs(B.dcVariance)),`plan EGP ${egp(B.dcBudgetYtd)} at ${B.gmPlan}% margin`,B.dcVariance<0?'red':'green')}
-    ${kpi('net_profit')}
+    ${S.scope==='limited'?'':kpi('net_profit')}
   </div>
 
-  ${panel('Plan to actual','every pound of the profit gap, accounted for',`<div class="pb">
+  ${S.scope==='limited'?'':panel('Plan to actual','every pound of the profit gap, accounted for',`<div class="pb">
     <figure><figcaption><b>Profit bridge · 1 January to ${esc(asOfDayMonth())}</b><span>EGP</span></figcaption>
       <div class="plot"><svg id="b1" height="230" role="img" aria-label="Profit bridge from plan to actual"></svg></div></figure>
     <p class="note" style="margin-top:10px">Plan profit for the period is EGP ${egp(B.npPlanYtd)} — the revenue plan at a ${B.gmPlan}% gross margin, less the ${B.opexPlanPct}% overhead allowance.

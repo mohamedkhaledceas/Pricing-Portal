@@ -142,6 +142,8 @@ addEventListener('keydown',e=>{
     if(e.key==='ArrowUp'){e.preventDefault();cmdS=Math.max(0,cmdS-1);cmdRender($('#cmdin').value);}
     if(e.key==='Enter'&&cmdF[cmdS]){cmdClose();cmdF[cmdS].go();}
     return;}
+  // Single-key shortcuts only — Cmd/Ctrl+F (find) and Cmd+1–9 (browser tabs) belong to the browser.
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
   if(e.key==='f'&&S.scope!=='limited'&&!/input|textarea|select/i.test(e.target.tagName)){goto('focus');return;}
   if(/^[1-9]$/.test(e.key)&&!/input|textarea|select/i.test(e.target.tagName)&&pages()[+e.key-1])goto(pages()[+e.key-1].id);
 });

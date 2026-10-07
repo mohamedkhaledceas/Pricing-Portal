@@ -1,12 +1,13 @@
 const { EmployeesError } = require('../errors');
 const { quarterCloseTimestampUtc } = require('../../../utils/cairoQuarter');
+const { pillarAScore } = require('./pillarAScore');
 
-/* Pillar A's 6 dimensions (docs: KPI_Framework.xlsx "Overview" sheet) are
+/* Pillar A's dimensions (docs: KPI_Framework.xlsx "Overview" sheet) are
    fixed and identical for every role — equally weighted, each scored 0–10,
-   summed directly for the Pillar A total (out of 60). This is the same
-   arithmetic as the sheet's own "average × 6" description: avg(6 scores)×6
-   is algebraically identical to just summing the 6 scores, so summing is
-   what this does — no separate "average" step needed. */
+   Pillar A = their average × 6 (out of 60), as the sheet describes it.
+   Growth stopped being asked on 2026-09-28, so newer quarters have five
+   dimensions: averaging only the ones answered keeps a perfect review at
+   60 (user decision 2026-10-07) — a plain sum would cap it at 50. */
 const PILLAR_A_DIMENSIONS = [
   { key: 'communication', label: 'Communication' },
   { key: 'collaboration', label: 'Collaboration' },
@@ -106,22 +107,40 @@ function createKpiScoringService({
   employeeRepository, employeeModel, departmentRepository, kpiDefinitionRepository, kpiScoreRepository,
   pillarAReviewRepository, selfEvaluationRepository, kpiNotificationRepository,
   kpiEmployeeTargetRepository, kpiAutoMetricMappingRepository, kpiClickupMetricsService,
-  audit, roles, logger, teamMembership,
+  isReviewWindowClosed, audit, roles, logger, teamMembership,
 }) {
-  function buildPillarA(reviewRow) {
-    const dimensions = PILLAR_A_DIMENSIONS.map((dim) => {
+  const FEEDBACK_ROLES = () => [roles.CEO, roles.PEOPLE_CULTURE, roles.ADMIN];
+
+  function buildPillarA(reviewRow, { includeFeedback }) {
+    const scored = PILLAR_A_DIMENSIONS.map((dim) => {
       const raw = reviewRow ? reviewRow[dim.key] : null;
-      const score = raw === null || raw === undefined ? null : Number(raw);
-      return { key: dim.key, label: dim.label, score, weightedPoints: score };
+      return { key: dim.key, label: dim.label, score: raw === null || raw === undefined ? null : Number(raw) };
     });
-    const total = dimensions.reduce((sum, d) => sum + (d.score || 0), 0);
+    const answered = scored.filter((d) => d.score !== null);
+    const perPoint = answered.length ? PILLAR_A_DIMENSIONS.length / answered.length : 0;
+    // Growth is listed only on quarters that still asked it.
+    const dimensions = scored
+      .filter((d) => d.key !== 'growth' || d.score !== null)
+      .map((d) => ({ ...d, weightedPoints: d.score === null ? null : d.score * perPoint }));
+    const total = pillarAScore(reviewRow) ?? 0;
     return {
+      hidden: false,
       dimensions,
       total,
       maxTotal: PILLAR_A_WEIGHT_PCT,
       responseCount: reviewRow ? reviewRow.response_count : 0,
-      feedback: reviewRow ? JSON.parse(reviewRow.feedback_json || '[]') : [],
+      // Colleagues' written comments: CEO, P&C and admin only, and never
+      // about themselves — not to the employee or their team head (user
+      // decision 2026-10-07).
+      feedback: includeFeedback && reviewRow ? JSON.parse(reviewRow.feedback_json || '[]') : [],
     };
+  }
+
+  // Before the review window closes nobody sees Pillar A — not the
+  // employee, their team head, P&C or the CEO — nor a final score it
+  // would be derivable from.
+  function hiddenPillarA() {
+    return { hidden: true, dimensions: [], total: null, maxTotal: PILLAR_A_WEIGHT_PCT, responseCount: null, feedback: [] };
   }
 
   // Self-evaluation is intentionally shaped like Pillar A (same 6
@@ -180,12 +199,15 @@ function createKpiScoringService({
      calculation/audit page, Performance History, and Team Performance all
      call this and render different views of the same result, so there's
      no second calculator that could drift from the first. */
-  function computeBreakdown(employeeId, quarter) {
+  function computeBreakdown(employeeId, quarter, { actorAuthRole = null, actorEmployeeId = null } = {}) {
     const employee = employeeRepository.findById(employeeId);
     if (!employee) throw new EmployeesError('Employee not found.', 404);
 
     const reviewRow = pillarAReviewRepository.findByEmployeeAndQuarter(employeeId, quarter);
-    const pillarA = buildPillarA(reviewRow);
+    const revealed = isReviewWindowClosed(quarter);
+    const pillarA = revealed
+      ? buildPillarA(reviewRow, { includeFeedback: FEEDBACK_ROLES().includes(actorAuthRole) && actorEmployeeId !== employeeId })
+      : hiddenPillarA();
     const selfEvaluation = buildSelfEvaluation(selfEvaluationRepository.findByEmployeeAndQuarter(employeeId, quarter));
 
     const definitions = employee.kpi_profile
@@ -196,10 +218,12 @@ function createKpiScoringService({
     for (const row of scoreRows) scoresByMetric[row.metric_id] = row;
     const pillarB = buildPillarB(definitions, scoresByMetric, employeeId, quarter);
 
-    const pillarAWeighted = pillarA.total; // already 0-60, no further scaling
+    const pillarAWeighted = pillarA.total; // already 0-60, no further scaling; null while hidden
     const pillarBWeighted = pillarB.total; // already 0-40 (or less if not fully entered)
-    const finalScore = pillarAWeighted + pillarBWeighted;
-    const statusBand = computeStatusBand(finalScore);
+    const finalScore = revealed ? pillarAWeighted + pillarBWeighted : null;
+    const statusBand = revealed
+      ? computeStatusBand(finalScore)
+      : { key: 'pending', label: 'Reviews in progress', note: null };
 
     return {
       employeeId,
@@ -231,7 +255,7 @@ function createKpiScoringService({
       pillarA: {
         dimensions: PILLAR_A_DIMENSIONS,
         weightPct: PILLAR_A_WEIGHT_PCT,
-        note: 'Equally weighted, 1–10 each, summed directly (algebraically identical to average × 6).',
+        note: 'Equally weighted, 0–10 each; Pillar A is their average × 6. Quarters after Growth was dropped average the five asked.',
       },
       pillarB:
         definitions.length === 0
@@ -423,9 +447,9 @@ function createKpiScoringService({
     for (const row of rows) {
       lines.push([
         row.quarter,
-        row.final.pillarAWeighted.toFixed(1),
+        row.final.pillarAWeighted === null ? '' : row.final.pillarAWeighted.toFixed(1),
         row.final.pillarBWeighted.toFixed(1),
-        row.final.total.toFixed(1),
+        row.final.total === null ? '' : row.final.total.toFixed(1),
         row.final.statusBand.label,
       ].join(','));
     }
@@ -503,7 +527,9 @@ function createKpiScoringService({
   // direct report and a department member appears in both; that overlap
   // is intentional, confirmed with the user, not deduplicated).
   function computeTeamSummary({ actorEmployee, actorAuthRole, quarter }) {
-    const isCompanyWide = actorAuthRole === roles.CEO || actorAuthRole === roles.ADMIN;
+    // CEO, P&C and admin see everyone; a team head sees their team; anyone
+    // else has no team view (user decision 2026-10-07).
+    const isCompanyWide = actorAuthRole === roles.CEO || actorAuthRole === roles.ADMIN || actorAuthRole === roles.PEOPLE_CULTURE;
     const directReports = actorEmployee ? employeeRepository.findByManagerId(actorEmployee.id) : [];
     if (!isCompanyWide && directReports.length === 0) {
       throw new EmployeesError('You do not have permission to view the team performance summary.', 403);

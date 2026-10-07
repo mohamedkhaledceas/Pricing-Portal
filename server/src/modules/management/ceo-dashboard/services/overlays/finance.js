@@ -5,9 +5,12 @@ const LIVE_FINANCE_KPIS = ['revenue_total', 'dso', 'overdue_60_share', 'collecti
 
 const pctText = (part, whole) => (whole > 0 ? `${(Math.round((part / whole) * 1000) / 10).toFixed(1)}%` : '—');
 
+const PER_COMPANY_KPIS = ['dso', 'overdue_60_share', 'collection_rate'];
+
 /* "All companies": revenue only, from Odoo's Invoices Analysis already
    converted into EGP by Odoo (finance getConsolidatedRevenue). Receivables,
-   DSO and collections stay sample here — they exist per company only. */
+   DSO and collections exist per company only, so they are blanked and
+   labelled per company — never left on the sample's figures. */
 function applyConsolidatedRevenue(D, f) {
   const rev = f.revenue;
   D.months = rev.months;
@@ -43,6 +46,16 @@ function applyConsolidatedRevenue(D, f) {
   delete D.yearMap.revenue_total;
   // The sample drill records describe invented clients — not under a live figure.
   delete D.records.revenue;
+
+  const why = 'Shown per company only: pick Ceas Comm, FZE or LWM. Odoo gives receivables per company, and the portal doesn\'t add currencies together itself.';
+  for (const id of PER_COMPANY_KPIS) {
+    Object.assign(D.kpis.find((k) => k.id === id), {
+      live: false, perCompany: why, actual: null, tolerance: null, drill: null, source: 'Per company', formula: why,
+    });
+    delete D.series[id];
+    delete D.yearMap[id];
+  }
+  delete D.records.receivables;
 }
 
 function applyFinance(D, f, entity) {

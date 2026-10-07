@@ -1,11 +1,17 @@
 const { EmployeesError } = require('../errors');
+const { pillarAScore } = require('./pillarAScore');
 const { quarterCloseTimestampUtc, previousQuarter } = require('../../../utils/cairoQuarter');
 
+// Every dimension a stored answer can carry — 'growth' only on quarters
+// before it was dropped from the form (2026-09-28).
 const DIMENSION_KEYS = ['communication', 'collaboration', 'reliability', 'attitude', 'contribution', 'growth'];
+// What the form asks today: each is required when the reviewer rates someone.
+const ASKED_KEYS = ['communication', 'collaboration', 'reliability', 'attitude', 'contribution'];
+const MAX_COMMENT_LENGTH = 2000;
 const DEFAULT_WINDOW_DAYS_BEFORE_CLOSE = 14;
 
 function createKpiPeerReviewService({
-  employeeRepository, pillarAReviewRepository, kpiPeerReviewRepository, kpiReviewWindowRepository, audit, roles,
+  employeeRepository, pillarAReviewRepository, kpiPeerReviewRepository, kpiReviewWindowRepository, transaction, audit, roles,
 }) {
   // A configured row always wins; otherwise a computed suggestion (opens
   // 14 days before quarter close, closes at quarter close) — marked
@@ -21,7 +27,7 @@ function createKpiPeerReviewService({
     return { quarter, opensAt, closesAt, configured: false };
   }
 
-  function setWindow({ quarter, opensAt, closesAt, actorAuthRole, actorEmployee, ip }) {
+  function setWindow({ quarter, opensAt, closesAt, actorAuthRole, actorEmployee, actorId, ip }) {
     if (actorAuthRole !== roles.PEOPLE_CULTURE && actorAuthRole !== roles.ADMIN) {
       throw new EmployeesError('You do not have permission to set the review window.', 403);
     }
@@ -34,8 +40,10 @@ function createKpiPeerReviewService({
       quarter, opensAt: opens.toISOString(), closesAt: closes.toISOString(),
       setBy: actorEmployee ? actorEmployee.id : null,
     });
+    // audit_log.user_id is a users.id — the employee id here used to fail
+    // the foreign key (entry lost) or name the wrong person.
     audit.record({
-      userId: actorEmployee ? actorEmployee.id : null,
+      userId: actorId,
       action: 'kpi.review_window.set',
       entityType: 'kpi_review_window',
       entityId: quarter,
@@ -49,6 +57,13 @@ function createKpiPeerReviewService({
     const window = getWindow(quarter);
     const now = Date.now();
     return now >= new Date(window.opensAt).getTime() && now <= new Date(window.closesAt).getTime();
+  }
+
+  // Pillar A scores and the results report stay hidden until this is true
+  // (user decision 2026-10-07): revealing them while reviews still arrive
+  // would let someone see what one colleague gave them.
+  function isWindowClosed(quarter) {
+    return Date.now() > new Date(getWindow(quarter).closesAt).getTime();
   }
 
   // Everyone else active, each flagged with whether this reviewer has
@@ -75,7 +90,7 @@ function createKpiPeerReviewService({
   // needs zero changes to read peer-review-sourced Pillar A. No minimum-
   // response-count gate, per the confirmed decision.
   function recomputeAggregate(revieweeEmployeeId, quarter) {
-    const responses = kpiPeerReviewRepository.findByReviewee(revieweeEmployeeId, quarter).filter((r) => r.worked_with);
+    const responses = kpiPeerReviewRepository.findAnswersByReviewee(revieweeEmployeeId, quarter).filter((r) => r.worked_with);
     const averages = {};
     for (const key of DIMENSION_KEYS) {
       const values = responses.map((r) => r[key]).filter((v) => v !== null && v !== undefined);
@@ -98,6 +113,10 @@ function createKpiPeerReviewService({
     });
   }
 
+  /* One reviewer's answer about one colleague — once only: a submitted
+     review can't be changed (user decision 2026-10-07). Who submitted and
+     what they said are written to two separate tables (migration 046), in
+     one transaction with the reviewee's recomputed Pillar A. */
   function submitReview({ reviewerEmployeeId, revieweeEmployeeId, quarter, workedWith, dimensions, comment, actorEmployee, actorId, ip }) {
     if (!actorEmployee || actorEmployee.id !== reviewerEmployeeId) {
       throw new EmployeesError('You can only submit your own reviews.', 403);
@@ -105,53 +124,68 @@ function createKpiPeerReviewService({
     if (reviewerEmployeeId === revieweeEmployeeId) {
       throw new EmployeesError('You cannot review yourself.');
     }
-    if (!employeeRepository.findById(revieweeEmployeeId)) {
+    const reviewee = employeeRepository.findById(revieweeEmployeeId);
+    if (!reviewee || !reviewee.active) {
       throw new EmployeesError('Employee not found.', 404);
+    }
+    if (typeof quarter !== 'string' || !quarter) {
+      throw new EmployeesError('quarter is required.');
     }
     if (!isWindowOpen(quarter)) {
       throw new EmployeesError('The peer review window is not currently open for this quarter.', 403);
     }
+    const text = typeof comment === 'string' ? comment.trim() : '';
+    if (text.length > MAX_COMMENT_LENGTH) {
+      throw new EmployeesError(`The comment must be ${MAX_COMMENT_LENGTH} characters or fewer.`);
+    }
+    const scores = {};
     if (workedWith) {
-      for (const key of DIMENSION_KEYS) {
+      for (const key of ASKED_KEYS) {
         const v = dimensions[key];
-        if (v !== undefined && v !== null && (typeof v !== 'number' || v < 0 || v > 10)) {
+        if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 10) {
           throw new EmployeesError(`${key} must be a number from 0 to 10.`);
         }
+        scores[key] = v;
       }
+      if (!text) throw new EmployeesError('A comment is required for every colleague you rate.');
+    }
+    if (kpiPeerReviewRepository.hasSubmitted(reviewerEmployeeId, revieweeEmployeeId, quarter)) {
+      throw new EmployeesError('You have already submitted your review of this colleague — it can\'t be changed.', 409);
     }
 
-    const response = kpiPeerReviewRepository.upsert({
-      reviewerEmployeeId, revieweeEmployeeId, quarter, workedWith,
-      communication: dimensions.communication, collaboration: dimensions.collaboration,
-      reliability: dimensions.reliability, attitude: dimensions.attitude,
-      contribution: dimensions.contribution, growth: dimensions.growth,
-      comment,
-    });
+    let submissionId;
+    try {
+      transaction(() => {
+        submissionId = kpiPeerReviewRepository.insertSubmission({ reviewerEmployeeId, revieweeEmployeeId, quarter });
+        kpiPeerReviewRepository.insertAnswer({
+          revieweeEmployeeId, quarter, workedWith, ...scores, comment: text || null,
+        });
+        recomputeAggregate(revieweeEmployeeId, quarter);
+      });
+    } catch (error) {
+      // Two tabs submitting at once: the UNIQUE constraint is the real guard.
+      if (error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        throw new EmployeesError('You have already submitted your review of this colleague — it can\'t be changed.', 409);
+      }
+      throw error;
+    }
 
-    recomputeAggregate(revieweeEmployeeId, quarter);
-
-    // Audited without score content — the anonymity guarantee is about
-    // what other employees/P&C can see through the app's normal read
-    // paths, not the admin-only audit log (which already has broad
-    // visibility into every other significant action in this app). Who
-    // submitted a review, when, and for whom is fair audit material;
-    // what they actually scored is not recorded here.
+    // Who submitted for whom, never what they answered — the answer row
+    // has no reviewer and this entry carries none of its content.
     audit.record({
       userId: actorId,
       action: 'kpi.peer_review.submit',
-      entityType: 'kpi_peer_review_response',
-      entityId: String(response.id),
-      details: { quarter, revieweeEmployeeId, workedWith },
+      entityType: 'kpi_peer_review_submission',
+      entityId: String(submissionId),
+      details: { quarter, revieweeEmployeeId },
       ip,
     });
 
-    return response;
+    return { id: submissionId, revieweeEmployeeId, quarter };
   }
 
   // How many active employees have finished their full set of reviews out
-  // of how many total, e.g. "27/33" — shared by getSubmissionCounter
-  // (CEO-only, returns the actual numbers) and getReportReadiness/
-  // requireReviewCycleComplete below (CEO+P&C, collapsed to a boolean).
+  // of how many total, e.g. "27/33" — getSubmissionCounter (CEO-only).
   function computeCompletion(quarter) {
     const employees = employeeRepository.findAllActive();
     const expectedPerPerson = Math.max(0, employees.length - 1);
@@ -173,43 +207,37 @@ function createKpiPeerReviewService({
     return computeCompletion(quarter);
   }
 
-  // CEO+P&C: whether the review cycle is fully done — a boolean only,
-  // never the counts getSubmissionCounter returns. Restores a "is it done
-  // yet" signal for P&C (lost when the per-employee completion table was
-  // removed) without reintroducing the participation-count visibility that
-  // removal was specifically about.
+  const RESULT_ROLES = () => [roles.CEO, roles.PEOPLE_CULTURE, roles.ADMIN];
+
+  // CEO, P&C and admin: whether the results can be read yet — a boolean
+  // only, never the participation counts getSubmissionCounter returns.
   function getReportReadiness({ quarter, actorAuthRole }) {
-    if (actorAuthRole !== roles.CEO && actorAuthRole !== roles.PEOPLE_CULTURE) {
+    if (!RESULT_ROLES().includes(actorAuthRole)) {
       throw new EmployeesError('You do not have permission to view this.', 403);
     }
-    const { completed, total } = computeCompletion(quarter);
-    return { ready: total > 0 && completed === total };
+    return { ready: isWindowClosed(quarter) };
   }
 
   // The real gate behind getReviewResults/exportReviewResultsCsv — the
-  // frontend hiding the button when not ready is a convenience, this is
-  // what actually enforces it. Deliberately the same "0 or 100%" shape as
-  // the review process itself (2026-09-28 decision): showing an average
-  // built from a handful of early responses is both a deanonymization risk
-  // (a small sample narrows down who the reviewers plausibly were) and
-  // statistically misleading (looks as authoritative as a full average).
+  // frontend hiding the button is a convenience. Results open when the
+  // review window closes (user decision 2026-10-07), the same moment every
+  // employee's own Pillar A appears.
   function requireReviewCycleComplete(quarter, actorAuthRole) {
-    if (actorAuthRole !== roles.CEO && actorAuthRole !== roles.PEOPLE_CULTURE) {
+    if (!RESULT_ROLES().includes(actorAuthRole)) {
       throw new EmployeesError('You do not have permission to view this.', 403);
     }
-    const { completed, total } = computeCompletion(quarter);
-    if (total === 0 || completed < total) {
-      throw new EmployeesError('The team review results are not ready yet — not everyone has submitted.', 403);
+    if (!isWindowClosed(quarter)) {
+      throw new EmployeesError('The team review results open when the review window closes.', 403);
     }
   }
 
-  // CEO+P&C, only once requireReviewCycleComplete allows it. Every value
-  // here already lives in kpi_pillar_a_reviews — recomputeAggregate wrote
-  // it on every submitReview call — so this is a pure read/join, no new
-  // aggregation logic. feedback stays an array of per-reviewer comments
-  // (never attributed) — flattening to a single string is a presentation
-  // concern for exportReviewResultsCsv/the frontend, not this function.
-  function getReviewResults({ quarter, actorAuthRole }) {
+  // CEO, P&C and admin, once the window has closed: every active
+  // employee's averages, Pillar A out of 60, and the comments written about
+  // them — never who wrote them (the answers table has no reviewer), and
+  // never the comments about the viewer themselves (user decision
+  // 2026-10-07). A pure read of kpi_pillar_a_reviews, which
+  // recomputeAggregate keeps current.
+  function getReviewResults({ quarter, actorAuthRole, actorEmployeeId = null }) {
     requireReviewCycleComplete(quarter, actorAuthRole);
     const employees = employeeRepository.findAllActive();
     const reviewsByEmployeeId = new Map(pillarAReviewRepository.findAllForQuarter(quarter).map((r) => [r.employee_id, r]));
@@ -224,8 +252,9 @@ function createKpiPeerReviewService({
           reliability: r ? r.reliability : null,
           attitude: r ? r.attitude : null,
           contribution: r ? r.contribution : null,
+          pillarA: r ? pillarAScore(r) : null,
           responseCount: r ? r.response_count : 0,
-          feedback: r ? JSON.parse(r.feedback_json || '[]') : [],
+          feedback: r && e.id !== actorEmployeeId ? JSON.parse(r.feedback_json || '[]') : [],
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -245,11 +274,10 @@ function createKpiPeerReviewService({
     return value === null || value === undefined ? '' : value.toFixed(1);
   }
 
-  // CEO+P&C CSV export of exactly what getReviewResults returns — same
-  // gate and same completeness requirement, enforced there.
-  function exportReviewResultsCsv({ quarter, actorAuthRole }) {
-    const rows = getReviewResults({ quarter, actorAuthRole });
-    const header = ['Name', 'Collaboration', 'Communication', 'Reliability', 'Positive Attitude', 'Contribution to Team Success', 'Responses', 'Overall Performance Feedback'];
+  // CSV export of exactly what getReviewResults returns — same gate.
+  function exportReviewResultsCsv({ quarter, actorAuthRole, actorEmployeeId = null }) {
+    const rows = getReviewResults({ quarter, actorAuthRole, actorEmployeeId });
+    const header = ['Name', 'Collaboration', 'Communication', 'Reliability', 'Positive Attitude', 'Contribution to Team Success', 'Pillar A (of 60)', 'Responses', 'Overall Performance Feedback'];
     const lines = [header.map(csvEscape).join(',')];
     rows.forEach((r) => {
       const line = [
@@ -259,6 +287,7 @@ function createKpiPeerReviewService({
         formatAverage(r.reliability),
         formatAverage(r.attitude),
         formatAverage(r.contribution),
+        formatAverage(r.pillarA),
         r.responseCount,
         r.feedback.join('\n'),
       ];
@@ -304,6 +333,7 @@ function createKpiPeerReviewService({
     getWindow,
     setWindow,
     isWindowOpen,
+    isWindowClosed,
     getRoster,
     submitReview,
     getSubmissionCounter,

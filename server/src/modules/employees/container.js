@@ -16,6 +16,7 @@ const kpiAutoMetricMappingRepository = require('./repositories/kpiAutoMetricMapp
 const kpiClickupListRepository = require('./repositories/kpiClickupListRepository');
 const kpiPeerReviewRepository = require('./repositories/kpiPeerReviewRepository');
 const kpiReviewWindowRepository = require('./repositories/kpiReviewWindowRepository');
+const { transaction } = require('./repositories/unitOfWork');
 const employeeProfileChangeRequestRepository = require('./repositories/employeeProfileChangeRequestRepository');
 const employeeModel = require('./models/employee.model');
 const leaveRequestModel = require('./models/leaveRequest.model');
@@ -92,19 +93,21 @@ const timeOffService = createTimeOffService({ leaveRequestRepository, employeeRe
 const kpiClickupMetricsService = createKpiClickupMetricsService({
   clickupGet: clickupClient.clickupGet, teamId: CLICKUP_TEAM_ID, kpiClickupStatusEventRepository,
 });
+const kpiPeerReviewService = createKpiPeerReviewService({
+  employeeRepository, pillarAReviewRepository, kpiPeerReviewRepository, kpiReviewWindowRepository, transaction, audit, roles: ROLES,
+});
 const kpiScoringService = createKpiScoringService({
   employeeRepository, employeeModel, departmentRepository, kpiDefinitionRepository, kpiScoreRepository,
   pillarAReviewRepository, selfEvaluationRepository, kpiNotificationRepository,
   kpiEmployeeTargetRepository, kpiAutoMetricMappingRepository, kpiClickupMetricsService,
+  isReviewWindowClosed: kpiPeerReviewService.isWindowClosed,
   audit, roles: ROLES, logger, teamMembership,
 });
 const departmentService = createDepartmentService({ departmentRepository, departmentModel, audit, roles: ROLES });
 const kpiClickupSyncService = createKpiClickupSyncService({
   clickupGet: clickupClient.clickupGet, employeeRepository, kpiClickupStatusEventRepository,
 });
-const kpiPeerReviewService = createKpiPeerReviewService({
-  employeeRepository, pillarAReviewRepository, kpiPeerReviewRepository, kpiReviewWindowRepository, audit, roles: ROLES,
-});
+
 const plannerExportService = createPlannerExportService({ employeeRepository, employeeModel, audit });
 const workforceSummaryService = createWorkforceSummaryService({ employeeRepository, leaveRequestRepository });
 

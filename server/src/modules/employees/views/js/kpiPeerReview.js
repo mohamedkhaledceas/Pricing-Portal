@@ -20,7 +20,7 @@ const DIMS = QUESTIONS.map((q) => q.key);
 
 const INTRO_HTML = `
   <p class="panel-text">This form collects honest, constructive feedback about every team member across all departments. Your responses are completely anonymous. The purpose is to understand how each person collaborates, communicates, and contributes to CEAS COMM’s culture and success; to identify individual strengths and areas for improvement; and to support People &amp; Culture in setting general KPIs for each team member based on collective feedback.</p>
-  <p class="panel-text">Rate each person you’ve worked with from 0 to 10 on all five questions, or tick “Didn’t work with them”. The overall comment is optional.</p>`;
+  <p class="panel-text">Rate each person you’ve worked with from 0 to 10 on all five questions and write a short comment about them, or tick “Didn’t work with them”. Once submitted, a review can’t be changed.</p>`;
 
 function questionsLegendHtml() {
   return `<ol class="pr-legend">${QUESTIONS.map((q) => `<li>${escapeHtml(q.label)}</li>`).join('')}</ol>`;
@@ -31,8 +31,9 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-// Every dimension is required unless "didn't work with them" is checked —
-// there's no partial/some-questions-blank state. Rows already submitted
+// Every dimension and the comment are required unless "didn't work with
+// them" is checked — there's no partial/some-questions-blank state. The
+// server enforces the same rule. Rows already submitted
 // (this session or a prior one — flagged by the kpi-peer-review-done
 // class either way) are exempt from re-validation: their dropdowns are
 // blank on a fresh page load (nothing pre-fills a prior answer), so
@@ -52,7 +53,9 @@ function getRowState(revieweeId, quarter) {
     if (v === '') return { status: 'incomplete' };
     dims[d] = Number(v);
   }
-  return { status: 'ready', payload: { quarter, workedWith: true, comment: $(`#pr-comment-${revieweeId}`, row).value || '', ...dims } };
+  const comment = $(`#pr-comment-${revieweeId}`, row).value.trim();
+  if (!comment) return { status: 'incomplete' };
+  return { status: 'ready', payload: { quarter, workedWith: true, comment, ...dims } };
 }
 
 // Single bottom submit — validates every row first (all-or-nothing: any
@@ -77,7 +80,7 @@ async function submitAll(quarter, revieweeIds) {
   if (incompleteIds.length > 0) {
     const first = $(`#peer-review-row-${incompleteIds[0]}`);
     if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    toast(`${incompleteIds.length} employee(s) still need every rating filled in, or "didn't work with them" checked — nothing was submitted.`, 'danger');
+    toast(`${incompleteIds.length} employee(s) still need every rating and a comment, or "didn't work with them" ticked — nothing was submitted.`, 'danger');
     return;
   }
 
@@ -91,21 +94,24 @@ async function submitAll(quarter, revieweeIds) {
 
   let saved = 0;
   let failed = 0;
+  let firstError = '';
   for (const { revieweeId, payload } of toSubmit) {
     try {
       await apiFetch(`/api/employees/kpi/peer-review/${revieweeId}`, { method: 'POST', body: JSON.stringify(payload) });
       saved += 1;
-      const row = $(`#peer-review-row-${revieweeId}`);
-      row.classList.add('kpi-peer-review-done');
-      $(`#peer-review-status-${revieweeId}`).innerHTML = '<span class="badge badge-approved">Submitted</span>';
+      markRowDone(revieweeId);
     } catch (err) {
+      // Already submitted (another tab, an earlier attempt): the server
+      // kept the first answer, so the row is done either way.
+      if (err.status === 409) { markRowDone(revieweeId); continue; }
       failed += 1;
+      if (!firstError) firstError = err.message || '';
     }
   }
 
   if (btn) { btn.disabled = false; btn.textContent = 'Submit all reviews'; }
   updateProgress($('#kpi-view-content'));
-  toast(`${saved} review(s) saved${failed ? `, ${failed} failed` : ''}`, failed ? 'danger' : 'info');
+  toast(`${saved} review(s) saved${failed ? `, ${failed} failed${firstError ? ` — ${firstError}` : ''}` : ''}`, failed ? 'danger' : 'info');
 
   // Every row on the roster is now done — retire the form immediately
   // instead of waiting for the next visit to this tab.
@@ -113,8 +119,19 @@ async function submitAll(quarter, revieweeIds) {
   if (allDoneNow) {
     const formArea = $('#kpi-peer-review-form-area');
     if (formArea) formArea.innerHTML = thankYouHtml();
+    const status = $('#pr-window-status');
+    if (status) { status.className = 'badge badge-approved'; status.textContent = 'Open — you’ve submitted yours'; }
   }
 }
+// A submitted review can't be changed — its inputs are locked, not just skipped.
+function markRowDone(revieweeId) {
+  const row = $(`#peer-review-row-${revieweeId}`);
+  row.classList.add('kpi-peer-review-done');
+  row.classList.remove('kpi-peer-review-incomplete');
+  $all('select, input', row).forEach((el) => { el.disabled = true; });
+  $(`#peer-review-status-${revieweeId}`).innerHTML = '<span class="badge badge-approved">Submitted</span>';
+}
+
 function toggleWorkedWith(revieweeId) {
   const row = $(`#peer-review-row-${revieweeId}`);
   const noWork = $(`#pr-nowork-${revieweeId}`, row).checked;
@@ -125,7 +142,7 @@ function toggleWorkedWith(revieweeId) {
 }
 
 // "Ready" = already submitted, marked didn't-work-with, or every rating
-// picked — the same rule getRowState applies at submit time.
+// picked and a comment typed — the same rule getRowState applies at submit time.
 function updateProgress(container) {
   const el = container && container.querySelector('#pr-progress');
   if (!el) return;
@@ -134,7 +151,7 @@ function updateProgress(container) {
     if (row.classList.contains('kpi-peer-review-done')) return true;
     const id = row.id.replace('peer-review-row-', '');
     if ($(`#pr-nowork-${id}`, row).checked) return true;
-    return DIMS.every((d) => $(`#pr-${d}-${id}`, row).value !== '');
+    return DIMS.every((d) => $(`#pr-${d}-${id}`, row).value !== '') && $(`#pr-comment-${id}`, row).value.trim() !== '';
   }).length;
   el.textContent = `${ready} of ${rows.length} ready`;
 }
@@ -145,7 +162,7 @@ function reviewerRowHtml(person) {
   const cells = QUESTIONS.map((q) => `
     <label class="pr-cell kpi-peer-review-fields">
       <span class="pr-cell-label">${escapeHtml(q.short)}</span>
-      <select class="form-control" id="pr-${q.key}-${id}" aria-label="${escapeHtml(`${q.short} — ${name}`)}">${ratingOptionsHtml(null)}</select>
+      <select class="form-control" id="pr-${q.key}-${id}" aria-label="${escapeHtml(`${q.short} — ${name}`)}"${person.alreadyReviewed ? ' disabled' : ''}>${ratingOptionsHtml(null)}</select>
     </label>`).join('');
 
   return `
@@ -156,11 +173,11 @@ function reviewerRowHtml(person) {
       </div>
       ${cells}
       <label class="pr-nowork">
-        <input type="checkbox" id="pr-nowork-${id}" data-nowork-checkbox data-employee-id="${id}">
+        <input type="checkbox" id="pr-nowork-${id}" data-nowork-checkbox data-employee-id="${id}"${person.alreadyReviewed ? ' disabled' : ''}>
         Didn’t work with them
       </label>
       <div class="pr-comment kpi-peer-review-fields">
-        <input type="text" class="form-control" id="pr-comment-${id}" placeholder="Overall feedback on ${escapeHtml(name)}’s performance this quarter (optional)" aria-label="Overall feedback — ${escapeHtml(name)}">
+        <input type="text" class="form-control" id="pr-comment-${id}" maxlength="2000" required placeholder="Overall feedback on ${escapeHtml(name)}’s performance this quarter (required)" aria-label="Overall feedback — ${escapeHtml(name)} (required)"${person.alreadyReviewed ? ' disabled' : ''}>
       </div>
     </div>`;
 }
@@ -305,7 +322,7 @@ async function loadTeamCounter(quarter) {
 // results/CSV below become available, nothing about partial progress.
 async function loadReportStatus(quarter) {
   const role = state.currentUser && state.currentUser.role;
-  if (role !== 'ceo' && role !== 'people_culture') return null;
+  if (role !== 'ceo' && role !== 'people_culture' && role !== 'admin') return null;
   try {
     return await apiFetch(`/api/employees/kpi/peer-review/report-status?quarter=${encodeURIComponent(quarter)}`);
   } catch (err) {
@@ -334,12 +351,13 @@ function reportResultsHtml(quarter, results) {
   const rows = results.map((r) => {
     const feedbackRow = r.feedback.length ? `
       <tr class="kpi-report-feedback-row" id="report-feedback-${r.employeeId}" hidden>
-        <td colspan="8">${r.feedback.map((f) => `<p class="small">${escapeHtml(f)}</p>`).join('')}</td>
+        <td colspan="9">${r.feedback.map((f) => `<p class="small">${escapeHtml(f)}</p>`).join('')}</td>
       </tr>` : '';
     return `
       <tr>
         <td>${escapeHtml(r.name)}</td>
         ${['collaboration', 'communication', 'reliability', 'attitude', 'contribution'].map((d) => `<td class="num">${fmtAvg(r[d])}</td>`).join('')}
+        <td class="num" style="font-weight:650;">${r.pillarA === null ? '—' : r.pillarA.toFixed(1)}</td>
         <td class="num">${r.responseCount}</td>
         <td>${r.feedback.length ? `<button class="btn small" data-toggle-feedback data-employee-id="${r.employeeId}">View comments (${r.feedback.length})</button>` : ''}</td>
       </tr>${feedbackRow}`;
@@ -347,11 +365,11 @@ function reportResultsHtml(quarter, results) {
 
   return panel({
     title: 'Results',
-    meta: 'Everyone has submitted — averages out of 10',
+    meta: 'Review window closed — averages out of 10, Pillar A out of 60. Comments are anonymous; your own aren’t shown to you.',
     actions: `<button class="small" data-download-report data-quarter="${escapeHtml(quarter)}">Download CSV</button>`,
     body: `<div class="panel-body"><div class="table-scroll">
       <table class="data-table">
-        <thead><tr><th>Name</th>${QUESTIONS.map((q) => `<th class="num">${escapeHtml(q.short)}</th>`).join('')}<th class="num">Responses</th><th></th></tr></thead>
+        <thead><tr><th>Name</th>${QUESTIONS.map((q) => `<th class="num">${escapeHtml(q.short)}</th>`).join('')}<th class="num">Pillar A</th><th class="num">Responses</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div></div>`,
@@ -389,7 +407,7 @@ async function downloadReviewReport(quarter) {
 function thankYouHtml() {
   return panel({
     title: 'Your team review',
-    body: `<div class="panel-body"><div style="font-weight:650;margin-bottom:2px;">You’ve submitted your team review</div><div class="muted small">Thank you — your responses are recorded and can’t be changed.</div></div>`,
+    body: `<div class="panel-body"><div class="alert alert-success" role="status"><div><b>Thank you for submitting the team reviews form, your response is anonymous.</b><div class="muted small">Your answers are recorded and can’t be changed.</div></div></div></div>`,
   });
 }
 
@@ -442,11 +460,11 @@ export async function renderKpiPeerReview(container, quarter) {
     // quarter, not just individually-done rows within it.
     const allDone = roster.length > 0 && done === roster.length;
 
-    const statusText = !isOpen ? 'Not open right now' : allDone ? 'Open — you’ve submitted yours' : 'Open — yours isn’t submitted yet';
+    const statusText = !isOpen ? 'Not open right now' : !state.myEmployee ? 'Open' : allDone ? 'Open — you’ve submitted yours' : 'Open — yours isn’t submitted yet';
     const metrics = [];
     if (counter) metrics.push(`<div><div class="metric-value">${counter.completed}<span class="metric-of">/${counter.total}</span></div><div class="metric-label">Submitted company-wide</div></div>`);
     if (teamCounter) metrics.push(`<div><div class="metric-value">${teamCounter.completed}<span class="metric-of">/${teamCounter.total}</span></div><div class="metric-label">Submitted by people you manage</div></div>`);
-    const statusCol = `<div class="kpi-score-line"><span class="badge ${isOpen ? (allDone ? 'badge-approved' : 'badge-pending') : 'badge-cancelled'}">${escapeHtml(statusText)}</span></div>
+    const statusCol = `<div class="kpi-score-line"><span class="badge ${isOpen ? (allDone ? 'badge-approved' : 'badge-pending') : 'badge-cancelled'}" id="pr-window-status">${escapeHtml(statusText)}</span></div>
       ${window_.configured ? '' : '<div class="muted small mt-8">Dates are suggested — not yet confirmed by People &amp; Culture.</div>'}
       ${metrics.length ? `<div class="metric-grid mt-16">${metrics.join('')}</div>` : ''}`;
     const statusPanel = panel({
@@ -462,18 +480,20 @@ export async function renderKpiPeerReview(container, quarter) {
         <div class="panel-body pr-form">${departmentSectionsHtml(roster)}</div>
         <div class="pr-submit-bar">
           <button class="btn primary" id="kpi-peer-review-submit-all" data-submit-all data-quarter="${escapeHtml(quarter)}">Submit all reviews</button>
-          <span class="muted small">Everyone needs all ${DIMS.length} ratings or “Didn’t work with them” ticked. Already-submitted people are skipped.</span>
+          <span class="muted small">Everyone needs all ${DIMS.length} ratings and a comment, or “Didn’t work with them” ticked. Submitted reviews can’t be changed.</span>
         </div>`,
     });
 
+    // An oversight account with no employee profile has nobody to review —
+    // it gets the window and the results, not the form.
+    const formArea = !state.myEmployee ? ''
+      : allDone ? thankYouHtml() : !isOpen
+        ? panel({ title: 'Your review', body: '<div class="panel-body"><div class="list-empty">The review window isn’t open right now — check back during the review period.</div></div>' })
+        : formPanel;
     container.innerHTML = `<div class="stack">
       ${statusPanel}
-      ${results ? reportResultsHtml(quarter, results) : ''}
-      <div id="kpi-peer-review-form-area">
-        ${allDone ? thankYouHtml() : !isOpen
-          ? panel({ title: 'Your review', body: '<div class="panel-body"><div class="list-empty">The review window isn’t open right now — check back during the review period.</div></div>' })
-          : formPanel}
-      </div>
+      ${results ? reportResultsHtml(quarter, results) : reportStatus ? panel({ title: 'Results', body: `<div class="panel-body"><div class="list-empty">Everyone’s averages, Pillar A and comments appear here once the review window closes (${escapeHtml(fmtDate(lastIncludedDay(window_.closesAt).toISOString()))}).</div></div>` }) : ''}
+      <div id="kpi-peer-review-form-area">${formArea}</div>
     </div>`;
   } catch (err) {
     console.error('Team reviews failed to load', err);
